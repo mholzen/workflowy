@@ -1,2 +1,2 @@
-run item_id:
-	go run get-item.go {{item_id}}
+get item_id:
+	go run cmd/workflowy/main.go {{item_id}}
