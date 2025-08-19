@@ -51,6 +51,29 @@ type GetItemRequest struct {
 // GetItemResponse represents the response from get-item API
 type GetItemResponse map[string]interface{}
 
+// ListChildrenRequest represents the request payload for list-children API
+type ListChildrenRequest struct {
+	ItemID string `json:"item_id"`
+}
+
+// Item represents a Workflowy item with all its properties
+type Item struct {
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Note        *string                `json:"note"`
+	Priority    int                    `json:"priority"`
+	Data        map[string]interface{} `json:"data"`
+	CreatedAt   int64                  `json:"createdAt"`
+	ModifiedAt  int64                  `json:"modifiedAt"`
+	CompletedAt *int64                 `json:"completedAt"`
+	Children    []*Item                `json:"children,omitempty"`
+}
+
+// ListChildrenResponse represents the response from list-children API
+type ListChildrenResponse struct {
+	Items []*Item `json:"items"`
+}
+
 // GetItem retrieves an item by ID from Workflowy
 func (wc *WorkflowyClient) GetItem(ctx context.Context, itemID string) (*GetItemResponse, error) {
 	req := GetItemRequest{ItemID: itemID}
@@ -62,4 +85,59 @@ func (wc *WorkflowyClient) GetItem(ctx context.Context, itemID string) (*GetItem
 	}
 
 	return &resp, nil
+}
+
+// ListChildren retrieves direct children of an item from Workflowy
+// Use itemID "None" to get root level items
+func (wc *WorkflowyClient) ListChildren(ctx context.Context, itemID string) (*ListChildrenResponse, error) {
+	req := ListChildrenRequest{ItemID: itemID}
+	var resp ListChildrenResponse
+
+	err := wc.Do(ctx, "POST", "/list-children/", req, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
+// ListChildrenRecursive retrieves children recursively, building a complete tree
+// Use itemID "None" to get the entire outline tree
+func (wc *WorkflowyClient) ListChildrenRecursive(ctx context.Context, itemID string) (*ListChildrenResponse, error) {
+	resp, err := wc.ListChildren(ctx, itemID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Recursively fetch children for each item
+	for _, item := range resp.Items {
+		err := wc.fetchChildrenRecursively(ctx, item)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return resp, nil
+}
+
+// fetchChildrenRecursively is a helper function to recursively populate children
+func (wc *WorkflowyClient) fetchChildrenRecursively(ctx context.Context, item *Item) error {
+	childrenResp, err := wc.ListChildren(ctx, item.ID)
+	if err != nil {
+		return err
+	}
+
+	if len(childrenResp.Items) > 0 {
+		item.Children = childrenResp.Items
+
+		// Recursively fetch children for each child
+		for _, child := range item.Children {
+			err := wc.fetchChildrenRecursively(ctx, child)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
