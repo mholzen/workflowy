@@ -1,8 +1,11 @@
 # Workflowy API
 
+
 ## Notes
 
-https://community.workflowy.com/t/rudimentary-api-try-using-it-and-tell-me-what-you-think/185
+https://workflowy.com/api-reference/
+
+https://community.workflowy.com/t/ruxdimentary-api-try-using-it-and-tell-me-what-you-think/185
 
 
 ## API KEY

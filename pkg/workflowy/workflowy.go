@@ -2,6 +2,7 @@ package workflowy
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -49,7 +50,9 @@ type GetItemRequest struct {
 }
 
 // GetItemResponse represents the response from get-item API
-type GetItemResponse map[string]interface{}
+type GetItemResponse struct {
+	Item Item `json:"item"`
+}
 
 // ListChildrenRequest represents the request payload for list-children API
 type ListChildrenRequest struct {
@@ -75,7 +78,7 @@ type ListChildrenResponse struct {
 }
 
 // GetItem retrieves an item by ID from Workflowy
-func (wc *WorkflowyClient) GetItem(ctx context.Context, itemID string) (*GetItemResponse, error) {
+func (wc *WorkflowyClient) GetItem(ctx context.Context, itemID string) (*Item, error) {
 	req := GetItemRequest{ItemID: itemID}
 	var resp GetItemResponse
 
@@ -84,7 +87,7 @@ func (wc *WorkflowyClient) GetItem(ctx context.Context, itemID string) (*GetItem
 		return nil, err
 	}
 
-	return &resp, nil
+	return &resp.Item, nil
 }
 
 // ListChildren retrieves direct children of an item from Workflowy
@@ -103,17 +106,32 @@ func (wc *WorkflowyClient) ListChildren(ctx context.Context, itemID string) (*Li
 
 // ListChildrenRecursive retrieves children recursively, building a complete tree
 // Use itemID "None" to get the entire outline tree
+// Uses default depth of 5 levels
 func (wc *WorkflowyClient) ListChildrenRecursive(ctx context.Context, itemID string) (*ListChildrenResponse, error) {
+	return wc.ListChildrenRecursiveWithDepth(ctx, itemID, 5)
+}
+
+// ListChildrenRecursiveWithDepth retrieves children recursively up to specified depth
+// Use itemID "None" to get the entire outline tree
+// depth parameter controls how many levels deep to fetch (0 = no children, 1 = direct children only, etc.)
+func (wc *WorkflowyClient) ListChildrenRecursiveWithDepth(ctx context.Context, itemID string, depth int) (*ListChildrenResponse, error) {
+	// If depth is 0, return empty response without making any API calls
+	if depth <= 0 {
+		return &ListChildrenResponse{Items: []*Item{}}, nil
+	}
+
 	resp, err := wc.ListChildren(ctx, itemID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Recursively fetch children for each item
-	for _, item := range resp.Items {
-		err := wc.fetchChildrenRecursively(ctx, item)
-		if err != nil {
-			return nil, err
+	// If depth > 1, recursively fetch children for each item
+	if depth > 1 {
+		for _, item := range resp.Items {
+			err := wc.fetchChildrenRecursively(ctx, item, depth-1)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -121,7 +139,16 @@ func (wc *WorkflowyClient) ListChildrenRecursive(ctx context.Context, itemID str
 }
 
 // fetchChildrenRecursively is a helper function to recursively populate children
-func (wc *WorkflowyClient) fetchChildrenRecursively(ctx context.Context, item *Item) error {
+// depth parameter controls how many more levels deep to fetch
+func (wc *WorkflowyClient) fetchChildrenRecursively(ctx context.Context, item *Item, depth int) error {
+
+	fmt.Println(item.ID, depth)
+
+	// Stop recursion if depth is 0 or negative
+	if depth <= 0 {
+		return nil
+	}
+
 	childrenResp, err := wc.ListChildren(ctx, item.ID)
 	if err != nil {
 		return err
@@ -130,9 +157,9 @@ func (wc *WorkflowyClient) fetchChildrenRecursively(ctx context.Context, item *I
 	if len(childrenResp.Items) > 0 {
 		item.Children = childrenResp.Items
 
-		// Recursively fetch children for each child
+		// Recursively fetch children for each child, reducing depth by 1
 		for _, child := range item.Children {
-			err := wc.fetchChildrenRecursively(ctx, child)
+			err := wc.fetchChildrenRecursively(ctx, child, depth-1)
 			if err != nil {
 				return err
 			}
