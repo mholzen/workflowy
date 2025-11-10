@@ -2,7 +2,7 @@ package workflowy
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -141,8 +141,7 @@ func (wc *WorkflowyClient) ListChildrenRecursiveWithDepth(ctx context.Context, i
 // fetchChildrenRecursively is a helper function to recursively populate children
 // depth parameter controls how many more levels deep to fetch
 func (wc *WorkflowyClient) fetchChildrenRecursively(ctx context.Context, item *Item, depth int) error {
-
-	fmt.Println(item.ID, depth)
+	slog.Debug("fetching children recursively", "item_id", item.ID, "depth", depth)
 
 	// Stop recursion if depth is 0 or negative
 	if depth <= 0 {

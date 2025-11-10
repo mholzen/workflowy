@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/mholzen/workflowy/pkg/workflowy"
@@ -21,17 +22,17 @@ func main() {
 	}
 
 	verb := os.Args[1]
-	format, depth, apiKeyFile, logLevel, args := parseFlags(verb, os.Args[2:])
+	format, depth, apiKeyFile, logLevel, ignoreEmptyNames, args := parseFlags(verb, os.Args[2:])
 
 	setupLogging(logLevel)
 
 	switch verb {
 	case "get":
-		handleGet(args, format, apiKeyFile)
+		handleGet(args, format, apiKeyFile, ignoreEmptyNames)
 	case "list":
-		handleList(args, format, apiKeyFile)
+		handleList(args, format, apiKeyFile, ignoreEmptyNames)
 	case "tree":
-		handleTree(args, format, depth, apiKeyFile)
+		handleTree(args, format, depth, apiKeyFile, ignoreEmptyNames)
 	default:
 		fmt.Printf("Unknown command: %s\n\n", verb)
 		printUsage()
@@ -39,7 +40,7 @@ func main() {
 	}
 }
 
-func parseFlags(verb string, args []string) (format string, depth int, apiKeyFile string, logLevel string, remainingArgs []string) {
+func parseFlags(verb string, args []string) (format string, depth int, apiKeyFile string, logLevel string, ignoreEmptyNames bool, remainingArgs []string) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Error getting home directory: %v", err)
@@ -47,17 +48,18 @@ func parseFlags(verb string, args []string) (format string, depth int, apiKeyFil
 	defaultAPIKeyFile := filepath.Join(homeDir, ".workflowy", "api.key")
 
 	fs := flag.NewFlagSet(verb, flag.ExitOnError)
-	formatPtr := fs.String("format", "json", "Output format: json or md")
-	fs.StringVar(formatPtr, "f", "json", "Output format: json or md (shorthand)")
+	formatPtr := fs.String("format", "json", "Output format: json, md, or markdown")
+	fs.StringVar(formatPtr, "f", "json", "Output format: json, md, or markdown (shorthand)")
 	depthPtr := fs.Int("depth", 2, "Recursion depth for tree operations (positive integer)")
 	fs.IntVar(depthPtr, "d", 2, "Recursion depth for tree operations (shorthand)")
 	apiKeyFilePtr := fs.String("api-key-file", defaultAPIKeyFile, "Path to API key file")
 	logLevelPtr := fs.String("log", "info", "Log level: debug, info, warn, error")
+	ignoreEmptyNamesPtr := fs.Bool("ignore-empty-names", false, "Ignore items with empty names")
 
 	fs.Parse(args)
 
-	if *formatPtr != "json" && *formatPtr != "md" {
-		fmt.Printf("Error: format must be 'json' or 'md'\n")
+	if *formatPtr != "json" && *formatPtr != "md" && *formatPtr != "markdown" {
+		fmt.Printf("Error: format must be 'json', 'md', or 'markdown'\n")
 		os.Exit(1)
 	}
 
@@ -66,7 +68,7 @@ func parseFlags(verb string, args []string) (format string, depth int, apiKeyFil
 		os.Exit(1)
 	}
 
-	return *formatPtr, *depthPtr, *apiKeyFilePtr, *logLevelPtr, fs.Args()
+	return *formatPtr, *depthPtr, *apiKeyFilePtr, *logLevelPtr, *ignoreEmptyNamesPtr, fs.Args()
 }
 
 func setupLogging(level string) {
@@ -99,18 +101,20 @@ func printUsage() {
 	fmt.Printf("  %s list [item_id]                          List children of an item (root if omitted)\n", progName)
 	fmt.Printf("  %s tree [item_id]                          List children recursively (root if omitted)\n", progName)
 	fmt.Println("\nGlobal Options:")
-	fmt.Println("  --format, -f json|md    Output format (default: json)")
+	fmt.Println("  --format, -f json|md|markdown    Output format (default: json)")
 	fmt.Println("  --depth, -d N           Recursion depth for tree operations (default: 2)")
 	fmt.Println("  --api-key-file FILE     Path to API key file (default: ~/.workflowy/api.key)")
 	fmt.Println("  --log LEVEL             Log level: debug, info, warn, error (default: info)")
+	fmt.Println("  --ignore-empty-names    Ignore items with empty names (default: false)")
 	fmt.Println("\nIf no item_id is provided, operations will be performed on the root")
 	fmt.Println("\nObtaining item_id:")
 	fmt.Println("  In your browser's developer tools, inspect the item text in WorkFlowy.")
 	fmt.Println("  The item_id comes from the 'projectid' attribute on an encompassing <div>,")
 	fmt.Println("  usually 3 layers above the <span> containing the text.")
 	fmt.Println("\nFormat options:")
-	fmt.Println("  json  Output as JSON (default)")
-	fmt.Println("  md    Output as Markdown list")
+	fmt.Println("  json      Output as JSON (default)")
+	fmt.Println("  md        Output as Markdown list")
+	fmt.Println("  markdown  Output as Markdown list (alias for md)")
 }
 
 // Common helper functions
@@ -135,6 +139,19 @@ func printJSON(response interface{}) {
 	fmt.Printf("%s\n", prettyJSON)
 }
 
+func sortItemsByPriority(items []*workflowy.Item) {
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Priority < items[j].Priority
+	})
+
+	// Recursively sort children
+	for _, item := range items {
+		if len(item.Children) > 0 {
+			sortItemsByPriority(item.Children)
+		}
+	}
+}
+
 func itemToMarkdown(item *workflowy.Item, depth int) string {
 	indent := strings.Repeat("  ", depth)
 	result := fmt.Sprintf("%s- %s\n", indent, item.Name)
@@ -156,8 +173,51 @@ func responseToMarkdown(response *workflowy.ListChildrenResponse) string {
 	return result.String()
 }
 
-func printOutput(data interface{}, format string) {
-	if format == "md" {
+func filterEmptyNames(items []*workflowy.Item) []*workflowy.Item {
+	filtered := make([]*workflowy.Item, 0, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.Name) != "" {
+			if len(item.Children) > 0 {
+				item.Children = filterEmptyNames(item.Children)
+			}
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func printOutput(data interface{}, format string, ignoreEmptyNames bool) {
+	// Filter empty names if requested
+	if ignoreEmptyNames {
+		switch v := data.(type) {
+		case *workflowy.Item:
+			if len(v.Children) > 0 {
+				v.Children = filterEmptyNames(v.Children)
+			}
+		case *workflowy.GetItemResponse:
+			if len(v.Item.Children) > 0 {
+				v.Item.Children = filterEmptyNames(v.Item.Children)
+			}
+		case *workflowy.ListChildrenResponse:
+			v.Items = filterEmptyNames(v.Items)
+		}
+	}
+
+	// Sort items by priority before output
+	switch v := data.(type) {
+	case *workflowy.Item:
+		if len(v.Children) > 0 {
+			sortItemsByPriority(v.Children)
+		}
+	case *workflowy.GetItemResponse:
+		if len(v.Item.Children) > 0 {
+			sortItemsByPriority(v.Item.Children)
+		}
+	case *workflowy.ListChildrenResponse:
+		sortItemsByPriority(v.Items)
+	}
+
+	if format == "md" || format == "markdown" {
 		switch v := data.(type) {
 		case *workflowy.Item:
 			fmt.Print(itemToMarkdown(v, 0))
@@ -174,7 +234,7 @@ func printOutput(data interface{}, format string) {
 	}
 }
 
-func handleGet(args []string, format string, apiKeyFile string) {
+func handleGet(args []string, format string, apiKeyFile string, ignoreEmptyNames bool) {
 	itemID := getItemID(args)
 	client := createClient(apiKeyFile)
 
@@ -184,33 +244,33 @@ func handleGet(args []string, format string, apiKeyFile string) {
 		log.Fatalf("Error getting item: %v", err)
 	}
 
-	printOutput(response, format)
+	printOutput(response, format, ignoreEmptyNames)
 }
 
-func handleList(args []string, format string, apiKeyFile string) {
+func handleList(args []string, format string, apiKeyFile string, ignoreEmptyNames bool) {
 	itemID := getItemID(args)
 	client := createClient(apiKeyFile)
 
 	ctx := context.Background()
-	fmt.Printf("Fetching direct children for item: %s\n", itemID)
+	slog.Info("fetching direct children", "item_id", itemID)
 	response, err := client.ListChildren(ctx, itemID)
 	if err != nil {
 		log.Fatalf("Error listing children: %v", err)
 	}
 
-	printOutput(response, format)
+	printOutput(response, format, ignoreEmptyNames)
 }
 
-func handleTree(args []string, format string, depth int, apiKeyFile string) {
+func handleTree(args []string, format string, depth int, apiKeyFile string, ignoreEmptyNames bool) {
 	itemID := getItemID(args)
 	client := createClient(apiKeyFile)
 
 	ctx := context.Background()
-	fmt.Printf("Fetching complete tree for item: %s (depth: %d)\n", itemID, depth)
+	slog.Info("fetching complete tree", "item_id", itemID, "depth", depth)
 	response, err := client.ListChildrenRecursiveWithDepth(ctx, itemID, depth)
 	if err != nil {
 		log.Fatalf("Error fetching tree: %v", err)
 	}
 
-	printOutput(response, format)
+	printOutput(response, format, ignoreEmptyNames)
 }
