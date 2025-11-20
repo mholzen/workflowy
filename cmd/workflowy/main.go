@@ -22,15 +22,15 @@ func main() {
 	}
 
 	verb := os.Args[1]
-	format, depth, apiKeyFile, logLevel, ignoreEmptyNames, args := parseFlags(verb, os.Args[2:])
+	format, depth, apiKeyFile, logLevel, showEmptyNames, args := parseFlags(verb, os.Args[2:])
 
 	setupLogging(logLevel)
 
 	switch verb {
 	case "get":
-		handleGet(args, format, depth, apiKeyFile, ignoreEmptyNames)
+		handleGet(args, format, depth, apiKeyFile, showEmptyNames)
 	case "list":
-		handleList(args, format, apiKeyFile, ignoreEmptyNames)
+		handleList(args, format, apiKeyFile, showEmptyNames)
 	default:
 		fmt.Printf("Unknown command: %s\n\n", verb)
 		printUsage()
@@ -38,7 +38,7 @@ func main() {
 	}
 }
 
-func parseFlags(verb string, args []string) (format string, depth int, apiKeyFile string, logLevel string, ignoreEmptyNames bool, remainingArgs []string) {
+func parseFlags(verb string, args []string) (format string, depth int, apiKeyFile string, logLevel string, showEmptyNames bool, remainingArgs []string) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Error getting home directory: %v", err)
@@ -52,7 +52,7 @@ func parseFlags(verb string, args []string) (format string, depth int, apiKeyFil
 	fs.IntVar(depthPtr, "d", 2, "Recursion depth for tree operations (shorthand)")
 	apiKeyFilePtr := fs.String("api-key-file", defaultAPIKeyFile, "Path to API key file")
 	logLevelPtr := fs.String("log", "info", "Log level: debug, info, warn, error")
-	ignoreEmptyNamesPtr := fs.Bool("ignore-empty-names", false, "Ignore items with empty names")
+	showEmptyNamesPtr := fs.Bool("include-empty-names", false, "Include items with empty names")
 
 	fs.Parse(args)
 
@@ -66,7 +66,7 @@ func parseFlags(verb string, args []string) (format string, depth int, apiKeyFil
 		os.Exit(1)
 	}
 
-	return *formatPtr, *depthPtr, *apiKeyFilePtr, *logLevelPtr, *ignoreEmptyNamesPtr, fs.Args()
+	return *formatPtr, *depthPtr, *apiKeyFilePtr, *logLevelPtr, *showEmptyNamesPtr, fs.Args()
 }
 
 func setupLogging(level string) {
@@ -102,7 +102,7 @@ func printUsage() {
 	fmt.Println("  --depth, -d N           Recursion depth for tree operations (default: 2)")
 	fmt.Println("  --api-key-file FILE     Path to API key file (default: ~/.workflowy/api.key)")
 	fmt.Println("  --log LEVEL             Log level: debug, info, warn, error (default: info)")
-	fmt.Println("  --ignore-empty-names    Ignore items with empty names (default: false)")
+	fmt.Println("  --include-empty-names   Include items with empty names (default: exclude)")
 	fmt.Println("\nIf no item_id is provided, operations will be performed on the root")
 	fmt.Println("\nObtaining item_id:")
 	fmt.Println("  In your browser's developer tools, inspect the item text in WorkFlowy.")
@@ -183,9 +183,9 @@ func filterEmptyNames(items []*workflowy.Item) []*workflowy.Item {
 	return filtered
 }
 
-func printOutput(data interface{}, format string, ignoreEmptyNames bool) {
-	// Filter empty names if requested
-	if ignoreEmptyNames {
+func printOutput(data interface{}, format string, showEmptyNames bool) {
+	// Filter empty names unless requested to show them
+	if !showEmptyNames {
 		switch v := data.(type) {
 		case *workflowy.Item:
 			if len(v.Children) > 0 {
@@ -231,7 +231,7 @@ func printOutput(data interface{}, format string, ignoreEmptyNames bool) {
 	}
 }
 
-func handleGet(args []string, format string, depth int, apiKeyFile string, ignoreEmptyNames bool) {
+func handleGet(args []string, format string, depth int, apiKeyFile string, showEmptyNames bool) {
 	itemID := getItemID(args)
 	client := createClient(apiKeyFile)
 
@@ -244,7 +244,7 @@ func handleGet(args []string, format string, depth int, apiKeyFile string, ignor
 		if err != nil {
 			log.Fatalf("Error fetching root items: %v", err)
 		}
-		printOutput(response, format, ignoreEmptyNames)
+		printOutput(response, format, showEmptyNames)
 		return
 	}
 
@@ -264,10 +264,10 @@ func handleGet(args []string, format string, depth int, apiKeyFile string, ignor
 		item.Children = childrenResp.Items
 	}
 
-	printOutput(item, format, ignoreEmptyNames)
+	printOutput(item, format, showEmptyNames)
 }
 
-func handleList(args []string, format string, apiKeyFile string, ignoreEmptyNames bool) {
+func handleList(args []string, format string, apiKeyFile string, showEmptyNames bool) {
 	itemID := getItemID(args)
 	client := createClient(apiKeyFile)
 
@@ -278,6 +278,6 @@ func handleList(args []string, format string, apiKeyFile string, ignoreEmptyName
 		log.Fatalf("Error listing children: %v", err)
 	}
 
-	printOutput(response, format, ignoreEmptyNames)
+	printOutput(response, format, showEmptyNames)
 }
 
