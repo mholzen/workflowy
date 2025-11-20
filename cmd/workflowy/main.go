@@ -28,11 +28,9 @@ func main() {
 
 	switch verb {
 	case "get":
-		handleGet(args, format, apiKeyFile, ignoreEmptyNames)
+		handleGet(args, format, depth, apiKeyFile, ignoreEmptyNames)
 	case "list":
 		handleList(args, format, apiKeyFile, ignoreEmptyNames)
-	case "tree":
-		handleTree(args, format, depth, apiKeyFile, ignoreEmptyNames)
 	default:
 		fmt.Printf("Unknown command: %s\n\n", verb)
 		printUsage()
@@ -97,9 +95,8 @@ func printUsage() {
 	progName := filepath.Base(os.Args[0])
 	fmt.Printf("Usage: %s <command> [options] [item_id]\n\n", progName)
 	fmt.Println("Commands:")
-	fmt.Printf("  %s get [item_id]                           Get details for an item (root if omitted)\n", progName)
-	fmt.Printf("  %s list [item_id]                          List children of an item (root if omitted)\n", progName)
-	fmt.Printf("  %s tree [item_id]                          List children recursively (root if omitted)\n", progName)
+	fmt.Printf("  %s get [item_id] [options]                 Get item with optional recursive children (root if omitted)\n", progName)
+	fmt.Printf("  %s list [item_id] [options]                List children of an item (root if omitted)\n", progName)
 	fmt.Println("\nGlobal Options:")
 	fmt.Println("  --format, -f json|md|markdown    Output format (default: json)")
 	fmt.Println("  --depth, -d N           Recursion depth for tree operations (default: 2)")
@@ -234,17 +231,40 @@ func printOutput(data interface{}, format string, ignoreEmptyNames bool) {
 	}
 }
 
-func handleGet(args []string, format string, apiKeyFile string, ignoreEmptyNames bool) {
+func handleGet(args []string, format string, depth int, apiKeyFile string, ignoreEmptyNames bool) {
 	itemID := getItemID(args)
 	client := createClient(apiKeyFile)
 
 	ctx := context.Background()
-	response, err := client.GetItem(ctx, itemID)
+
+	// Special case: "None" means root, so list root children instead
+	if itemID == "None" {
+		slog.Info("fetching root items", "depth", depth)
+		response, err := client.ListChildrenRecursiveWithDepth(ctx, itemID, depth)
+		if err != nil {
+			log.Fatalf("Error fetching root items: %v", err)
+		}
+		printOutput(response, format, ignoreEmptyNames)
+		return
+	}
+
+	// Normal case: get specific item
+	slog.Info("fetching item", "item_id", itemID, "depth", depth)
+	item, err := client.GetItem(ctx, itemID)
 	if err != nil {
 		log.Fatalf("Error getting item: %v", err)
 	}
 
-	printOutput(response, format, ignoreEmptyNames)
+	// If depth > 0, fetch children recursively and attach them
+	if depth > 0 {
+		childrenResp, err := client.ListChildrenRecursiveWithDepth(ctx, itemID, depth)
+		if err != nil {
+			log.Fatalf("Error fetching children: %v", err)
+		}
+		item.Children = childrenResp.Items
+	}
+
+	printOutput(item, format, ignoreEmptyNames)
 }
 
 func handleList(args []string, format string, apiKeyFile string, ignoreEmptyNames bool) {
@@ -261,16 +281,3 @@ func handleList(args []string, format string, apiKeyFile string, ignoreEmptyName
 	printOutput(response, format, ignoreEmptyNames)
 }
 
-func handleTree(args []string, format string, depth int, apiKeyFile string, ignoreEmptyNames bool) {
-	itemID := getItemID(args)
-	client := createClient(apiKeyFile)
-
-	ctx := context.Background()
-	slog.Info("fetching complete tree", "item_id", itemID, "depth", depth)
-	response, err := client.ListChildrenRecursiveWithDepth(ctx, itemID, depth)
-	if err != nil {
-		log.Fatalf("Error fetching tree: %v", err)
-	}
-
-	printOutput(response, format, ignoreEmptyNames)
-}
