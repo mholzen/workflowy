@@ -46,8 +46,8 @@ func parseFlags(verb string, args []string) (format string, depth int, apiKeyFil
 	defaultAPIKeyFile := filepath.Join(homeDir, ".workflowy", "api.key")
 
 	fs := flag.NewFlagSet(verb, flag.ExitOnError)
-	formatPtr := fs.String("format", "json", "Output format: json, md, or markdown")
-	fs.StringVar(formatPtr, "f", "json", "Output format: json, md, or markdown (shorthand)")
+	formatPtr := fs.String("format", "md", "Output format: json, md, or markdown")
+	fs.StringVar(formatPtr, "f", "md", "Output format: json, md, or markdown (shorthand)")
 	depthPtr := fs.Int("depth", 2, "Recursion depth for tree operations (positive integer)")
 	fs.IntVar(depthPtr, "d", 2, "Recursion depth for tree operations (shorthand)")
 	apiKeyFilePtr := fs.String("api-key-file", defaultAPIKeyFile, "Path to API key file")
@@ -98,7 +98,7 @@ func printUsage() {
 	fmt.Printf("  %s get [item_id] [options]                 Get item with optional recursive children (root if omitted)\n", progName)
 	fmt.Printf("  %s list [item_id] [options]                List children of an item (root if omitted)\n", progName)
 	fmt.Println("\nGlobal Options:")
-	fmt.Println("  --format, -f json|md|markdown    Output format (default: json)")
+	fmt.Println("  --format, -f json|md|markdown    Output format (default: md)")
 	fmt.Println("  --depth, -d N           Recursion depth for tree operations (default: 2)")
 	fmt.Println("  --api-key-file FILE     Path to API key file (default: ~/.workflowy/api.key)")
 	fmt.Println("  --log LEVEL             Log level: debug, info, warn, error (default: info)")
@@ -280,4 +280,3 @@ func handleList(args []string, format string, apiKeyFile string, showEmptyNames 
 
 	printOutput(response, format, showEmptyNames)
 }
-
