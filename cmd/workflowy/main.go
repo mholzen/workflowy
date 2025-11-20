@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"log"
 	"log/slog"
@@ -13,60 +12,146 @@ import (
 	"strings"
 
 	"github.com/mholzen/workflowy/pkg/workflowy"
+	"github.com/urfave/cli/v3"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(1)
-	}
-
-	verb := os.Args[1]
-	format, depth, apiKeyFile, logLevel, showEmptyNames, args := parseFlags(verb, os.Args[2:])
-
-	setupLogging(logLevel)
-
-	switch verb {
-	case "get":
-		handleGet(args, format, depth, apiKeyFile, showEmptyNames)
-	case "list":
-		handleList(args, format, apiKeyFile, showEmptyNames)
-	default:
-		fmt.Printf("Unknown command: %s\n\n", verb)
-		printUsage()
-		os.Exit(1)
-	}
-}
-
-func parseFlags(verb string, args []string) (format string, depth int, apiKeyFile string, logLevel string, showEmptyNames bool, remainingArgs []string) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Error getting home directory: %v", err)
 	}
 	defaultAPIKeyFile := filepath.Join(homeDir, ".workflowy", "api.key")
 
-	fs := flag.NewFlagSet(verb, flag.ExitOnError)
-	formatPtr := fs.String("format", "md", "Output format: json, md, or markdown")
-	fs.StringVar(formatPtr, "f", "md", "Output format: json, md, or markdown (shorthand)")
-	depthPtr := fs.Int("depth", 2, "Recursion depth for tree operations (positive integer)")
-	fs.IntVar(depthPtr, "d", 2, "Recursion depth for tree operations (shorthand)")
-	apiKeyFilePtr := fs.String("api-key-file", defaultAPIKeyFile, "Path to API key file")
-	logLevelPtr := fs.String("log", "info", "Log level: debug, info, warn, error")
-	showEmptyNamesPtr := fs.Bool("include-empty-names", false, "Include items with empty names")
+	cmd := &cli.Command{
+		Name:  "workflowy",
+		Usage: "Interact with WorkFlowy API",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "format",
+				Aliases: []string{"f"},
+				Value:   "md",
+				Usage:   "Output format: json, md, or markdown",
+			},
+			&cli.IntFlag{
+				Name:    "depth",
+				Aliases: []string{"d"},
+				Value:   2,
+				Usage:   "Recursion depth for tree operations (positive integer)",
+			},
+			&cli.StringFlag{
+				Name:  "api-key-file",
+				Value: defaultAPIKeyFile,
+				Usage: "Path to API key file",
+			},
+			&cli.StringFlag{
+				Name:  "log",
+				Value: "info",
+				Usage: "Log level: debug, info, warn, error",
+			},
+			&cli.BoolFlag{
+				Name:  "include-empty-names",
+				Value: false,
+				Usage: "Include items with empty names",
+			},
+		},
+		Commands: []*cli.Command{
+			{
+				Name:  "get",
+				Usage: "Get item with optional recursive children (root if omitted)",
+				Arguments: []cli.Argument{
+					&cli.StringArg{
+						Name:      "item_id",
+						Value:     "None",
+						UsageText: "WorkFlowy item ID (default: root)",
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					setupLogging(cmd.String("log"))
 
-	fs.Parse(args)
+					format := cmd.String("format")
+					if format != "json" && format != "md" && format != "markdown" {
+						return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
+					}
 
-	if *formatPtr != "json" && *formatPtr != "md" && *formatPtr != "markdown" {
-		fmt.Printf("Error: format must be 'json', 'md', or 'markdown'\n")
-		os.Exit(1)
+					depth := cmd.Int("depth")
+					if depth < 0 {
+						return fmt.Errorf("depth must be a non-negative integer")
+					}
+
+					itemID := cmd.StringArg("item_id")
+					client := createClient(cmd.String("api-key-file"))
+
+					apiCtx := context.Background()
+
+					// Special case: "None" means root, so list root children instead
+					if itemID == "None" {
+						slog.Debug("fetching root items", "depth", depth)
+						response, err := client.ListChildrenRecursiveWithDepth(apiCtx, itemID, depth)
+						if err != nil {
+							return fmt.Errorf("error fetching root items: %w", err)
+						}
+						printOutput(response, format, cmd.Bool("include-empty-names"))
+						return nil
+					}
+
+					// Normal case: get specific item
+					slog.Debug("fetching item", "item_id", itemID, "depth", depth)
+					item, err := client.GetItem(apiCtx, itemID)
+					if err != nil {
+						return fmt.Errorf("error getting item: %w", err)
+					}
+
+					// If depth > 0, fetch children recursively and attach them
+					if depth > 0 {
+						childrenResp, err := client.ListChildrenRecursiveWithDepth(apiCtx, itemID, depth)
+						if err != nil {
+							return fmt.Errorf("error fetching children: %w", err)
+						}
+						item.Children = childrenResp.Items
+					}
+
+					printOutput(item, format, cmd.Bool("include-empty-names"))
+					return nil
+				},
+			},
+			{
+				Name:  "list",
+				Usage: "List direct children of an item (root if omitted)",
+				Arguments: []cli.Argument{
+					&cli.StringArg{
+						Name:      "item_id",
+						Value:     "None",
+						UsageText: "WorkFlowy item ID (default: root)",
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					setupLogging(cmd.String("log"))
+
+					format := cmd.String("format")
+					if format != "json" && format != "md" && format != "markdown" {
+						return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
+					}
+
+					itemID := cmd.StringArg("item_id")
+					client := createClient(cmd.String("api-key-file"))
+
+					apiCtx := context.Background()
+					slog.Debug("fetching direct children", "item_id", itemID)
+					response, err := client.ListChildren(apiCtx, itemID)
+					if err != nil {
+						return fmt.Errorf("error listing children: %w", err)
+					}
+
+					printOutput(response, format, cmd.Bool("include-empty-names"))
+					return nil
+				},
+			},
+		},
 	}
 
-	if *depthPtr < 0 {
-		fmt.Printf("Error: depth must be a non-negative integer\n")
-		os.Exit(1)
+	if err := cmd.Run(context.Background(), os.Args); err != nil {
+		log.Fatal(err)
 	}
-
-	return *formatPtr, *depthPtr, *apiKeyFilePtr, *logLevelPtr, *showEmptyNamesPtr, fs.Args()
 }
 
 func setupLogging(level string) {
@@ -89,38 +174,6 @@ func setupLogging(level string) {
 		Level: logLevel,
 	})
 	slog.SetDefault(slog.New(handler))
-}
-
-func printUsage() {
-	progName := filepath.Base(os.Args[0])
-	fmt.Printf("Usage: %s <command> [options] [item_id]\n\n", progName)
-	fmt.Println("Commands:")
-	fmt.Printf("  %s get [item_id] [options]                 Get item with optional recursive children (root if omitted)\n", progName)
-	fmt.Printf("  %s list [item_id] [options]                List children of an item (root if omitted)\n", progName)
-	fmt.Println("\nGlobal Options:")
-	fmt.Println("  --format, -f json|md|markdown    Output format (default: md)")
-	fmt.Println("  --depth, -d N           Recursion depth for tree operations (default: 2)")
-	fmt.Println("  --api-key-file FILE     Path to API key file (default: ~/.workflowy/api.key)")
-	fmt.Println("  --log LEVEL             Log level: debug, info, warn, error (default: info)")
-	fmt.Println("  --include-empty-names   Include items with empty names (default: exclude)")
-	fmt.Println("\nIf no item_id is provided, operations will be performed on the root")
-	fmt.Println("\nObtaining item_id:")
-	fmt.Println("  In your browser's developer tools, inspect the item text in WorkFlowy.")
-	fmt.Println("  The item_id comes from the 'projectid' attribute on an encompassing <div>,")
-	fmt.Println("  usually 3 layers above the <span> containing the text.")
-	fmt.Println("\nFormat options:")
-	fmt.Println("  json      Output as JSON (default)")
-	fmt.Println("  md        Output as Markdown list")
-	fmt.Println("  markdown  Output as Markdown list (alias for md)")
-}
-
-// Common helper functions
-func getItemID(args []string) string {
-	if len(args) < 1 || args[0] == "" {
-		// No item_id provided or empty string - default to root
-		return "None"
-	}
-	return args[0]
 }
 
 func createClient(apiKeyFile string) *workflowy.WorkflowyClient {
@@ -229,54 +282,4 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 	} else {
 		printJSON(data)
 	}
-}
-
-func handleGet(args []string, format string, depth int, apiKeyFile string, showEmptyNames bool) {
-	itemID := getItemID(args)
-	client := createClient(apiKeyFile)
-
-	ctx := context.Background()
-
-	// Special case: "None" means root, so list root children instead
-	if itemID == "None" {
-		slog.Debug("fetching root items", "depth", depth)
-		response, err := client.ListChildrenRecursiveWithDepth(ctx, itemID, depth)
-		if err != nil {
-			log.Fatalf("Error fetching root items: %v", err)
-		}
-		printOutput(response, format, showEmptyNames)
-		return
-	}
-
-	// Normal case: get specific item
-	slog.Debug("fetching item", "item_id", itemID, "depth", depth)
-	item, err := client.GetItem(ctx, itemID)
-	if err != nil {
-		log.Fatalf("Error getting item: %v", err)
-	}
-
-	// If depth > 0, fetch children recursively and attach them
-	if depth > 0 {
-		childrenResp, err := client.ListChildrenRecursiveWithDepth(ctx, itemID, depth)
-		if err != nil {
-			log.Fatalf("Error fetching children: %v", err)
-		}
-		item.Children = childrenResp.Items
-	}
-
-	printOutput(item, format, showEmptyNames)
-}
-
-func handleList(args []string, format string, apiKeyFile string, showEmptyNames bool) {
-	itemID := getItemID(args)
-	client := createClient(apiKeyFile)
-
-	ctx := context.Background()
-	slog.Debug("fetching direct children", "item_id", itemID)
-	response, err := client.ListChildren(ctx, itemID)
-	if err != nil {
-		log.Fatalf("Error listing children: %v", err)
-	}
-
-	printOutput(response, format, showEmptyNames)
 }
