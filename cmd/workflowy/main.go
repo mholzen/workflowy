@@ -239,7 +239,7 @@ func handleGet(args []string, format string, depth int, apiKeyFile string, showE
 
 	// Special case: "None" means root, so list root children instead
 	if itemID == "None" {
-		slog.Info("fetching root items", "depth", depth)
+		slog.Debug("fetching root items", "depth", depth)
 		response, err := client.ListChildrenRecursiveWithDepth(ctx, itemID, depth)
 		if err != nil {
 			log.Fatalf("Error fetching root items: %v", err)
@@ -249,7 +249,7 @@ func handleGet(args []string, format string, depth int, apiKeyFile string, showE
 	}
 
 	// Normal case: get specific item
-	slog.Info("fetching item", "item_id", itemID, "depth", depth)
+	slog.Debug("fetching item", "item_id", itemID, "depth", depth)
 	item, err := client.GetItem(ctx, itemID)
 	if err != nil {
 		log.Fatalf("Error getting item: %v", err)
@@ -272,7 +272,7 @@ func handleList(args []string, format string, apiKeyFile string, showEmptyNames 
 	client := createClient(apiKeyFile)
 
 	ctx := context.Background()
-	slog.Info("fetching direct children", "item_id", itemID)
+	slog.Debug("fetching direct children", "item_id", itemID)
 	response, err := client.ListChildren(ctx, itemID)
 	if err != nil {
 		log.Fatalf("Error listing children: %v", err)
