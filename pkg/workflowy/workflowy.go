@@ -36,12 +36,13 @@ func WithAPIKeyFromFile(filename string) client.Option {
 // WorkflowyClient wraps the generic Client with Workflowy-specific methods
 type WorkflowyClient struct {
 	*client.Client
+	opts []client.Option
 }
 
 // NewWorkflowyClient creates a new Workflowy API client
 func NewWorkflowyClient(opts ...client.Option) *WorkflowyClient {
 	c := client.New("https://beta.workflowy.com/api/beta", opts...)
-	return &WorkflowyClient{Client: c}
+	return &WorkflowyClient{Client: c, opts: opts}
 }
 
 // GetItemRequest represents the request payload for get-item API
@@ -75,6 +76,20 @@ type Item struct {
 // ListChildrenResponse represents the response from list-children API
 type ListChildrenResponse struct {
 	Items []*Item `json:"items"`
+}
+
+// CreateNodeRequest represents the request payload for nodes-create API
+type CreateNodeRequest struct {
+	ParentID   string  `json:"parent_id"`
+	Name       string  `json:"name"`
+	Note       *string `json:"note,omitempty"`
+	LayoutMode *string `json:"layoutMode,omitempty"`
+	Position   *string `json:"position,omitempty"`
+}
+
+// CreateNodeResponse represents the response from nodes-create API
+type CreateNodeResponse struct {
+	ItemID string `json:"item_id"`
 }
 
 // GetItem retrieves an item by ID from Workflowy
@@ -166,4 +181,18 @@ func (wc *WorkflowyClient) fetchChildrenRecursively(ctx context.Context, item *I
 	}
 
 	return nil
+}
+
+// CreateNode creates a new node in Workflowy using the v1 API
+func (wc *WorkflowyClient) CreateNode(ctx context.Context, req *CreateNodeRequest) (*CreateNodeResponse, error) {
+	// Create a v1 API client with the same auth options
+	v1Client := client.New("https://workflowy.com/api/v1", wc.opts...)
+
+	var resp CreateNodeResponse
+	err := v1Client.Do(ctx, "POST", "/nodes", req, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
 }

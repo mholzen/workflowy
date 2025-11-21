@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"os"
@@ -140,6 +141,136 @@ func main() {
 					response, err := client.ListChildren(apiCtx, itemID)
 					if err != nil {
 						return fmt.Errorf("error listing children: %w", err)
+					}
+
+					printOutput(response, format, cmd.Bool("include-empty-names"))
+					return nil
+				},
+			},
+			{
+				Name:  "post",
+				Usage: "Create a new node",
+				Arguments: []cli.Argument{
+					&cli.StringArg{
+						Name:      "name",
+						UsageText: "Node name (or use --read-stdin or --read-file)",
+					},
+				},
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "parent-id",
+						Value: "None",
+						Usage: "Parent node UUID, target key, or \"None\" for top-level",
+					},
+					&cli.StringFlag{
+						Name:  "position",
+						Usage: "Position: \"top\" or \"bottom\" (omit for API default)",
+					},
+					&cli.StringFlag{
+						Name:  "layout-mode",
+						Usage: "Display mode: bullets, todo, h1, h2, h3",
+					},
+					&cli.StringFlag{
+						Name:  "note",
+						Usage: "Additional note content",
+					},
+					&cli.BoolFlag{
+						Name:  "read-stdin",
+						Usage: "Read node name from stdin instead of argument",
+					},
+					&cli.StringFlag{
+						Name:  "read-file",
+						Usage: "Read node name from file instead of argument",
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					setupLogging(cmd.String("log"))
+
+					format := cmd.String("format")
+					if format != "json" && format != "md" && format != "markdown" {
+						return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
+					}
+
+					// Validate position if provided
+					position := cmd.String("position")
+					if position != "" && position != "top" && position != "bottom" {
+						return fmt.Errorf("position must be 'top' or 'bottom'")
+					}
+
+					// Determine input source and read name
+					nameArg := cmd.StringArg("name")
+					readStdin := cmd.Bool("read-stdin")
+					readFile := cmd.String("read-file")
+
+					// Count how many input sources are specified
+					inputSources := 0
+					if nameArg != "" {
+						inputSources++
+					}
+					if readStdin {
+						inputSources++
+					}
+					if readFile != "" {
+						inputSources++
+					}
+
+					if inputSources == 0 {
+						return fmt.Errorf("must provide node name via argument, --read-stdin, or --read-file")
+					}
+					if inputSources > 1 {
+						return fmt.Errorf("cannot use multiple input sources (choose one: argument, --read-stdin, or --read-file)")
+					}
+
+					var name string
+					var err error
+
+					if nameArg != "" {
+						name = nameArg
+						slog.Debug("using name from argument", "name", name)
+					} else if readStdin {
+						slog.Debug("reading from stdin")
+						stdinBytes, err := io.ReadAll(os.Stdin)
+						if err != nil {
+							return fmt.Errorf("error reading stdin: %w", err)
+						}
+						name = strings.TrimSpace(string(stdinBytes))
+					} else if readFile != "" {
+						slog.Debug("reading from file", "file", readFile)
+						fileBytes, err := os.ReadFile(readFile)
+						if err != nil {
+							return fmt.Errorf("error reading file: %w", err)
+						}
+						name = strings.TrimSpace(string(fileBytes))
+					}
+
+					if name == "" {
+						return fmt.Errorf("name cannot be empty")
+					}
+
+					// Build request
+					req := &workflowy.CreateNodeRequest{
+						ParentID: cmd.String("parent-id"),
+						Name:     name,
+					}
+
+					// Add optional fields only if provided
+					if position != "" {
+						req.Position = &position
+					}
+					if layoutMode := cmd.String("layout-mode"); layoutMode != "" {
+						req.LayoutMode = &layoutMode
+					}
+					if note := cmd.String("note"); note != "" {
+						req.Note = &note
+					}
+
+					client := createClient(cmd.String("api-key-file"))
+					apiCtx := context.Background()
+
+					slog.Debug("creating node", "parent_id", req.ParentID, "name", name)
+					response, err := client.CreateNode(apiCtx, req)
+					if err != nil {
+						return fmt.Errorf("error creating node: %w", err)
 					}
 
 					printOutput(response, format, cmd.Bool("include-empty-names"))
