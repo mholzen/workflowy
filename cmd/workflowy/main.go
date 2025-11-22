@@ -277,6 +277,54 @@ func main() {
 					return nil
 				},
 			},
+			{
+				Name:  "export",
+				Usage: "Export all nodes from WorkFlowy",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "force-refresh",
+						Usage: "Force refresh from API, bypassing cache",
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					setupLogging(cmd.String("log"))
+
+					format := cmd.String("format")
+					if format != "json" && format != "md" && format != "markdown" {
+						return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
+					}
+
+					client := createClient(cmd.String("api-key-file"))
+					apiCtx := context.Background()
+
+					forceRefresh := cmd.Bool("force-refresh")
+					slog.Debug("exporting all nodes", "force_refresh", forceRefresh)
+
+					response, err := client.ExportNodesWithCache(apiCtx, forceRefresh)
+					if err != nil {
+						return fmt.Errorf("error exporting nodes: %w", err)
+					}
+
+					slog.Info("export complete", "node_count", len(response.Nodes))
+
+					// For now, just output JSON since we don't have tree reconstruction yet
+					if format == "json" {
+						printJSON(response)
+					} else {
+						// For markdown, show a simple list
+						for _, node := range response.Nodes {
+							parentID := "None"
+							if node.ParentID != nil {
+								parentID = *node.ParentID
+							}
+							fmt.Printf("- [%s] %s (parent: %s, priority: %d)\n",
+								node.ID, node.Name, parentID, node.Priority)
+						}
+					}
+
+					return nil
+				},
+			},
 		},
 	}
 
