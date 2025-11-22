@@ -484,6 +484,11 @@ func (n *ItemNode) Node() *ItemNode {
 	return n
 }
 
+// Name returns the item's name
+func (n *ItemNode) Name() string {
+	return n.item.Name
+}
+
 // Children implements counter.TreeProvider
 func (n *ItemNode) Children() iter.Seq[counter.TreeProvider[*ItemNode]] {
 	return iter.Seq[counter.TreeProvider[*ItemNode]](func(yield func(counter.TreeProvider[*ItemNode]) bool) {

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/mholzen/workflowy/pkg/formatter"
+	"github.com/mholzen/workflowy/pkg/reports"
 	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
 )
@@ -414,6 +415,19 @@ func main() {
 								Value: 0.01,
 								Usage: "Minimum ratio threshold for filtering (0.0 to 1.0)",
 							},
+							&cli.BoolFlag{
+								Name:  "upload",
+								Usage: "Upload report to WorkFlowy instead of printing",
+							},
+							&cli.StringFlag{
+								Name:  "parent-id",
+								Value: "None",
+								Usage: "Parent node ID for uploaded report (default: root)",
+							},
+							&cli.StringFlag{
+								Name:  "position",
+								Usage: "Position in parent: top or bottom",
+							},
 						},
 						Action: func(ctx context.Context, cmd *cli.Command) error {
 							setupLogging(cmd.String("log"))
@@ -446,7 +460,20 @@ func main() {
 							slog.Info("counting descendants", "threshold", threshold)
 							descendants := workflowy.CountDescendants(rootItem, threshold)
 
-							// Output results
+							// Check if we should upload
+							report := &reports.CountReportOutput{
+								RootItem:    rootItem,
+								Descendants: descendants,
+								Threshold:   threshold,
+							}
+							if err := handleReportUpload(cmd, report); err != nil {
+								return err
+							}
+							if cmd.Bool("upload") {
+								return nil // Already uploaded
+							}
+
+							// Output results to stdout
 							format := cmd.String("format")
 							if format == "json" {
 								printJSON(descendants)
@@ -465,7 +492,7 @@ func main() {
 					{
 						Name:  "children",
 						Usage: "Rank nodes by immediate children count",
-						Flags: []cli.Flag{
+						Flags: append([]cli.Flag{
 							&cli.StringFlag{
 								Name:  "use-backup-file",
 								Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
@@ -485,7 +512,7 @@ func main() {
 								Value: 20,
 								Usage: "Number of top results to show (0 for all)",
 							},
-						},
+						}, uploadFlags()...),
 						Action: func(ctx context.Context, cmd *cli.Command) error {
 							setupLogging(cmd.String("log"))
 
@@ -501,7 +528,19 @@ func main() {
 							topN := cmd.Int("top-n")
 							ranked := workflowy.RankByChildrenCount(nodesWithTimestamps, topN)
 
-							// Output results
+							// Check if we should upload
+							report := &reports.ChildrenCountReportOutput{
+								Ranked: ranked,
+								TopN:   topN,
+							}
+							if err := handleReportUpload(cmd, report); err != nil {
+								return err
+							}
+							if cmd.Bool("upload") {
+								return nil
+							}
+
+							// Output results to stdout
 							format := cmd.String("format")
 							if format == "json" {
 								printJSON(ranked)
@@ -518,7 +557,7 @@ func main() {
 					{
 						Name:  "created",
 						Usage: "Rank nodes by creation date (oldest first)",
-						Flags: []cli.Flag{
+						Flags: append([]cli.Flag{
 							&cli.StringFlag{
 								Name:  "use-backup-file",
 								Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
@@ -538,7 +577,7 @@ func main() {
 								Value: 20,
 								Usage: "Number of top results to show (0 for all)",
 							},
-						},
+						}, uploadFlags()...),
 						Action: func(ctx context.Context, cmd *cli.Command) error {
 							setupLogging(cmd.String("log"))
 
@@ -554,7 +593,19 @@ func main() {
 							topN := cmd.Int("top-n")
 							ranked := workflowy.RankByCreated(nodesWithTimestamps, topN)
 
-							// Output results
+							// Check if we should upload
+							report := &reports.CreatedReportOutput{
+								Ranked: ranked,
+								TopN:   topN,
+							}
+							if err := handleReportUpload(cmd, report); err != nil {
+								return err
+							}
+							if cmd.Bool("upload") {
+								return nil
+							}
+
+							// Output results to stdout
 							format := cmd.String("format")
 							if format == "json" {
 								printJSON(ranked)
@@ -571,7 +622,7 @@ func main() {
 					{
 						Name:  "modified",
 						Usage: "Rank nodes by modification date (oldest first)",
-						Flags: []cli.Flag{
+						Flags: append([]cli.Flag{
 							&cli.StringFlag{
 								Name:  "use-backup-file",
 								Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
@@ -591,7 +642,7 @@ func main() {
 								Value: 20,
 								Usage: "Number of top results to show (0 for all)",
 							},
-						},
+						}, uploadFlags()...),
 						Action: func(ctx context.Context, cmd *cli.Command) error {
 							setupLogging(cmd.String("log"))
 
@@ -606,6 +657,18 @@ func main() {
 							// Rank by modified date
 							topN := cmd.Int("top-n")
 							ranked := workflowy.RankByModified(nodesWithTimestamps, topN)
+
+							// Check if we should upload
+							report := &reports.ModifiedReportOutput{
+								Ranked: ranked,
+								TopN:   topN,
+							}
+							if err := handleReportUpload(cmd, report); err != nil {
+								return err
+							}
+							if cmd.Bool("upload") {
+								return nil
+							}
 
 							// Output results
 							format := cmd.String("format")
@@ -823,6 +886,49 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 	} else {
 		printJSON(data)
 	}
+}
+
+// uploadFlags returns the standard upload flags for report commands
+func uploadFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.BoolFlag{
+			Name:  "upload",
+			Usage: "Upload report to WorkFlowy instead of printing",
+		},
+		&cli.StringFlag{
+			Name:  "parent-id",
+			Value: "None",
+			Usage: "Parent node ID for uploaded report (default: root)",
+		},
+		&cli.StringFlag{
+			Name:  "position",
+			Usage: "Position in parent: top or bottom",
+		},
+	}
+}
+
+// handleReportUpload handles uploading a report if --upload flag is set
+func handleReportUpload(cmd *cli.Command, report reports.ReportOutput) error {
+	if !cmd.Bool("upload") {
+		return nil // Not uploading
+	}
+
+	client := createClient(cmd.String("api-key-file"))
+	apiCtx := context.Background()
+
+	opts := reports.UploadOptions{
+		ParentID: cmd.String("parent-id"),
+		Position: cmd.String("position"),
+	}
+
+	nodeID, err := reports.UploadReport(apiCtx, client, report, opts)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Report uploaded successfully!\n")
+	fmt.Printf("URL: https://workflowy.com/#/%s\n", nodeID)
+	return nil
 }
 
 // loadTree loads the tree from either backup file or API
