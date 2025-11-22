@@ -375,12 +375,10 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 			if len(v.Children) > 0 {
 				v.Children = filterEmptyNames(v.Children)
 			}
-		case *workflowy.GetItemResponse:
-			if len(v.Item.Children) > 0 {
-				v.Item.Children = filterEmptyNames(v.Item.Children)
-			}
 		case *workflowy.ListChildrenResponse:
 			v.Items = filterEmptyNames(v.Items)
+		case *workflowy.CreateNodeResponse:
+			// No filtering needed for create response
 		}
 	}
 
@@ -390,20 +388,16 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 		if len(v.Children) > 0 {
 			sortItemsByPriority(v.Children)
 		}
-	case *workflowy.GetItemResponse:
-		if len(v.Item.Children) > 0 {
-			sortItemsByPriority(v.Item.Children)
-		}
 	case *workflowy.ListChildrenResponse:
 		sortItemsByPriority(v.Items)
+	case *workflowy.CreateNodeResponse:
+		// No sorting needed for create response
 	}
 
 	if format == "md" || format == "markdown" {
 		switch v := data.(type) {
 		case *workflowy.Item:
 			fmt.Print(itemToMarkdown(v, 0))
-		case *workflowy.GetItemResponse:
-			fmt.Print(itemToMarkdown(&v.Item, 0))
 		case *workflowy.ListChildrenResponse:
 			fmt.Print(responseToMarkdown(v))
 		default:

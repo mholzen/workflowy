@@ -40,6 +40,12 @@ func (c *Client) Do(ctx context.Context, method, path string, in any, out any) e
 	u := c.baseURL + path
 
 	var body io.ReadWriter
+	// For GET requests, encode input as query parameters; otherwise use JSON body
+	if method == "GET" && in != nil {
+		// Query parameters will be handled by caller building the path
+		// So we just set in to nil to avoid JSON encoding
+		in = nil
+	}
 	if in != nil {
 		buf := new(bytes.Buffer)
 		if err := json.NewEncoder(buf).Encode(in); err != nil {

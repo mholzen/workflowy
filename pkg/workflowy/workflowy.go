@@ -2,6 +2,7 @@ package workflowy
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -41,23 +42,8 @@ type WorkflowyClient struct {
 
 // NewWorkflowyClient creates a new Workflowy API client
 func NewWorkflowyClient(opts ...client.Option) *WorkflowyClient {
-	c := client.New("https://beta.workflowy.com/api/beta", opts...)
+	c := client.New("https://workflowy.com/api/v1", opts...)
 	return &WorkflowyClient{Client: c, opts: opts}
-}
-
-// GetItemRequest represents the request payload for get-item API
-type GetItemRequest struct {
-	ItemID string `json:"item_id"`
-}
-
-// GetItemResponse represents the response from get-item API
-type GetItemResponse struct {
-	Item Item `json:"item"`
-}
-
-// ListChildrenRequest represents the request payload for list-children API
-type ListChildrenRequest struct {
-	ItemID string `json:"item_id"`
 }
 
 // Item represents a Workflowy item with all its properties
@@ -73,9 +59,9 @@ type Item struct {
 	Children    []*Item                `json:"children,omitempty"`
 }
 
-// ListChildrenResponse represents the response from list-children API
+// ListChildrenResponse represents the response from list nodes API
 type ListChildrenResponse struct {
-	Items []*Item `json:"items"`
+	Items []*Item `json:"nodes"` // v1 API uses "nodes" field
 }
 
 // CreateNodeRequest represents the request payload for nodes-create API
@@ -92,26 +78,31 @@ type CreateNodeResponse struct {
 	ItemID string `json:"item_id"`
 }
 
+// GetItemResponse represents the response from GET /nodes/:id
+type GetItemResponse struct {
+	Node Item `json:"node"`
+}
+
 // GetItem retrieves an item by ID from Workflowy
 func (wc *WorkflowyClient) GetItem(ctx context.Context, itemID string) (*Item, error) {
-	req := GetItemRequest{ItemID: itemID}
 	var resp GetItemResponse
+	path := fmt.Sprintf("/nodes/%s", itemID)
 
-	err := wc.Do(ctx, "POST", "/get-item/", req, &resp)
+	err := wc.Do(ctx, "GET", path, nil, &resp)
 	if err != nil {
 		return nil, err
 	}
 
-	return &resp.Item, nil
+	return &resp.Node, nil
 }
 
 // ListChildren retrieves direct children of an item from Workflowy
 // Use itemID "None" to get root level items
 func (wc *WorkflowyClient) ListChildren(ctx context.Context, itemID string) (*ListChildrenResponse, error) {
-	req := ListChildrenRequest{ItemID: itemID}
+	path := fmt.Sprintf("/nodes?parent_id=%s", itemID)
 	var resp ListChildrenResponse
 
-	err := wc.Do(ctx, "POST", "/list-children/", req, &resp)
+	err := wc.Do(ctx, "GET", path, nil, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -183,13 +174,10 @@ func (wc *WorkflowyClient) fetchChildrenRecursively(ctx context.Context, item *I
 	return nil
 }
 
-// CreateNode creates a new node in Workflowy using the v1 API
+// CreateNode creates a new node in Workflowy
 func (wc *WorkflowyClient) CreateNode(ctx context.Context, req *CreateNodeRequest) (*CreateNodeResponse, error) {
-	// Create a v1 API client with the same auth options
-	v1Client := client.New("https://workflowy.com/api/v1", wc.opts...)
-
 	var resp CreateNodeResponse
-	err := v1Client.Do(ctx, "POST", "/nodes", req, &resp)
+	err := wc.Do(ctx, "POST", "/nodes", req, &resp)
 	if err != nil {
 		return nil, err
 	}
