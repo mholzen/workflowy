@@ -5,15 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"iter"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mholzen/workflowy/pkg/cache"
 	"github.com/mholzen/workflowy/pkg/client"
+	"github.com/mholzen/workflowy/pkg/counter"
 )
 
 // WithAPIKey sets up Bearer token authentication
@@ -456,4 +459,230 @@ func (wc *WorkflowyClient) ExportNodesWithCache(ctx context.Context, forceRefres
 	}
 
 	return resp, nil
+}
+
+// ItemNode wraps Item to implement counter.TreeProvider interface
+type ItemNode struct {
+	item     *Item
+	children []*ItemNode
+}
+
+// NewItemNode creates an ItemNode from an Item recursively
+func NewItemNode(item *Item) *ItemNode {
+	node := &ItemNode{
+		item:     item,
+		children: make([]*ItemNode, len(item.Children)),
+	}
+	for i, child := range item.Children {
+		node.children[i] = NewItemNode(child)
+	}
+	return node
+}
+
+// Node implements counter.TreeProvider
+func (n *ItemNode) Node() *ItemNode {
+	return n
+}
+
+// Children implements counter.TreeProvider
+func (n *ItemNode) Children() iter.Seq[counter.TreeProvider[*ItemNode]] {
+	return iter.Seq[counter.TreeProvider[*ItemNode]](func(yield func(counter.TreeProvider[*ItemNode]) bool) {
+		for _, child := range n.children {
+			if !yield(child) {
+				break
+			}
+		}
+	})
+}
+
+// String implements fmt.Stringer
+func (n *ItemNode) String() string {
+	url := n.ExternalURL()
+	if url == "" {
+		return n.item.Name
+	}
+	return fmt.Sprintf("[%s](%s)", n.item.Name, url)
+}
+
+// ExternalURL returns the external WorkFlowy URL for this item
+func (n *ItemNode) ExternalURL() string {
+	if n.item.ID == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://workflowy.com/#/%s", n.item.ID)
+}
+
+// InternalURL returns the internal WorkFlowy URL for this item
+func (n *ItemNode) InternalURL() string {
+	if n.item.ID == "" {
+		return ""
+	}
+	return fmt.Sprintf("workflowy://#/%s", n.item.ID)
+}
+
+// MarshalJSON implements json.Marshaler
+func (n *ItemNode) MarshalJSON() ([]byte, error) {
+	type Alias ItemNode
+	aux := struct {
+		Node string `json:"node"`
+		*Alias
+	}{
+		Node:  n.String(),
+		Alias: (*Alias)(n),
+	}
+	return json.Marshal(aux)
+}
+
+// Descendants is a type alias for descendant tree count
+type Descendants = *counter.DescendantTreeCount[**ItemNode]
+
+// CountDescendants counts descendants in a tree and returns filtered, sorted results
+func CountDescendants(item *Item, threshold float64) Descendants {
+	node := NewItemNode(item)
+	descendantTreeCount := counter.CountDescendantTree(node)
+	counter.CalculateRatioToRoot(descendantTreeCount)
+	descendantTreeCount = counter.FilterDescendantTree(descendantTreeCount, threshold)
+	descendantTreeCount = counter.SortDescendantTree(descendantTreeCount)
+	return descendantTreeCount
+}
+
+// NodeWithTimestamps combines a descendant count node with timestamp information
+type NodeWithTimestamps struct {
+	Count      Descendants
+	CreatedAt  int64
+	ModifiedAt int64
+}
+
+// CollectNodesWithTimestamps traverses the tree and collects all nodes with their timestamps
+func CollectNodesWithTimestamps(root Descendants) []*NodeWithTimestamps {
+	allNodes := counter.CollectAllNodes(root)
+	result := make([]*NodeWithTimestamps, len(allNodes))
+
+	for i, node := range allNodes {
+		nodeValue := node.NodeValue()
+		result[i] = &NodeWithTimestamps{
+			Count:      node,
+			CreatedAt:  (**nodeValue).item.CreatedAt,
+			ModifiedAt: (**nodeValue).item.ModifiedAt,
+		}
+	}
+
+	return result
+}
+
+// ChildrenCountRankable implements ranking by children count
+type ChildrenCountRankable struct {
+	Node *NodeWithTimestamps
+}
+
+func (r *ChildrenCountRankable) GetValue() fmt.Stringer {
+	nodeValue := r.Node.Count.NodeValue()
+	return *nodeValue
+}
+
+func (r *ChildrenCountRankable) GetRankingValue() int {
+	return r.Node.Count.ChildrenCount
+}
+
+func (r ChildrenCountRankable) String() string {
+	nodeValue := r.Node.Count.NodeValue()
+	return fmt.Sprintf("%d: %v", r.Node.Count.ChildrenCount, *nodeValue)
+}
+
+// RankByChildrenCount ranks nodes by their immediate children count
+func RankByChildrenCount(nodes []*NodeWithTimestamps, topN int) []ChildrenCountRankable {
+	sort.Slice(nodes, func(i, j int) bool {
+		return nodes[i].Count.ChildrenCount > nodes[j].Count.ChildrenCount
+	})
+
+	limit := len(nodes)
+	if topN > 0 && topN < limit {
+		limit = topN
+	}
+
+	result := make([]ChildrenCountRankable, limit)
+	for i := 0; i < limit; i++ {
+		result[i] = ChildrenCountRankable{Node: nodes[i]}
+	}
+
+	return result
+}
+
+// TimestampRankable implements ranking by timestamp with formatting
+type TimestampRankable struct {
+	Node        *NodeWithTimestamps
+	UseModified bool
+}
+
+func (r *TimestampRankable) GetValue() fmt.Stringer {
+	nodeValue := r.Node.Count.NodeValue()
+	return *nodeValue
+}
+
+func (r *TimestampRankable) GetRankingValue() int {
+	if r.UseModified {
+		return int(r.Node.ModifiedAt)
+	}
+	return int(r.Node.CreatedAt)
+}
+
+func (r TimestampRankable) String() string {
+	nodeValue := r.Node.Count.NodeValue()
+	var timestamp int64
+	if r.UseModified {
+		timestamp = r.Node.ModifiedAt
+	} else {
+		timestamp = r.Node.CreatedAt
+	}
+	if timestamp == 0 {
+		return fmt.Sprintf("(no date): %v", *nodeValue)
+	}
+	date := formatTimestamp(timestamp)
+	return fmt.Sprintf("%s: %v", date, *nodeValue)
+}
+
+// RankByCreated ranks nodes by creation date (oldest first)
+func RankByCreated(nodes []*NodeWithTimestamps, topN int) []TimestampRankable {
+	sort.Slice(nodes, func(i, j int) bool {
+		return nodes[i].CreatedAt < nodes[j].CreatedAt
+	})
+
+	limit := len(nodes)
+	if topN > 0 && topN < limit {
+		limit = topN
+	}
+
+	result := make([]TimestampRankable, limit)
+	for i := 0; i < limit; i++ {
+		result[i] = TimestampRankable{Node: nodes[i], UseModified: false}
+	}
+
+	return result
+}
+
+// RankByModified ranks nodes by modification date (oldest first)
+func RankByModified(nodes []*NodeWithTimestamps, topN int) []TimestampRankable {
+	sort.Slice(nodes, func(i, j int) bool {
+		return nodes[i].ModifiedAt < nodes[j].ModifiedAt
+	})
+
+	limit := len(nodes)
+	if topN > 0 && topN < limit {
+		limit = topN
+	}
+
+	result := make([]TimestampRankable, limit)
+	for i := 0; i < limit; i++ {
+		result[i] = TimestampRankable{Node: nodes[i], UseModified: true}
+	}
+
+	return result
+}
+
+func formatTimestamp(timestamp int64) string {
+	if timestamp == 0 {
+		return "no date"
+	}
+	t := time.Unix(timestamp, 0)
+	return t.Format("2006-01-02 15:04:05")
 }
