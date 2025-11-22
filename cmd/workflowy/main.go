@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mholzen/workflowy/pkg/formatter"
 	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
 )
@@ -620,6 +621,76 @@ func main() {
 							return nil
 						},
 					},
+				},
+			},
+			{
+				Name:  "markdown",
+				Usage: "Convert WorkFlowy item to markdown",
+				Arguments: []cli.Argument{
+					&cli.StringArg{
+						Name:      "item_id",
+						Value:     "None",
+						UsageText: "WorkFlowy item ID (default: root)",
+					},
+				},
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "use-backup-file",
+						Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
+					},
+					&cli.StringFlag{
+						Name:  "output",
+						Usage: "Output file (default: stdout)",
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					setupLogging(cmd.String("log"))
+
+					// Load tree
+					items, err := loadTree(cmd)
+					if err != nil {
+						return err
+					}
+
+					// Find the item to convert
+					itemID := cmd.StringArg("item_id")
+					var targetItems []*workflowy.Item
+
+					if itemID == "None" {
+						// Use all root items
+						targetItems = items
+					} else {
+						// Find specific item
+						item := findItemByID(items, itemID)
+						if item == nil {
+							return fmt.Errorf("item with ID %s not found", itemID)
+						}
+						targetItems = []*workflowy.Item{item}
+					}
+
+					// Create formatter
+					fmtr := formatter.NewDefaultFormatter()
+
+					// Convert to markdown
+					slog.Info("converting to markdown", "item_count", len(targetItems))
+					markdown, err := fmtr.FormatTree(targetItems)
+					if err != nil {
+						return fmt.Errorf("error formatting markdown: %w", err)
+					}
+
+					// Output
+					outputFile := cmd.String("output")
+					if outputFile != "" {
+						slog.Info("writing to file", "file", outputFile)
+						err := os.WriteFile(outputFile, []byte(markdown), 0644)
+						if err != nil {
+							return fmt.Errorf("error writing file: %w", err)
+						}
+					} else {
+						fmt.Print(markdown)
+					}
+
+					return nil
 				},
 			},
 		},
