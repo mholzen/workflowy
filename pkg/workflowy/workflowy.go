@@ -2,12 +2,14 @@ package workflowy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 
+	"github.com/mholzen/workflowy/pkg/cache"
 	"github.com/mholzen/workflowy/pkg/client"
 )
 
@@ -183,4 +185,91 @@ func (wc *WorkflowyClient) CreateNode(ctx context.Context, req *CreateNodeReques
 	}
 
 	return &resp, nil
+}
+
+// ExportNode represents a node from the export API with parent_id for tree reconstruction
+type ExportNode struct {
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Note        *string                `json:"note"`
+	ParentID    *string                `json:"parent_id"`
+	Priority    int                    `json:"priority"`
+	Completed   bool                   `json:"completed"`
+	Data        map[string]interface{} `json:"data"`
+	CreatedAt   int64                  `json:"createdAt"`
+	ModifiedAt  int64                  `json:"modifiedAt"`
+	CompletedAt *int64                 `json:"completedAt"`
+}
+
+// ExportNodesResponse represents the response from GET /nodes-export
+type ExportNodesResponse struct {
+	Nodes []ExportNode `json:"nodes"`
+}
+
+// ExportNodes retrieves all nodes from Workflowy (rate limited to 1 req/min)
+func (wc *WorkflowyClient) ExportNodes(ctx context.Context) (*ExportNodesResponse, error) {
+	var resp ExportNodesResponse
+	err := wc.Do(ctx, "GET", "/nodes-export", nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
+// ExportNodesWithCache retrieves all nodes using cache when valid
+// forceRefresh bypasses cache and fetches fresh data
+func (wc *WorkflowyClient) ExportNodesWithCache(ctx context.Context, forceRefresh bool) (*ExportNodesResponse, error) {
+	// Try to read cache first
+	cachedData, err := cache.ReadExportCache()
+	if err != nil {
+		slog.Warn("error reading cache, will fetch from API", "error", err)
+	}
+
+	// Use cache if valid and not forcing refresh
+	if !forceRefresh && cache.IsCacheValid(cachedData) {
+		age := cache.GetCacheAge(cachedData)
+		slog.Info("using cached export data", "age_seconds", int(age.Seconds()))
+
+		// Unmarshal cached data
+		var resp ExportNodesResponse
+		if err := json.Unmarshal(cachedData.Data, &resp); err != nil {
+			slog.Warn("error unmarshaling cached data, will fetch from API", "error", err)
+		} else {
+			return &resp, nil
+		}
+	}
+
+	// Check if cache exists but is too recent (enforce rate limit)
+	if cachedData != nil && !forceRefresh {
+		age := cache.GetCacheAge(cachedData)
+		if age < cache.CacheExpiryDuration {
+			remaining := cache.CacheExpiryDuration - age
+			return nil, fmt.Errorf("rate limit: must wait %d seconds before next export (use cache or wait)", int(remaining.Seconds()))
+		}
+	}
+
+	// Fetch fresh data from API
+	slog.Info("fetching fresh export data from API")
+	resp, err := wc.ExportNodes(ctx)
+	if err != nil {
+		// If API call fails, try to use stale cache as fallback
+		if cachedData != nil {
+			age := cache.GetCacheAge(cachedData)
+			slog.Warn("API call failed, using stale cache", "age_seconds", int(age.Seconds()))
+
+			var fallbackResp ExportNodesResponse
+			if unmarshalErr := json.Unmarshal(cachedData.Data, &fallbackResp); unmarshalErr == nil {
+				return &fallbackResp, nil
+			}
+		}
+		return nil, fmt.Errorf("error fetching export data: %w", err)
+	}
+
+	// Write to cache
+	if err := cache.WriteExportCache(resp); err != nil {
+		slog.Warn("error writing cache (continuing anyway)", "error", err)
+	}
+
+	return resp, nil
 }
