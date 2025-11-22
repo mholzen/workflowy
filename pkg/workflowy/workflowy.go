@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/mholzen/workflowy/pkg/cache"
@@ -215,6 +216,86 @@ func (wc *WorkflowyClient) ExportNodes(ctx context.Context) (*ExportNodesRespons
 	}
 
 	return &resp, nil
+}
+
+// ExportNodeToItem converts an ExportNode to an Item
+func ExportNodeToItem(node ExportNode) *Item {
+	return &Item{
+		ID:          node.ID,
+		Name:        node.Name,
+		Note:        node.Note,
+		Priority:    node.Priority,
+		Data:        node.Data,
+		CreatedAt:   node.CreatedAt,
+		ModifiedAt:  node.ModifiedAt,
+		CompletedAt: node.CompletedAt,
+		Children:    nil, // Will be populated during tree building
+	}
+}
+
+// BuildTreeFromExport reconstructs a tree structure from flat export nodes
+// Returns a root Item containing all top-level nodes as children
+func BuildTreeFromExport(nodes []ExportNode) *Item {
+	// Create a map of ID -> Item for quick lookup
+	itemMap := make(map[string]*Item)
+
+	// First pass: convert all nodes to Items
+	for _, node := range nodes {
+		item := ExportNodeToItem(node)
+		itemMap[node.ID] = item
+	}
+
+	// Create a virtual root node to hold top-level items
+	root := &Item{
+		ID:       "root",
+		Name:     "Root",
+		Children: []*Item{},
+	}
+
+	// Second pass: build parent-child relationships
+	for _, node := range nodes {
+		item := itemMap[node.ID]
+
+		if node.ParentID == nil {
+			// Top-level node (no parent)
+			root.Children = append(root.Children, item)
+		} else {
+			// Has a parent - add to parent's children
+			parent, exists := itemMap[*node.ParentID]
+			if exists {
+				if parent.Children == nil {
+					parent.Children = []*Item{}
+				}
+				parent.Children = append(parent.Children, item)
+			} else {
+				// Parent not found, treat as top-level
+				slog.Warn("parent not found, treating as top-level", "node_id", node.ID, "parent_id", *node.ParentID)
+				root.Children = append(root.Children, item)
+			}
+		}
+	}
+
+	// Third pass: sort all children by priority
+	sortItemsByPriorityRecursive(root)
+
+	return root
+}
+
+// sortItemsByPriorityRecursive sorts children by priority recursively
+func sortItemsByPriorityRecursive(item *Item) {
+	if len(item.Children) == 0 {
+		return
+	}
+
+	// Sort immediate children
+	sort.Slice(item.Children, func(i, j int) bool {
+		return item.Children[i].Priority < item.Children[j].Priority
+	})
+
+	// Recursively sort grandchildren
+	for _, child := range item.Children {
+		sortItemsByPriorityRecursive(child)
+	}
 }
 
 // ExportNodesWithCache retrieves all nodes using cache when valid

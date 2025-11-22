@@ -307,18 +307,18 @@ func main() {
 
 					slog.Info("export complete", "node_count", len(response.Nodes))
 
-					// For now, just output JSON since we don't have tree reconstruction yet
+					// Reconstruct tree from flat export
+					slog.Debug("reconstructing tree from export data")
+					root := workflowy.BuildTreeFromExport(response.Nodes)
+					slog.Debug("tree reconstructed", "top_level_count", len(root.Children))
+
+					// Output the tree
 					if format == "json" {
-						printJSON(response)
+						printJSON(root)
 					} else {
-						// For markdown, show a simple list
-						for _, node := range response.Nodes {
-							parentID := "None"
-							if node.ParentID != nil {
-								parentID = *node.ParentID
-							}
-							fmt.Printf("- [%s] %s (parent: %s, priority: %d)\n",
-								node.ID, node.Name, parentID, node.Priority)
+						// For markdown, output as nested tree
+						for _, child := range root.Children {
+							fmt.Print(itemToMarkdown(child, 0))
 						}
 					}
 
