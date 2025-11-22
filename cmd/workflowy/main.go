@@ -391,6 +391,237 @@ func main() {
 					return nil
 				},
 			},
+			{
+				Name:  "report",
+				Usage: "Generate reports from WorkFlowy data",
+				Commands: []*cli.Command{
+					{
+						Name:  "count",
+						Usage: "Generate descendant count report",
+						Flags: []cli.Flag{
+							&cli.StringFlag{
+								Name:  "use-backup-file",
+								Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
+							},
+							&cli.StringFlag{
+								Name:  "item-id",
+								Value: "None",
+								Usage: "Item ID to start from (default: root)",
+							},
+							&cli.Float64Flag{
+								Name:  "threshold",
+								Value: 0.01,
+								Usage: "Minimum ratio threshold for filtering (0.0 to 1.0)",
+							},
+						},
+						Action: func(ctx context.Context, cmd *cli.Command) error {
+							setupLogging(cmd.String("log"))
+
+							// Load tree
+							items, err := loadTree(cmd)
+							if err != nil {
+								return err
+							}
+
+							// Find the root item
+							var rootItem *workflowy.Item
+							itemID := cmd.String("item-id")
+							if itemID == "None" && len(items) > 0 {
+								// Create a virtual root containing all top-level items
+								rootItem = &workflowy.Item{
+									ID:       "root",
+									Name:     "Root",
+									Children: items,
+								}
+							} else {
+								rootItem = findItemByID(items, itemID)
+								if rootItem == nil {
+									return fmt.Errorf("item with ID %s not found", itemID)
+								}
+							}
+
+							// Count descendants
+							threshold := cmd.Float64("threshold")
+							slog.Info("counting descendants", "threshold", threshold)
+							descendants := workflowy.CountDescendants(rootItem, threshold)
+
+							// Output results
+							format := cmd.String("format")
+							if format == "json" {
+								printJSON(descendants)
+							} else {
+								// Markdown format
+								fmt.Printf("# Descendant Count Report\n\n")
+								fmt.Printf("Root: %s\n", rootItem.Name)
+								fmt.Printf("Threshold: %.2f%%\n", threshold*100)
+								fmt.Printf("Total descendants: %d\n\n", descendants.Count)
+								printCountTree(descendants, 0)
+							}
+
+							return nil
+						},
+					},
+					{
+						Name:  "children",
+						Usage: "Rank nodes by immediate children count",
+						Flags: []cli.Flag{
+							&cli.StringFlag{
+								Name:  "use-backup-file",
+								Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
+							},
+							&cli.StringFlag{
+								Name:  "item-id",
+								Value: "None",
+								Usage: "Item ID to start from (default: root)",
+							},
+							&cli.Float64Flag{
+								Name:  "threshold",
+								Value: 0.01,
+								Usage: "Minimum ratio threshold for filtering (0.0 to 1.0)",
+							},
+							&cli.IntFlag{
+								Name:  "top-n",
+								Value: 20,
+								Usage: "Number of top results to show (0 for all)",
+							},
+						},
+						Action: func(ctx context.Context, cmd *cli.Command) error {
+							setupLogging(cmd.String("log"))
+
+							descendants, err := loadAndCountDescendants(cmd)
+							if err != nil {
+								return err
+							}
+
+							// Collect nodes with timestamps
+							nodesWithTimestamps := workflowy.CollectNodesWithTimestamps(descendants)
+
+							// Rank by children count
+							topN := cmd.Int("top-n")
+							ranked := workflowy.RankByChildrenCount(nodesWithTimestamps, topN)
+
+							// Output results
+							format := cmd.String("format")
+							if format == "json" {
+								printJSON(ranked)
+							} else {
+								fmt.Printf("# Top Nodes by Children Count\n\n")
+								for i, r := range ranked {
+									fmt.Printf("%d. %s\n", i+1, r.String())
+								}
+							}
+
+							return nil
+						},
+					},
+					{
+						Name:  "created",
+						Usage: "Rank nodes by creation date (oldest first)",
+						Flags: []cli.Flag{
+							&cli.StringFlag{
+								Name:  "use-backup-file",
+								Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
+							},
+							&cli.StringFlag{
+								Name:  "item-id",
+								Value: "None",
+								Usage: "Item ID to start from (default: root)",
+							},
+							&cli.Float64Flag{
+								Name:  "threshold",
+								Value: 0.01,
+								Usage: "Minimum ratio threshold for filtering (0.0 to 1.0)",
+							},
+							&cli.IntFlag{
+								Name:  "top-n",
+								Value: 20,
+								Usage: "Number of top results to show (0 for all)",
+							},
+						},
+						Action: func(ctx context.Context, cmd *cli.Command) error {
+							setupLogging(cmd.String("log"))
+
+							descendants, err := loadAndCountDescendants(cmd)
+							if err != nil {
+								return err
+							}
+
+							// Collect nodes with timestamps
+							nodesWithTimestamps := workflowy.CollectNodesWithTimestamps(descendants)
+
+							// Rank by created date
+							topN := cmd.Int("top-n")
+							ranked := workflowy.RankByCreated(nodesWithTimestamps, topN)
+
+							// Output results
+							format := cmd.String("format")
+							if format == "json" {
+								printJSON(ranked)
+							} else {
+								fmt.Printf("# Oldest Nodes by Creation Date\n\n")
+								for i, r := range ranked {
+									fmt.Printf("%d. %s\n", i+1, r.String())
+								}
+							}
+
+							return nil
+						},
+					},
+					{
+						Name:  "modified",
+						Usage: "Rank nodes by modification date (oldest first)",
+						Flags: []cli.Flag{
+							&cli.StringFlag{
+								Name:  "use-backup-file",
+								Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
+							},
+							&cli.StringFlag{
+								Name:  "item-id",
+								Value: "None",
+								Usage: "Item ID to start from (default: root)",
+							},
+							&cli.Float64Flag{
+								Name:  "threshold",
+								Value: 0.01,
+								Usage: "Minimum ratio threshold for filtering (0.0 to 1.0)",
+							},
+							&cli.IntFlag{
+								Name:  "top-n",
+								Value: 20,
+								Usage: "Number of top results to show (0 for all)",
+							},
+						},
+						Action: func(ctx context.Context, cmd *cli.Command) error {
+							setupLogging(cmd.String("log"))
+
+							descendants, err := loadAndCountDescendants(cmd)
+							if err != nil {
+								return err
+							}
+
+							// Collect nodes with timestamps
+							nodesWithTimestamps := workflowy.CollectNodesWithTimestamps(descendants)
+
+							// Rank by modified date
+							topN := cmd.Int("top-n")
+							ranked := workflowy.RankByModified(nodesWithTimestamps, topN)
+
+							// Output results
+							format := cmd.String("format")
+							if format == "json" {
+								printJSON(ranked)
+							} else {
+								fmt.Printf("# Oldest Nodes by Modification Date\n\n")
+								for i, r := range ranked {
+									fmt.Printf("%d. %s\n", i+1, r.String())
+								}
+							}
+
+							return nil
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -520,5 +751,107 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 		}
 	} else {
 		printJSON(data)
+	}
+}
+
+// loadTree loads the tree from either backup file or API
+func loadTree(cmd *cli.Command) ([]*workflowy.Item, error) {
+	var items []*workflowy.Item
+	var err error
+
+	backupFile := cmd.String("use-backup-file")
+	if backupFile != "" {
+		// Use backup file
+		if backupFile == "true" || backupFile == "1" {
+			// Flag was set without value, use latest
+			slog.Debug("using latest backup file")
+			items, err = workflowy.ReadLatestBackup()
+		} else {
+			// Flag has a specific filename
+			slog.Debug("using backup file", "file", backupFile)
+			items, err = workflowy.ReadBackupFile(backupFile)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("error reading backup file: %w", err)
+		}
+	} else {
+		// Use export API with cache
+		client := createClient(cmd.String("api-key-file"))
+		apiCtx := context.Background()
+
+		slog.Debug("using export API with cache")
+		response, err := client.ExportNodesWithCache(apiCtx, false)
+		if err != nil {
+			return nil, fmt.Errorf("error exporting nodes: %w", err)
+		}
+
+		slog.Debug("reconstructing tree from export data")
+		root := workflowy.BuildTreeFromExport(response.Nodes)
+		items = root.Children
+	}
+
+	return items, nil
+}
+
+// loadAndCountDescendants loads tree and counts descendants
+func loadAndCountDescendants(cmd *cli.Command) (workflowy.Descendants, error) {
+	items, err := loadTree(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find the root item
+	var rootItem *workflowy.Item
+	itemID := cmd.String("item-id")
+	if itemID == "None" && len(items) > 0 {
+		// Create a virtual root containing all top-level items
+		rootItem = &workflowy.Item{
+			ID:       "root",
+			Name:     "Root",
+			Children: items,
+		}
+	} else {
+		rootItem = findItemByID(items, itemID)
+		if rootItem == nil {
+			return nil, fmt.Errorf("item with ID %s not found", itemID)
+		}
+	}
+
+	// Count descendants
+	threshold := cmd.Float64("threshold")
+	slog.Info("counting descendants", "threshold", threshold)
+	return workflowy.CountDescendants(rootItem, threshold), nil
+}
+
+// findItemByID searches for an item by ID in the tree
+func findItemByID(items []*workflowy.Item, id string) *workflowy.Item {
+	for _, item := range items {
+		if item.ID == id {
+			return item
+		}
+		if found := findItemByID(item.Children, id); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// printCountTree prints the descendant count tree in markdown format
+func printCountTree(node workflowy.Descendants, depth int) {
+	indent := strings.Repeat("  ", depth)
+	nodeValue := node.NodeValue()
+
+	// Print current node with counts
+	fmt.Printf("%s- %s (descendants: %d, children: %d, ratio: %.2f%%)\n",
+		indent,
+		(**nodeValue).String(),
+		node.Count,
+		node.ChildrenCount,
+		node.RatioToRoot*100,
+	)
+
+	// Print children
+	for child := range node.Children() {
+		printCountTree(child.Node(), depth+1)
 	}
 }
