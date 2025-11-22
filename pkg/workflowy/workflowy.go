@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -216,6 +218,107 @@ func (wc *WorkflowyClient) ExportNodes(ctx context.Context) (*ExportNodesRespons
 	}
 
 	return &resp, nil
+}
+
+// BackupNode represents a node from a WorkFlowy backup file
+// Backup files use different field names than the API (nm, ch, ct, lm)
+type BackupNode struct {
+	ID         string                 `json:"id"`
+	Name       string                 `json:"nm"`
+	Note       *string                `json:"no,omitempty"`
+	Children   []BackupNode           `json:"ch,omitempty"`
+	CreatedAt  int64                  `json:"ct,omitempty"`
+	ModifiedAt int64                  `json:"lm,omitempty"`
+	Completed  *int64                 `json:"cp,omitempty"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// BackupNodeToItem converts a BackupNode to an Item recursively
+func BackupNodeToItem(node BackupNode) *Item {
+	item := &Item{
+		ID:         node.ID,
+		Name:       node.Name,
+		Note:       node.Note,
+		Priority:   0, // Backup files don't have priority, use position in children array
+		Data:       node.Metadata,
+		CreatedAt:  node.CreatedAt,
+		ModifiedAt: node.ModifiedAt,
+		Children:   make([]*Item, len(node.Children)),
+	}
+
+	if node.Completed != nil {
+		item.CompletedAt = node.Completed
+	}
+
+	// Recursively convert children
+	for i, child := range node.Children {
+		item.Children[i] = BackupNodeToItem(child)
+	}
+
+	return item
+}
+
+// ReadBackupFile reads and parses a WorkFlowy backup file
+func ReadBackupFile(filename string) ([]*Item, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("error opening backup file: %w", err)
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("error reading backup file: %w", err)
+	}
+
+	var backupNodes []BackupNode
+	if err := json.Unmarshal(data, &backupNodes); err != nil {
+		return nil, fmt.Errorf("error parsing backup file: %w", err)
+	}
+
+	// Convert backup nodes to Items
+	items := make([]*Item, len(backupNodes))
+	for i, node := range backupNodes {
+		items[i] = BackupNodeToItem(node)
+	}
+
+	return items, nil
+}
+
+// ReadLatestBackup reads the most recent backup file from Dropbox folder
+func ReadLatestBackup() ([]*Item, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("could not get home directory: %w", err)
+	}
+
+	dropboxPath := filepath.Join(homeDir, "Dropbox", "Apps", "Workflowy", "Data")
+
+	files, err := filepath.Glob(filepath.Join(dropboxPath, "*.workflowy.backup"))
+	if err != nil {
+		return nil, fmt.Errorf("error searching for backup files: %w", err)
+	}
+
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no backup files found in %s", dropboxPath)
+	}
+
+	// Find the most recent file
+	var latest string
+	var latestTime int64
+	for _, file := range files {
+		info, err := os.Stat(file)
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Unix() > latestTime {
+			latestTime = info.ModTime().Unix()
+			latest = file
+		}
+	}
+
+	slog.Info("reading latest backup file", "file", filepath.Base(latest))
+	return ReadBackupFile(latest)
 }
 
 // ExportNodeToItem converts an ExportNode to an Item

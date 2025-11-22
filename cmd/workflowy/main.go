@@ -325,6 +325,72 @@ func main() {
 					return nil
 				},
 			},
+			{
+				Name:  "tree",
+				Usage: "Display entire WorkFlowy tree from backup file or export API",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "use-backup-file",
+						Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					setupLogging(cmd.String("log"))
+
+					format := cmd.String("format")
+					if format != "json" && format != "md" && format != "markdown" {
+						return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
+					}
+
+					var items []*workflowy.Item
+					var err error
+
+					backupFile := cmd.String("use-backup-file")
+					if backupFile != "" {
+						// Use backup file
+						if backupFile == "true" || backupFile == "1" {
+							// Flag was set without value, use latest
+							slog.Debug("using latest backup file")
+							items, err = workflowy.ReadLatestBackup()
+						} else {
+							// Flag has a specific filename
+							slog.Debug("using backup file", "file", backupFile)
+							items, err = workflowy.ReadBackupFile(backupFile)
+						}
+						if err != nil {
+							return fmt.Errorf("error reading backup file: %w", err)
+						}
+					} else {
+						// Use export API with cache
+						client := createClient(cmd.String("api-key-file"))
+						apiCtx := context.Background()
+
+						slog.Debug("using export API with cache")
+						response, err := client.ExportNodesWithCache(apiCtx, false)
+						if err != nil {
+							return fmt.Errorf("error exporting nodes: %w", err)
+						}
+
+						slog.Debug("reconstructing tree from export data")
+						root := workflowy.BuildTreeFromExport(response.Nodes)
+						items = root.Children
+					}
+
+					slog.Info("tree loaded", "top_level_count", len(items))
+
+					// Output the tree
+					if format == "json" {
+						printJSON(items)
+					} else {
+						// For markdown, output as nested tree
+						for _, child := range items {
+							fmt.Print(itemToMarkdown(child, 0))
+						}
+					}
+
+					return nil
+				},
+			},
 		},
 	}
 
