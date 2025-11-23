@@ -1,17 +1,17 @@
-# WorkFlowy CLI
+# Workflowy CLI
 
-A command-line interface for interacting with WorkFlowy, including powerful analytics and reporting features.
+A command-line interface for interacting with Workflowy, including powerful analytics and reporting features.
 
 ## Features
 
-- **Tree Operations**: List, get, and navigate your WorkFlowy tree structure
-- **Markdown Export**: Convert WorkFlowy items to markdown format
+- **Tree Operations**: List, get, and navigate your Workflowy tree structure
+- **Markdown Export**: Convert Workflowy items to markdown format
 - **Analytics Reports**:
   - Descendant count reports with threshold filtering
   - Rank nodes by immediate children count
   - Find oldest nodes by creation date
   - Find oldest nodes by modification date
-- **Report Upload**: Upload analytics reports directly back to WorkFlowy
+- **Report Upload**: Upload analytics reports directly back to Workflowy
 - **Backup Support**: Work with local backup files for faster operations
 
 ## Installation
@@ -44,6 +44,16 @@ chmod 600 ~/.workflowy/api.key
 ```
 
 ## Usage
+
+### Quick Start
+
+Generate the descedant count report, copy it to your clipboard
+
+```bash
+workflowy report count | pbcopy
+```
+
+Then simply paste to in Workflowy.
 
 ### Basic Commands
 
@@ -93,7 +103,7 @@ workflowy report count
 # With custom threshold (show nodes with >5% of total descendants)
 workflowy report count --threshold 0.05
 
-# Upload report to WorkFlowy
+# Upload report to Workflowy
 workflowy report count --upload
 
 # Upload to specific parent node
@@ -111,7 +121,7 @@ workflowy report children
 # Top 10 nodes
 workflowy report children --top-n 10
 
-# Upload to WorkFlowy
+# Upload to Workflowy
 workflowy report children --upload
 ```
 
@@ -126,7 +136,7 @@ workflowy report created --top-n 20
 # By modification date
 workflowy report modified --top-n 20
 
-# Upload to WorkFlowy
+# Upload to Workflowy
 workflowy report created --upload
 workflowy report modified --upload
 ```
@@ -135,7 +145,7 @@ workflowy report modified --upload
 
 All report commands support these upload flags:
 
-- `--upload`: Upload report to WorkFlowy instead of printing
+- `--upload`: Upload report to Workflowy instead of printing
 - `--parent-id <id>`: Parent node ID for uploaded report (default: root)
 - `--position <top|bottom>`: Position in parent node
 
@@ -192,7 +202,7 @@ workflowy markdown <project-id> --output my-project.md
 
 ## API Reference
 
-This tool uses the WorkFlowy API. For more information:
+This tool uses the Workflowy API. For more information:
 
 - API Documentation: https://workflowy.com/api-reference/
 - Community Discussion: https://community.workflowy.com/t/ruxdimentary-api-try-using-it-and-tell-me-what-you-think/185
@@ -218,7 +228,7 @@ go test ./...
 .
 ├── cmd/workflowy/       # Main CLI application
 ├── pkg/
-│   ├── workflowy/       # Core WorkFlowy API client
+│   ├── workflowy/       # Core Workflowy API client
 │   ├── reports/         # Report generation and upload
 │   └── formatter/       # Output formatting
 └── README.md
