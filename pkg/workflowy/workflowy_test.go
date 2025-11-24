@@ -26,7 +26,7 @@ func TestWorkflowyClient_GetItem(t *testing.T) {
 			name:   "successful get item",
 			itemID: "test-item-123",
 			serverResponse: GetItemResponse{
-				Item: Item{
+				Node: Item{
 					ID:          "test-item-123",
 					Name:        "Test Item",
 					Note:        stringPtr("This is a test note"),
@@ -56,7 +56,7 @@ func TestWorkflowyClient_GetItem(t *testing.T) {
 			name:   "item with children",
 			itemID: "parent-item",
 			serverResponse: GetItemResponse{
-				Item: Item{
+				Node: Item{
 					ID:       "parent-item",
 					Name:     "Parent Item",
 					Priority: 0,
@@ -98,7 +98,7 @@ func TestWorkflowyClient_GetItem(t *testing.T) {
 			name:   "real API response format",
 			itemID: "d6ef2ccc-8853-ede1-d6c8-f03667f91df9",
 			serverResponse: GetItemResponse{
-				Item: Item{
+				Node: Item{
 					ID:          "d6ef2ccc-8853-ede1-d6c8-f03667f91df9",
 					Name:        "synthesize",
 					Note:        nil,
@@ -147,16 +147,10 @@ func TestWorkflowyClient_GetItem(t *testing.T) {
 			// Create test server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Verify request method and path
-				assert.Equal(t, "POST", r.Method)
-				assert.Equal(t, "/get-item/", r.URL.Path)
+				assert.Equal(t, "GET", r.Method)
+				expectedPath := "/nodes/" + tt.itemID
+				assert.Equal(t, expectedPath, r.URL.Path)
 				assert.Equal(t, "application/json", r.Header.Get("Accept"))
-				assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
-
-				// Verify request body
-				var req GetItemRequest
-				err := json.NewDecoder(r.Body).Decode(&req)
-				require.NoError(t, err)
-				assert.Equal(t, tt.itemID, req.ItemID)
 
 				// Send response
 				w.Header().Set("Content-Type", "application/json")
@@ -192,7 +186,9 @@ func TestWorkflowyClient_GetItem_ContextCancellation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(Item{ID: "test", Name: "Test"})
+		json.NewEncoder(w).Encode(GetItemResponse{
+			Node: Item{ID: "test", Name: "Test"},
+		})
 	}))
 	defer server.Close()
 
@@ -233,15 +229,17 @@ func TestWorkflowyClient_GetItem_InvalidJSON(t *testing.T) {
 func TestWorkflowyClient_ListChildrenRecursiveWithDepth(t *testing.T) {
 	// Create a test server that simulates a deep hierarchy
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req ListChildrenRequest
-		err := json.NewDecoder(r.Body).Decode(&req)
-		require.NoError(t, err)
+		// Verify it's a GET request
+		assert.Equal(t, "GET", r.Method)
+
+		// Extract parent_id from query string
+		parentID := r.URL.Query().Get("parent_id")
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 
 		// Simulate a 4-level deep hierarchy: root -> level1 -> level2 -> level3 -> level4
-		switch req.ItemID {
+		switch parentID {
 		case "root":
 			json.NewEncoder(w).Encode(ListChildrenResponse{
 				Items: []*Item{

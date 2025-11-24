@@ -1,25 +1,41 @@
 # Workflowy CLI
 
-A command-line interface for interacting with Workflowy, including powerful analytics and reporting features.
+## Table of Contents
+
+- [Workflowy CLI](#workflowy-cli)
+- [Features](#features)
+- [Installation](#installation)
+  - [Via Homebrew](#via-homebrew)
+  - [From Source](#from-source)
+- [Setup](#setup)
+  - [Get Your API Key](#get-your-api-key)
+- [Usage](#usage)
+
+
+A command-line interface for interacting with Workflowy, including fetching, updating and
+creating nodes, usage reports and markdown generation.
 
 ## Features
 
-- **Tree Operations**: List, get, and navigate your Workflowy tree structure
-- **Markdown Export**: Convert Workflowy items to markdown format
-- **Analytics Reports**:
-  - Descendant count reports with threshold filtering
+- **Node Operations**: Get, List, Post, Update, and Tree to operate on nodes.
+- **Usage Reports**: Understand where the majority of your nodes are stored, which nodes have many children or which ones are possibly stale:
+  - Descendant count reports with threshold filtering.
   - Rank nodes by immediate children count
   - Find oldest nodes by creation date
   - Find oldest nodes by modification date
-- **Report Upload**: Upload analytics reports directly back to Workflowy
-- **Backup Support**: Work with local backup files for faster operations
+- **Report Upload**: Upload usage reports using the API or paste
+  the markdown output into Workflowy
+- **Markdown Export**: Convert a tree of nodes to a markdown document, useful for
+- **Backup File Support**: Operates on a local backup files for faster operations
+- **Local Caching**: Caches
+
 
 ## Installation
 
 ### Via Homebrew
 
 ```bash
-brew install mholzen/workflowy/workflowy
+brew install mholzen/workflowy/workflowy-cli
 ```
 
 ### From Source
@@ -80,6 +96,31 @@ workflowy get <item-id>
 workflowy get <item-id> --depth 2
 ```
 
+#### Get Entire Tree
+
+```bash
+# Get everything (single efficient API call)
+workflowy tree
+
+# Use backup file for fastest access
+workflowy tree --use-backup-file
+```
+
+**Note**: `tree` uses the export API to fetch everything in one call. `get` with high depth makes multiple API calls and is better for specific subtrees.
+
+#### Update a Node
+
+```bash
+# Update node content
+workflowy update <item-id> "new content"
+
+# Update note only
+workflowy update <item-id> --note "my note"
+
+# Update multiple fields
+workflowy update <item-id> --name "new title" --note "new note"
+```
+
 #### Convert to Markdown
 
 ```bash
@@ -90,11 +131,11 @@ workflowy markdown <item-id>
 workflowy markdown <item-id> --output report.md
 ```
 
-### Analytics Reports
+### Usage Reports
 
 #### Descendant Count Report
 
-Analyze which nodes have the most descendants:
+Rank nodes by the number of total descendant nodes:
 
 ```bash
 # Generate descendant count report
@@ -102,12 +143,6 @@ workflowy report count
 
 # With custom threshold (show nodes with >5% of total descendants)
 workflowy report count --threshold 0.05
-
-# Upload report to Workflowy
-workflowy report count --upload
-
-# Upload to specific parent node
-workflowy report count --upload --parent-id <node-id>
 ```
 
 #### Rank by Children Count
@@ -120,9 +155,6 @@ workflowy report children
 
 # Top 10 nodes
 workflowy report children --top-n 10
-
-# Upload to Workflowy
-workflowy report children --upload
 ```
 
 #### Find Oldest Nodes
@@ -135,10 +167,6 @@ workflowy report created --top-n 20
 
 # By modification date
 workflowy report modified --top-n 20
-
-# Upload to Workflowy
-workflowy report created --upload
-workflowy report modified --upload
 ```
 
 ### Upload Options
@@ -147,11 +175,11 @@ All report commands support these upload flags:
 
 - `--upload`: Upload report to Workflowy instead of printing
 - `--parent-id <id>`: Parent node ID for uploaded report (default: root)
-- `--position <top|bottom>`: Position in parent node
+- `--position <top|bottom>`: Position in parent node (default: top)
 
 Example:
 ```bash
-workflowy report count --upload --parent-id abc123 --position top
+workflowy report count --upload --parent-id xxx-yyy-zzz --position top
 ```
 
 ### Global Options
@@ -174,6 +202,9 @@ workflowy report count --use-backup-file
 # Specify a specific backup file
 workflowy list --use-backup-file=/path/to/backup.json
 ```
+
+The default location for the backup file is the most recent file
+`~/Dropbox/Apps/Workflowy/Data` that follows the `*.workflowy.backup` pattern.
 
 The CLI caches export data in `~/.workflowy/export-cache.json` for improved performance.
 
@@ -205,7 +236,6 @@ workflowy markdown <project-id> --output my-project.md
 This tool uses the Workflowy API. For more information:
 
 - API Documentation: https://workflowy.com/api-reference/
-- Community Discussion: https://community.workflowy.com/t/ruxdimentary-api-try-using-it-and-tell-me-what-you-think/185
 - Get API Key: https://workflowy.com/api-key/
 
 ## Development

@@ -86,6 +86,18 @@ type CreateNodeResponse struct {
 	ItemID string `json:"item_id"`
 }
 
+// UpdateNodeRequest represents the request body for nodes-update API
+type UpdateNodeRequest struct {
+	Name       *string `json:"name,omitempty"`
+	Note       *string `json:"note,omitempty"`
+	LayoutMode *string `json:"layoutMode,omitempty"`
+}
+
+// UpdateNodeResponse represents the response from nodes-update API
+type UpdateNodeResponse struct {
+	Status string `json:"status"`
+}
+
 // GetItemResponse represents the response from GET /nodes/:id
 type GetItemResponse struct {
 	Node Item `json:"node"`
@@ -186,6 +198,18 @@ func (wc *WorkflowyClient) fetchChildrenRecursively(ctx context.Context, item *I
 func (wc *WorkflowyClient) CreateNode(ctx context.Context, req *CreateNodeRequest) (*CreateNodeResponse, error) {
 	var resp CreateNodeResponse
 	err := wc.Do(ctx, "POST", "/nodes", req, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
+// UpdateNode updates an existing node in Workflowy
+func (wc *WorkflowyClient) UpdateNode(ctx context.Context, itemID string, req *UpdateNodeRequest) (*UpdateNodeResponse, error) {
+	var resp UpdateNodeResponse
+	path := fmt.Sprintf("/nodes/%s", itemID)
+	err := wc.Do(ctx, "POST", path, req, &resp)
 	if err != nil {
 		return nil, err
 	}

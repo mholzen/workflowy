@@ -280,6 +280,91 @@ func main() {
 				},
 			},
 			{
+				Name:  "update",
+				Usage: "Update an existing node",
+				Arguments: []cli.Argument{
+					&cli.StringArg{
+						Name:      "item_id",
+						UsageText: "WorkFlowy item ID to update",
+					},
+					&cli.StringArg{
+						Name:      "content",
+						UsageText: "New content for the node (or use flags for specific fields)",
+					},
+				},
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "name",
+						Usage: "Update node name/title",
+					},
+					&cli.StringFlag{
+						Name:  "note",
+						Usage: "Update note content",
+					},
+					&cli.StringFlag{
+						Name:  "layout-mode",
+						Usage: "Update display mode: bullets, todo, h1, h2, h3",
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					setupLogging(cmd.String("log"))
+
+					format := cmd.String("format")
+					if format != "json" && format != "md" && format != "markdown" {
+						return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
+					}
+
+					itemID := cmd.StringArg("item_id")
+					if itemID == "" {
+						return fmt.Errorf("item_id is required")
+					}
+
+					content := cmd.StringArg("content")
+					nameFlag := cmd.String("name")
+					noteFlag := cmd.String("note")
+					layoutMode := cmd.String("layout-mode")
+
+					// Build request - if content argument is provided, use it as name
+					// Otherwise, use flags
+					req := &workflowy.UpdateNodeRequest{}
+
+					if content != "" && nameFlag != "" {
+						return fmt.Errorf("cannot specify both content argument and --name flag")
+					}
+
+					if content != "" {
+						req.Name = &content
+					} else if nameFlag != "" {
+						req.Name = &nameFlag
+					}
+
+					if noteFlag != "" {
+						req.Note = &noteFlag
+					}
+
+					if layoutMode != "" {
+						req.LayoutMode = &layoutMode
+					}
+
+					// Ensure at least one field is being updated
+					if req.Name == nil && req.Note == nil && req.LayoutMode == nil {
+						return fmt.Errorf("must specify at least one field to update (content, --name, --note, or --layout-mode)")
+					}
+
+					client := createClient(cmd.String("api-key-file"))
+					apiCtx := context.Background()
+
+					slog.Debug("updating node", "item_id", itemID)
+					response, err := client.UpdateNode(apiCtx, itemID, req)
+					if err != nil {
+						return fmt.Errorf("error updating node: %w", err)
+					}
+
+					printOutput(response, format, cmd.Bool("include-empty-names"))
+					return nil
+				},
+			},
+			{
 				Name:  "export",
 				Usage: "Export all nodes from WorkFlowy",
 				Flags: []cli.Flag{
