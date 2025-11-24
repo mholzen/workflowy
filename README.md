@@ -2,7 +2,6 @@
 
 ## Table of Contents
 
-- [Workflowy CLI](#workflowy-cli)
 - [Features](#features)
 - [Installation](#installation)
   - [Via Homebrew](#via-homebrew)
@@ -10,6 +9,13 @@
 - [Setup](#setup)
   - [Get Your API Key](#get-your-api-key)
 - [Usage](#usage)
+  - [Read from Backup](#read-from-backup)
+  - [Export and Report Commands](#export-and-report-commands)
+  - [Advanced: Uploading Reports](#advanced-uploading-reports)
+- [Backup vs Export](#backup-vs-export)
+- [Caching](#caching)
+- [Rate Limiting](#rate-limiting)
+- [Error and Status Reporting](#error-and-status-reporting)
 
 
 A command-line interface for interacting with Workflowy, including fetching, updating and
@@ -25,7 +31,7 @@ creating nodes, usage reports and markdown generation.
   - Find oldest nodes by modification date
 - **Report Upload**: Upload usage reports using the API or paste
   the markdown output into Workflowy
-- **Markdown Export**: Convert a tree of nodes to a markdown document, useful for
+- **Markdown Export**: Convert a tree of nodes to a Markdown document
 - **Backup File Support**: Operates on a local backup files for faster operations
 - **Local Caching**: Caches
 
@@ -69,7 +75,20 @@ Generate the descedant count report, copy it to your clipboard
 workflowy report count | pbcopy
 ```
 
-Then simply paste to in Workflowy.
+Then simply paste to in Workflowy.  It will produce a report like this:
+
+```
+# Descendant Count Report
+
+Root: Root
+Threshold: 1.00%
+Total descendants: 34437
+
+- [Root](https://workflowy.com/#/root) (descendants: 34437, children: 8, ratio: 100.00%)
+  - [projects](https://workflowy.com/#/xxx) (descendants: 31532, children: 3, ratio: 91.56%)
+    - [project A](https://workflowy.com/#/yyy) (descendants: 31314, children: 4, ratio: 90.93%)
+      - [phase 1](https://workflowy.com/#/zzz) (descendants: 26951, children: 3, ratio: 78.26%)
+```
 
 ### Basic Commands
 

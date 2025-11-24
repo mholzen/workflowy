@@ -18,6 +18,13 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+// Version information, set by goreleaser at build time
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -58,6 +65,16 @@ func main() {
 			},
 		},
 		Commands: []*cli.Command{
+			{
+				Name:  "version",
+				Usage: "Show version information",
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					fmt.Printf("workflowy version %s\n", version)
+					fmt.Printf("commit: %s\n", commit)
+					fmt.Printf("built: %s\n", date)
+					return nil
+				},
+			},
 			{
 				Name:  "get",
 				Usage: "Get item with optional recursive children (root if omitted)",

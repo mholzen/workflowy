@@ -4,6 +4,14 @@ build:
 test:
 	go test ./...
 
+# Test release build locally without publishing
+release-test:
+	goreleaser release --snapshot --clean
+
+# Create and publish release (requires git tag)
+release:
+	goreleaser release --clean
+
 get item_id:
 	go run cmd/workflowy/main.go {{item_id}}
 
