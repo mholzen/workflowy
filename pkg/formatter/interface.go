@@ -17,7 +17,7 @@ const (
 	LayoutTodo    LayoutMode = "todo"
 )
 
-// Formatter defines the interface for converting WorkFlowy items to markdown
+// Formatter defines the interface for converting Workflowy items to markdown
 type Formatter interface {
 	// FormatTree converts entire tree to markdown
 	FormatTree(items []*workflowy.Item) (string, error)
@@ -45,9 +45,9 @@ type Config struct {
 	H6Uppercase bool
 
 	// Paragraph rules
-	ParagraphCapitalize      bool
-	ParagraphPunctuate       bool
-	JoinBulletsAsParagraphs  bool // Join consecutive bullets as paragraphs until empty bullet
+	ParagraphCapitalize     bool
+	ParagraphPunctuate      bool
+	JoinBulletsAsParagraphs bool // Join consecutive bullets as paragraphs until empty bullet
 
 	// Punctuation rules
 	AddColonBeforeLists bool // Add colon at end of paragraph node with bullet children

@@ -34,7 +34,7 @@ func main() {
 
 	cmd := &cli.Command{
 		Name:  "workflowy",
-		Usage: "Interact with WorkFlowy API",
+		Usage: "Interact with Workflowy API",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "format",
@@ -82,7 +82,7 @@ func main() {
 					&cli.StringArg{
 						Name:      "item_id",
 						Value:     "None",
-						UsageText: "WorkFlowy item ID (default: root)",
+						UsageText: "Workflowy item ID (default: root)",
 					},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -141,7 +141,7 @@ func main() {
 					&cli.StringArg{
 						Name:      "item_id",
 						Value:     "None",
-						UsageText: "WorkFlowy item ID (default: root)",
+						UsageText: "Workflowy item ID (default: root)",
 					},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -302,7 +302,7 @@ func main() {
 				Arguments: []cli.Argument{
 					&cli.StringArg{
 						Name:      "item_id",
-						UsageText: "WorkFlowy item ID to update",
+						UsageText: "Workflowy item ID to update",
 					},
 					&cli.StringArg{
 						Name:      "content",
@@ -383,7 +383,7 @@ func main() {
 			},
 			{
 				Name:  "export",
-				Usage: "Export all nodes from WorkFlowy",
+				Usage: "Export all nodes from Workflowy",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:  "force-refresh",
@@ -431,7 +431,7 @@ func main() {
 			},
 			{
 				Name:  "tree",
-				Usage: "Display entire WorkFlowy tree from backup file or export API",
+				Usage: "Display entire Workflowy tree from backup file or export API",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:  "use-backup-file",
@@ -497,7 +497,7 @@ func main() {
 			},
 			{
 				Name:  "report",
-				Usage: "Generate reports from WorkFlowy data",
+				Usage: "Generate reports from Workflowy data",
 				Commands: []*cli.Command{
 					{
 						Name:  "count",
@@ -519,7 +519,7 @@ func main() {
 							},
 							&cli.BoolFlag{
 								Name:  "upload",
-								Usage: "Upload report to WorkFlowy instead of printing",
+								Usage: "Upload report to Workflowy instead of printing",
 							},
 							&cli.StringFlag{
 								Name:  "parent-id",
@@ -790,12 +790,12 @@ func main() {
 			},
 			{
 				Name:  "markdown",
-				Usage: "Convert WorkFlowy item to markdown",
+				Usage: "Convert Workflowy item to markdown",
 				Arguments: []cli.Argument{
 					&cli.StringArg{
 						Name:      "item_id",
 						Value:     "None",
-						UsageText: "WorkFlowy item ID (default: root)",
+						UsageText: "Workflowy item ID (default: root)",
 					},
 				},
 				Flags: []cli.Flag{
@@ -995,7 +995,7 @@ func uploadFlags() []cli.Flag {
 	return []cli.Flag{
 		&cli.BoolFlag{
 			Name:  "upload",
-			Usage: "Upload report to WorkFlowy instead of printing",
+			Usage: "Upload report to Workflowy instead of printing",
 		},
 		&cli.StringFlag{
 			Name:  "parent-id",
@@ -1121,12 +1121,11 @@ func printCountTree(node workflowy.Descendants, depth int) {
 	nodeValue := node.NodeValue()
 
 	// Print current node with counts
-	fmt.Printf("%s- %s (descendants: %d, children: %d, ratio: %.2f%%)\n",
+	fmt.Printf("%s- %s (%.1f%%, %d descendants)\n",
 		indent,
 		(**nodeValue).String(),
-		node.Count,
-		node.ChildrenCount,
 		node.RatioToRoot*100,
+		node.Count,
 	)
 
 	// Print children

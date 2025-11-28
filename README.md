@@ -84,10 +84,10 @@ Root: Root
 Threshold: 1.00%
 Total descendants: 34437
 
-- [Root](https://workflowy.com/#/root) (descendants: 34437, children: 8, ratio: 100.00%)
-  - [projects](https://workflowy.com/#/xxx) (descendants: 31532, children: 3, ratio: 91.56%)
-    - [project A](https://workflowy.com/#/yyy) (descendants: 31314, children: 4, ratio: 90.93%)
-      - [phase 1](https://workflowy.com/#/zzz) (descendants: 26951, children: 3, ratio: 78.26%)
+- [Root](https://workflowy.com/#/root) (100.0%, 34437 descendants)
+  - [projects](https://workflowy.com/#/xxx) (91.6%, 31532 descendants)
+    - [project A](https://workflowy.com/#/yyy) (90.9%, 31314 descendants)
+      - [phase 1](https://workflowy.com/#/zzz) (78.3%, 26951 descendants)
 ```
 
 ### Basic Commands

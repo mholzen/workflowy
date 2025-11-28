@@ -14,7 +14,7 @@ type UploadOptions struct {
 	Position string // "top" or "bottom" (optional)
 }
 
-// UploadReport uploads a report to WorkFlowy
+// UploadReport uploads a report to Workflowy
 func UploadReport(ctx context.Context, client *workflowy.WorkflowyClient, report ReportOutput, opts UploadOptions) (string, error) {
 	// Convert report to nodes
 	slog.Info("converting report to nodes", "title", report.Title())
@@ -39,7 +39,7 @@ func UploadReport(ctx context.Context, client *workflowy.WorkflowyClient, report
 	return nodeID, nil
 }
 
-// uploadTree recursively uploads a tree of items to WorkFlowy
+// uploadTree recursively uploads a tree of items to Workflowy
 func uploadTree(ctx context.Context, client *workflowy.WorkflowyClient, item *workflowy.Item, parentID string, position string) (string, error) {
 	// Create the current node
 	req := &workflowy.CreateNodeRequest{

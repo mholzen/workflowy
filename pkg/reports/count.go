@@ -19,7 +19,7 @@ func (c *CountReportOutput) Title() string {
 		c.Threshold*100, GenerateTimestamp())
 }
 
-// ToNodes converts the count report to a tree of WorkFlowy items
+// ToNodes converts the count report to a tree of Workflowy items
 func (c *CountReportOutput) ToNodes() (*workflowy.Item, error) {
 	// Create root report node
 	reportRoot := &workflowy.Item{
@@ -30,16 +30,15 @@ func (c *CountReportOutput) ToNodes() (*workflowy.Item, error) {
 	return reportRoot, nil
 }
 
-// convertDescendantNode recursively converts a descendant count node to a WorkFlowy item
+// convertDescendantNode recursively converts a descendant count node to a Workflowy item
 func convertDescendantNode(node workflowy.Descendants) *workflowy.Item {
 	nodeValue := node.NodeValue()
 
 	// Format the name with statistics
-	name := fmt.Sprintf("%s (descendants: %d, children: %d, ratio: %.2f%%)",
+	name := fmt.Sprintf("%s (%.1f%%, %d descendants)",
 		(*nodeValue).Name(),
-		node.Count,
-		node.ChildrenCount,
 		node.RatioToRoot*100,
+		node.Count,
 	)
 
 	// Create the item

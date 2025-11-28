@@ -57,7 +57,7 @@ brews:
       token: "{{ .Env.GITHUB_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/mholzen/workflowy"
-    description: "CLI for WorkFlowy with analytics and reporting"
+    description: "CLI for Workflowy with analytics and reporting"
     license: "MIT"
     test: |
       system "#{bin}/workflowy version"

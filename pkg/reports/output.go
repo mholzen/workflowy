@@ -6,9 +6,9 @@ import (
 	"github.com/mholzen/workflowy/pkg/workflowy"
 )
 
-// ReportOutput represents a report that can be converted to WorkFlowy nodes
+// ReportOutput represents a report that can be converted to Workflowy nodes
 type ReportOutput interface {
-	// ToNodes converts the report to a tree of WorkFlowy items
+	// ToNodes converts the report to a tree of Workflowy items
 	ToNodes() (*workflowy.Item, error)
 
 	// Title returns the report title

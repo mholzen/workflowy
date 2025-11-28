@@ -247,7 +247,7 @@ func (wc *WorkflowyClient) ExportNodes(ctx context.Context) (*ExportNodesRespons
 	return &resp, nil
 }
 
-// BackupNode represents a node from a WorkFlowy backup file
+// BackupNode represents a node from a Workflowy backup file
 // Backup files use different field names than the API (nm, ch, ct, lm)
 type BackupNode struct {
 	ID         string                 `json:"id"`
@@ -285,7 +285,7 @@ func BackupNodeToItem(node BackupNode) *Item {
 	return item
 }
 
-// ReadBackupFile reads and parses a WorkFlowy backup file
+// ReadBackupFile reads and parses a Workflowy backup file
 func ReadBackupFile(filename string) ([]*Item, error) {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -533,7 +533,7 @@ func (n *ItemNode) String() string {
 	return fmt.Sprintf("[%s](%s)", n.item.Name, url)
 }
 
-// ExternalURL returns the external WorkFlowy URL for this item
+// ExternalURL returns the external Workflowy URL for this item
 func (n *ItemNode) ExternalURL() string {
 	if n.item.ID == "" {
 		return ""
@@ -541,7 +541,7 @@ func (n *ItemNode) ExternalURL() string {
 	return fmt.Sprintf("https://workflowy.com/#/%s", n.item.ID)
 }
 
-// InternalURL returns the internal WorkFlowy URL for this item
+// InternalURL returns the internal Workflowy URL for this item
 func (n *ItemNode) InternalURL() string {
 	if n.item.ID == "" {
 		return ""

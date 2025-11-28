@@ -21,7 +21,7 @@ func (r *ChildrenCountReportOutput) Title() string {
 	return fmt.Sprintf("Nodes by Children Count - %s", GenerateTimestamp())
 }
 
-// ToNodes converts the ranking to WorkFlowy items
+// ToNodes converts the ranking to Workflowy items
 func (r *ChildrenCountReportOutput) ToNodes() (*workflowy.Item, error) {
 	children := make([]*workflowy.Item, len(r.Ranked))
 
@@ -59,7 +59,7 @@ func (r *CreatedReportOutput) Title() string {
 	return fmt.Sprintf("Oldest Nodes by Creation Date - %s", GenerateTimestamp())
 }
 
-// ToNodes converts the ranking to WorkFlowy items
+// ToNodes converts the ranking to Workflowy items
 func (r *CreatedReportOutput) ToNodes() (*workflowy.Item, error) {
 	children := make([]*workflowy.Item, len(r.Ranked))
 
@@ -100,7 +100,7 @@ func (r *ModifiedReportOutput) Title() string {
 	return fmt.Sprintf("Oldest Nodes by Modification Date - %s", GenerateTimestamp())
 }
 
-// ToNodes converts the ranking to WorkFlowy items
+// ToNodes converts the ranking to Workflowy items
 func (r *ModifiedReportOutput) ToNodes() (*workflowy.Item, error) {
 	children := make([]*workflowy.Item, len(r.Ranked))
 
