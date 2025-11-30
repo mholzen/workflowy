@@ -1,3 +1,5 @@
+- BUG: list --format=json should merge nodes
+
 - default depth for list should probably be 1
 - document bookmarklet
 - document rate limiting on updating reports

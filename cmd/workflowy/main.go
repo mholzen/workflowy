@@ -49,8 +49,8 @@ Examples:
 			&cli.StringFlag{
 				Name:    "format",
 				Aliases: []string{"f"},
-				Value:   "md",
-				Usage:   "Output format: json, md, or markdown",
+				Value:   "list",
+				Usage:   "Output format: list, json, or markdown",
 			},
 			&cli.StringFlag{
 				Name:  "log",
@@ -687,8 +687,8 @@ func createClient(apiKeyFile string) *workflowy.WorkflowyClient {
 
 // validateFormat validates the output format and returns an error if invalid
 func validateFormat(format string) error {
-	if format != "json" && format != "md" && format != "markdown" {
-		return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
+	if format != "list" && format != "json" && format != "markdown" {
+		return fmt.Errorf("format must be 'list', 'json', or 'markdown'")
 	}
 	return nil
 }
@@ -897,22 +897,22 @@ func sortItemsByPriority(items []*workflowy.Item) {
 	}
 }
 
-func itemToMarkdown(item *workflowy.Item, depth int) string {
+func itemToMarkdownList(item *workflowy.Item, depth int) string {
 	indent := strings.Repeat("  ", depth)
 	result := fmt.Sprintf("%s- %s\n", indent, item.Name)
 
 	for _, child := range item.Children {
-		result += itemToMarkdown(child, depth+1)
+		result += itemToMarkdownList(child, depth+1)
 	}
 
 	return result
 }
 
-func responseToMarkdown(response *workflowy.ListChildrenResponse) string {
+func responseToMarkdownList(response *workflowy.ListChildrenResponse) string {
 	var result strings.Builder
 
 	for _, item := range response.Items {
-		result.WriteString(itemToMarkdown(item, 0))
+		result.WriteString(itemToMarkdownList(item, 0))
 	}
 
 	return result.String()
@@ -958,12 +958,12 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 		// No sorting needed for create response
 	}
 
-	if format == "md" || format == "markdown" {
+	if format == "list" {
 		switch v := data.(type) {
 		case *workflowy.Item:
-			fmt.Print(itemToMarkdown(v, 0))
+			fmt.Print(itemToMarkdownList(v, 0))
 		case *workflowy.ListChildrenResponse:
-			fmt.Print(responseToMarkdown(v))
+			fmt.Print(responseToMarkdownList(v))
 		default:
 			// Fallback to JSON for unknown types
 			printJSON(data)
