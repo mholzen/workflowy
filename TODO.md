@@ -4,12 +4,6 @@
 - document bookmarklet
 - document rate limiting on updating reports
 
-- document that rationale behind generating markdown from nodes without formatting
-  - write a test that creates nodes in various document styles (without layout) and compare their output with expected content:  https://workflowy.com/#/394fe0f16b5f
-    - with correct layoutMode, formatting from layout
-    - with layoutMode as tags, formatting from tags
-    - with no layout and no tags, formatting derived
-
 - consider using markdown to nodes for uploading reports.
 
 - add support for multiple reports, including "all"
