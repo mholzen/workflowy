@@ -24,124 +24,6 @@ var (
 	date    = "unknown"
 )
 
-func getMethodFlags() []cli.Flag {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Error getting home directory: %v", err)
-	}
-	defaultAPIKeyFile := filepath.Join(homeDir, ".workflowy", "api.key")
-
-	return []cli.Flag{
-		&cli.StringFlag{
-			Name:  "method",
-			Usage: "Access method: get, export or backup\n\tDefaults to 'get' for depth 1-3, 'export' for depth 4+, 'backup' if no api key provided",
-		},
-		&cli.StringFlag{
-			Name:  "api-key-file",
-			Value: defaultAPIKeyFile,
-			Usage: "Path to API key file",
-		},
-		&cli.StringFlag{
-			Name:  "backup-file",
-			Usage: "Path to backup file (default: latest in ~/Dropbox/Apps/Workflowy/Data)",
-		},
-		&cli.BoolFlag{
-			Name:  "force-refresh",
-			Usage: "Force refresh from API when using export (bypassing cache)",
-		},
-	}
-}
-
-func getFetchFlags() []cli.Flag {
-	flags := []cli.Flag{
-		&cli.IntFlag{
-			Name:    "depth",
-			Aliases: []string{"d"},
-			Value:   2,
-			Usage:   "Recursion depth for get/list operations (positive integer)",
-		},
-		&cli.BoolFlag{
-			Name:  "all",
-			Usage: "Get/list all descendants (equivalent to --depth=-1)",
-		},
-		&cli.BoolFlag{
-			Name:  "include-empty-names",
-			Value: false,
-			Usage: "Include items with empty names",
-		},
-	}
-	flags = append(flags, getMethodFlags()...)
-	return flags
-}
-
-func getWriteFlags(commandFlags ...cli.Flag) []cli.Flag {
-	flags := []cli.Flag{
-		&cli.StringFlag{
-			Name:  "name",
-			Usage: "Update node name/title",
-		},
-		&cli.StringFlag{
-			Name:  "note",
-			Usage: "Additional note content",
-		},
-		&cli.StringFlag{
-			Name:  "layout-mode",
-			Usage: "Display mode: bullets, todo, h1, h2, h3",
-		},
-	}
-	flags = append(flags, commandFlags...)
-	return flags
-}
-
-func getReportFlags(commandFlags ...cli.Flag) []cli.Flag {
-	flags := make([]cli.Flag, 0)
-	flags = append(flags, getMethodFlags()...)
-	flags = append(flags, commandFlags...)
-
-	// Starting point for all reports
-	flags = append(flags, &cli.StringFlag{
-		Name:  "item-id",
-		Value: "None",
-		Usage: "Item ID to start from (default: root)",
-	})
-
-	// Upload flags
-	flags = append(flags,
-		&cli.BoolFlag{
-			Name:  "upload",
-			Usage: "Upload report to Workflowy instead of printing",
-		},
-		&cli.StringFlag{
-			Name:  "parent-id",
-			Value: "None",
-			Usage: "Parent node ID for uploaded report (default: root)",
-		},
-		&cli.StringFlag{
-			Name:  "position",
-			Usage: "Position in parent: top or bottom",
-		},
-	)
-
-	return flags
-}
-
-func getRankingReportFlags() []cli.Flag {
-	reportFlags := getReportFlags()
-	reportFlags = append(reportFlags,
-		&cli.StringFlag{
-			Name:  "item-id",
-			Value: "None",
-			Usage: "Item ID to start from (default: root)",
-		},
-		&cli.IntFlag{
-			Name:  "top-n",
-			Value: 20,
-			Usage: "Number of top results to show (0 for all)",
-		},
-	)
-	return reportFlags
-}
-
 // Custom help template with DESCRIPTION after COMMANDS
 func main() {
 	cmd := &cli.Command{
@@ -182,75 +64,44 @@ Examples:
 		},
 		Commands: []*cli.Command{
 			{
-				Name:  "get",
-				Usage: "Get item with optional recursive children (root if omitted)",
-				Arguments: []cli.Argument{
-					&cli.StringArg{
-						Name:      "item_id",
-						Value:     "None",
-						UsageText: "Workflowy item ID (default: root)",
-					},
-				},
-				Flags: getFetchFlags(),
+				Name:      "get",
+				Usage:     "Get item with optional recursive children (root if omitted)",
+				Arguments: getFetchArguments,
+				Flags:     getFetchFlags(),
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					format := cmd.String("format")
-					if err := validateFormat(format); err != nil {
-						return err
-					}
-
-					// Handle --all flag
-					depth := cmd.Int("depth")
-					if cmd.Bool("all") {
-						depth = -1
-					}
-
-					itemID := cmd.StringArg("item_id")
-
-					// Fetch items using shared logic
-					result, err := fetchItems(cmd, ctx, itemID, depth)
+					params, err := getAndValidateFetchParams(cmd)
 					if err != nil {
 						return err
 					}
 
-					printOutput(result, format, cmd.Bool("include-empty-names"))
+					result, err := fetchItems(cmd, ctx, params.itemID, params.depth)
+					if err != nil {
+						return err
+					}
+
+					printOutput(result, params.format, cmd.Bool("include-empty-names"))
 					return nil
 				},
 			},
 			{
-				Name:  "list",
-				Usage: "List descendants of an item as flat list (root if omitted)",
-				Arguments: []cli.Argument{
-					&cli.StringArg{
-						Name:      "item_id",
-						Value:     "None",
-						UsageText: "Workflowy item ID (default: root)",
-					},
-				},
-				Flags: getFetchFlags(),
+				Name:      "list",
+				Usage:     "List descendants of an item as flat list (root if omitted)",
+				Arguments: getFetchArguments,
+				Flags:     getFetchFlags(),
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					format := cmd.String("format")
-					if err := validateFormat(format); err != nil {
-						return err
-					}
-
-					// Handle --all flag
-					depth := cmd.Int("depth")
-					if cmd.Bool("all") {
-						depth = -1
-					}
-
-					itemID := cmd.StringArg("item_id")
-
-					// Fetch items using shared logic
-					treeResult, err := fetchItems(cmd, ctx, itemID, depth)
+					params, err := getAndValidateFetchParams(cmd)
 					if err != nil {
 						return err
 					}
 
-					// Convert tree to flat list
+					treeResult, err := fetchItems(cmd, ctx, params.itemID, params.depth)
+					if err != nil {
+						return err
+					}
+
 					flatList := flattenTree(treeResult)
 
-					printOutput(flatList, format, cmd.Bool("include-empty-names"))
+					printOutput(flatList, params.format, cmd.Bool("include-empty-names"))
 					return nil
 				},
 			},
@@ -489,7 +340,7 @@ Examples:
 								Descendants: descendants,
 								Threshold:   threshold,
 							}
-							if err := handleReportUpload(ctx, cmd, report); err != nil {
+							if err := uploadReport(ctx, cmd, report); err != nil {
 								return err
 							}
 							if cmd.Bool("upload") {
@@ -534,7 +385,7 @@ Examples:
 								Ranked: ranked,
 								TopN:   topN,
 							}
-							if err := handleReportUpload(ctx, cmd, report); err != nil {
+							if err := uploadReport(ctx, cmd, report); err != nil {
 								return err
 							}
 							if cmd.Bool("upload") {
@@ -577,7 +428,7 @@ Examples:
 								Ranked: ranked,
 								TopN:   topN,
 							}
-							if err := handleReportUpload(ctx, cmd, report); err != nil {
+							if err := uploadReport(ctx, cmd, report); err != nil {
 								return err
 							}
 							if cmd.Bool("upload") {
@@ -620,7 +471,7 @@ Examples:
 								Ranked: ranked,
 								TopN:   topN,
 							}
-							if err := handleReportUpload(ctx, cmd, report); err != nil {
+							if err := uploadReport(ctx, cmd, report); err != nil {
 								return err
 							}
 							if cmd.Bool("upload") {
@@ -659,6 +510,152 @@ Examples:
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func getMethodFlags() []cli.Flag {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Error getting home directory: %v", err)
+	}
+	defaultAPIKeyFile := filepath.Join(homeDir, ".workflowy", "api.key")
+
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:  "method",
+			Usage: "Access method: get, export or backup\n\tDefaults to 'get' for depth 1-3, 'export' for depth 4+, 'backup' if no api key provided",
+		},
+		&cli.StringFlag{
+			Name:  "api-key-file",
+			Value: defaultAPIKeyFile,
+			Usage: "Path to API key file",
+		},
+		&cli.StringFlag{
+			Name:  "backup-file",
+			Usage: "Path to backup file (default: latest in ~/Dropbox/Apps/Workflowy/Data)",
+		},
+		&cli.BoolFlag{
+			Name:  "force-refresh",
+			Usage: "Force refresh from API when using export (bypassing cache)",
+		},
+	}
+}
+
+func getFetchFlags() []cli.Flag {
+	flags := []cli.Flag{
+		&cli.IntFlag{
+			Name:    "depth",
+			Aliases: []string{"d"},
+			Value:   2,
+			Usage:   "Recursion depth for get/list operations (positive integer)",
+		},
+		&cli.BoolFlag{
+			Name:  "all",
+			Usage: "Get/list all descendants (equivalent to --depth=-1)",
+		},
+		&cli.BoolFlag{
+			Name:  "include-empty-names",
+			Value: false,
+			Usage: "Include items with empty names",
+		},
+	}
+	flags = append(flags, getMethodFlags()...)
+	return flags
+}
+
+func getWriteFlags(commandFlags ...cli.Flag) []cli.Flag {
+	flags := []cli.Flag{
+		&cli.StringFlag{
+			Name:  "name",
+			Usage: "Update node name/title",
+		},
+		&cli.StringFlag{
+			Name:  "note",
+			Usage: "Additional note content",
+		},
+		&cli.StringFlag{
+			Name:  "layout-mode",
+			Usage: "Display mode: bullets, todo, h1, h2, h3",
+		},
+	}
+	flags = append(flags, commandFlags...)
+	return flags
+}
+
+func getReportFlags(commandFlags ...cli.Flag) []cli.Flag {
+	flags := make([]cli.Flag, 0)
+	flags = append(flags, getMethodFlags()...)
+	flags = append(flags, commandFlags...)
+
+	// Starting point for all reports
+	flags = append(flags, &cli.StringFlag{
+		Name:  "item-id",
+		Value: "None",
+		Usage: "Item ID to start from (default: root)",
+	})
+
+	// Upload flags
+	flags = append(flags,
+		&cli.BoolFlag{
+			Name:  "upload",
+			Usage: "Upload report to Workflowy instead of printing",
+		},
+		&cli.StringFlag{
+			Name:  "parent-id",
+			Value: "None",
+			Usage: "Parent node ID for uploaded report (default: root)",
+		},
+		&cli.StringFlag{
+			Name:  "position",
+			Usage: "Position in parent: top or bottom",
+		},
+	)
+
+	return flags
+}
+
+func getRankingReportFlags() []cli.Flag {
+	reportFlags := getReportFlags()
+	reportFlags = append(reportFlags,
+		&cli.StringFlag{
+			Name:  "item-id",
+			Value: "None",
+			Usage: "Item ID to start from (default: root)",
+		},
+		&cli.IntFlag{
+			Name:  "top-n",
+			Value: 20,
+			Usage: "Number of top results to show (0 for all)",
+		},
+	)
+	return reportFlags
+}
+
+var getFetchArguments = []cli.Argument{
+	&cli.StringArg{
+		Name:      "item_id",
+		Value:     "None",
+		UsageText: "Workflowy item ID (default: root)",
+	},
+}
+
+type FetchParameters struct {
+	format string
+	depth  int
+	itemID string
+}
+
+func getAndValidateFetchParams(cmd *cli.Command) (FetchParameters, error) {
+	format := cmd.String("format")
+	if err := validateFormat(format); err != nil {
+		return FetchParameters{}, err
+	}
+
+	depth := cmd.Int("depth")
+	if cmd.Bool("all") {
+		depth = -1
+	}
+	itemID := cmd.StringArg("item_id")
+	return FetchParameters{format: format, depth: depth, itemID: itemID}, nil
 }
 
 func setupLogging(level string) {
@@ -874,6 +871,8 @@ func flattenItem(item *workflowy.Item) []*workflowy.Item {
 		result = append(result, flattenItem(child)...)
 	}
 
+	// Remove children since the output is flattened
+	item.Children = nil
 	return result
 }
 
@@ -974,7 +973,7 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 	}
 }
 
-func handleReportUpload(ctx context.Context, cmd *cli.Command, report reports.ReportOutput) error {
+func uploadReport(ctx context.Context, cmd *cli.Command, report reports.ReportOutput) error {
 	if !cmd.Bool("upload") {
 		return nil // Not uploading
 	}

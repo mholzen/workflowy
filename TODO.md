@@ -1,4 +1,4 @@
-- list currently includes children, remove for consistency
+- default depth for list should probably be 1
 - document bookmarklet
 - document rate limiting on updating reports
 
