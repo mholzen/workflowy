@@ -12,6 +12,7 @@
   - [Basic Commands](#basic-commands)
   - [Usage Reports](#usage-reports)
   - [Global Options](#global-options)
+  - [Command-Specific Options](#command-specific-options)
   - [Access Methods and Configuration](#access-methods-and-configuration)
     - [Data Access Methods](#data-access-methods---method)
     - [Configuration Flags](#configuration-flags)
@@ -19,12 +20,12 @@
     - [Rate Limiting](#rate-limiting)
 
 
-A command-line interface for interacting with Workflowy, including fetching, updating and
-creating nodes, usage reports and markdown generation.
+A command-line interface for interacting with Workflowy, including fetching, creating, and
+updating nodes, plus generating usage reports.
 
 ## Features
 
-- **Node Operations**: Get, List, Post, and Update to operate on nodes.
+- **Node Operations**: Get, List, Create, and Update to operate on nodes.
 - **Usage Reports**: Understand where the majority of your nodes are stored, which nodes have many children or which ones are possibly stale:
   - Descendant count reports with threshold filtering.
   - Rank nodes by immediate children count
@@ -32,9 +33,8 @@ creating nodes, usage reports and markdown generation.
   - Find oldest nodes by modification date
 - **Report Upload**: Upload usage reports using the API or paste
   the markdown output into Workflowy
-- **Markdown Export**: Convert a tree of nodes to a Markdown document
-- **Backup File Support**: Operates on a local backup files for faster operations
-- **Local Caching**: Caches
+- **Backup File Support**: Operates on local backup files for faster operations
+- **Local Caching**: Caches API responses for improved performance
 
 
 ## Installation
@@ -158,16 +158,6 @@ workflowy update <item-id> --note "my note"
 workflowy update <item-id> --name "new title" --note "new note"
 ```
 
-#### Convert to Markdown
-
-```bash
-# Convert to markdown and print to stdout
-workflowy markdown <item-id>
-
-# Save to file
-workflowy markdown <item-id> --output report.md
-```
-
 ### Usage Reports
 
 #### Descendant Count Report
@@ -222,11 +212,15 @@ workflowy report count --upload --parent-id xxx-yyy-zzz --position top
 ### Global Options
 
 - `--format <json|md>`: Output format (default: md)
-- `--depth <n>`: Recursion depth for tree operations (default: 2)
-- `--api-key-file <path>`: Path to API key file (default: ~/.workflowy/api.key)
 - `--log <level>`: Log level: debug, info, warn, error (default: info)
-- `--include-empty-names`: Include items with empty names
+
+### Command-Specific Options
+
+#### Get and List Commands
+
+- `--depth <n>`: Recursion depth for operations (default: 2)
 - `--all`: Get/list all descendants (equivalent to `--depth=-1`)
+- `--include-empty-names`: Include items with empty names
 
 ### Access Methods and Configuration
 
@@ -372,13 +366,6 @@ workflowy report count --threshold 0.01 --upload
 ```bash
 # Find your 50 oldest unmodified nodes
 workflowy report modified --top-n 50
-```
-
-### Export to markdown
-
-```bash
-# Export a specific project to markdown
-workflowy markdown <project-id> --output my-project.md
 ```
 
 ## API Reference
