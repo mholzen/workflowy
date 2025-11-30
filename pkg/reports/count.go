@@ -55,11 +55,3 @@ func convertDescendantNode(node workflowy.Descendants) *workflowy.Item {
 
 	return item
 }
-
-// stringPtr returns a pointer to a string
-func stringPtr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}

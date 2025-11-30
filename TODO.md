@@ -1,6 +1,5 @@
+- list currently includes children, remove for consistency
 - document bookmarklet
-- document usage of backup vs export caching
-- document usage of caching and cache invalidation
 - document rate limiting on updating reports
 
 - document that rationale behind generating markdown from nodes without formatting
@@ -16,3 +15,5 @@
 - improve status and error reporting
   - error reporting looks like a log mesage (time not necessary)
   - status report for update is JSON, probably unnecessary
+
+- ranking reports should support topN _and_ thresholds

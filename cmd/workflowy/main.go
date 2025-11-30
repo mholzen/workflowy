@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mholzen/workflowy/pkg/formatter"
 	"github.com/mholzen/workflowy/pkg/reports"
 	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
@@ -25,16 +24,145 @@ var (
 	date    = "unknown"
 )
 
-func main() {
+func getMethodFlags() []cli.Flag {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Error getting home directory: %v", err)
 	}
 	defaultAPIKeyFile := filepath.Join(homeDir, ".workflowy", "api.key")
 
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:  "method",
+			Usage: "Access method: get, export or backup\n\tDefaults to 'get' for depth 1-3, 'export' for depth 4+, 'backup' if no api key provided",
+		},
+		&cli.StringFlag{
+			Name:  "api-key-file",
+			Value: defaultAPIKeyFile,
+			Usage: "Path to API key file",
+		},
+		&cli.StringFlag{
+			Name:  "backup-file",
+			Usage: "Path to backup file (default: latest in ~/Dropbox/Apps/Workflowy/Data)",
+		},
+		&cli.BoolFlag{
+			Name:  "force-refresh",
+			Usage: "Force refresh from API when using export (bypassing cache)",
+		},
+	}
+}
+
+func getFetchFlags() []cli.Flag {
+	flags := []cli.Flag{
+		&cli.IntFlag{
+			Name:    "depth",
+			Aliases: []string{"d"},
+			Value:   2,
+			Usage:   "Recursion depth for get/list operations (positive integer)",
+		},
+		&cli.BoolFlag{
+			Name:  "all",
+			Usage: "Get/list all descendants (equivalent to --depth=-1)",
+		},
+		&cli.BoolFlag{
+			Name:  "include-empty-names",
+			Value: false,
+			Usage: "Include items with empty names",
+		},
+	}
+	flags = append(flags, getMethodFlags()...)
+	return flags
+}
+
+func getWriteFlags(commandFlags ...cli.Flag) []cli.Flag {
+	flags := []cli.Flag{
+		&cli.StringFlag{
+			Name:  "name",
+			Usage: "Update node name/title",
+		},
+		&cli.StringFlag{
+			Name:  "note",
+			Usage: "Additional note content",
+		},
+		&cli.StringFlag{
+			Name:  "layout-mode",
+			Usage: "Display mode: bullets, todo, h1, h2, h3",
+		},
+	}
+	flags = append(flags, commandFlags...)
+	return flags
+}
+
+func getReportFlags(commandFlags ...cli.Flag) []cli.Flag {
+	flags := make([]cli.Flag, 0)
+	flags = append(flags, getMethodFlags()...)
+	flags = append(flags, commandFlags...)
+
+	// Starting point for all reports
+	flags = append(flags, &cli.StringFlag{
+		Name:  "item-id",
+		Value: "None",
+		Usage: "Item ID to start from (default: root)",
+	})
+
+	// Upload flags
+	flags = append(flags,
+		&cli.BoolFlag{
+			Name:  "upload",
+			Usage: "Upload report to Workflowy instead of printing",
+		},
+		&cli.StringFlag{
+			Name:  "parent-id",
+			Value: "None",
+			Usage: "Parent node ID for uploaded report (default: root)",
+		},
+		&cli.StringFlag{
+			Name:  "position",
+			Usage: "Position in parent: top or bottom",
+		},
+	)
+
+	return flags
+}
+
+func getRankingReportFlags() []cli.Flag {
+	reportFlags := getReportFlags()
+	reportFlags = append(reportFlags,
+		&cli.StringFlag{
+			Name:  "item-id",
+			Value: "None",
+			Usage: "Item ID to start from (default: root)",
+		},
+		&cli.IntFlag{
+			Name:  "top-n",
+			Value: 20,
+			Usage: "Number of top results to show (0 for all)",
+		},
+	)
+	return reportFlags
+}
+
+// Custom help template with DESCRIPTION after COMMANDS
+func main() {
 	cmd := &cli.Command{
 		Name:  "workflowy",
 		Usage: "Interact with Workflowy API",
+		Description: `Retieve, create and update nodes.  Generate usage reports and upload them to Workflowy.
+
+Specify how to access the data using the --method flag:
+  --method=get      Use GET API (default for depth 1-3)
+  --method=export   Use Export API (default for depth 4+, --all)
+  --method=backup   Use local backup file (fastest, offline)
+
+Further customize the access method with the following flags:
+  --api-key-file    Path to API key file (default: ~/.workflowy/api.key)
+  --force-refresh   Bypass export cache (use with --method=export)
+  --backup-file     Path to backup file (default: latest in ~/Dropbox/Apps/Workflowy/Data)
+
+Examples:
+  workflowy get --method=backup
+  workflowy list --force-refresh
+  workflowy report count --upload`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "format",
@@ -42,39 +170,17 @@ func main() {
 				Value:   "md",
 				Usage:   "Output format: json, md, or markdown",
 			},
-			&cli.IntFlag{
-				Name:    "depth",
-				Aliases: []string{"d"},
-				Value:   2,
-				Usage:   "Recursion depth for tree operations (positive integer)",
-			},
-			&cli.StringFlag{
-				Name:  "api-key-file",
-				Value: defaultAPIKeyFile,
-				Usage: "Path to API key file",
-			},
 			&cli.StringFlag{
 				Name:  "log",
 				Value: "info",
 				Usage: "Log level: debug, info, warn, error",
 			},
-			&cli.BoolFlag{
-				Name:  "include-empty-names",
-				Value: false,
-				Usage: "Include items with empty names",
-			},
+		},
+		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			setupLogging(cmd.String("log"))
+			return ctx, nil
 		},
 		Commands: []*cli.Command{
-			{
-				Name:  "version",
-				Usage: "Show version information",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					fmt.Printf("workflowy version %s\n", version)
-					fmt.Printf("commit: %s\n", commit)
-					fmt.Printf("built: %s\n", date)
-					return nil
-				},
-			},
 			{
 				Name:  "get",
 				Usage: "Get item with optional recursive children (root if omitted)",
@@ -85,58 +191,34 @@ func main() {
 						UsageText: "Workflowy item ID (default: root)",
 					},
 				},
+				Flags: getFetchFlags(),
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					setupLogging(cmd.String("log"))
-
 					format := cmd.String("format")
-					if format != "json" && format != "md" && format != "markdown" {
-						return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
+					if err := validateFormat(format); err != nil {
+						return err
 					}
 
+					// Handle --all flag
 					depth := cmd.Int("depth")
-					if depth < 0 {
-						return fmt.Errorf("depth must be a non-negative integer")
+					if cmd.Bool("all") {
+						depth = -1
 					}
 
 					itemID := cmd.StringArg("item_id")
-					client := createClient(cmd.String("api-key-file"))
 
-					apiCtx := context.Background()
-
-					// Special case: "None" means root, so list root children instead
-					if itemID == "None" {
-						slog.Debug("fetching root items", "depth", depth)
-						response, err := client.ListChildrenRecursiveWithDepth(apiCtx, itemID, depth)
-						if err != nil {
-							return fmt.Errorf("error fetching root items: %w", err)
-						}
-						printOutput(response, format, cmd.Bool("include-empty-names"))
-						return nil
-					}
-
-					// Normal case: get specific item
-					slog.Debug("fetching item", "item_id", itemID, "depth", depth)
-					item, err := client.GetItem(apiCtx, itemID)
+					// Fetch items using shared logic
+					result, err := fetchItems(cmd, ctx, itemID, depth)
 					if err != nil {
-						return fmt.Errorf("error getting item: %w", err)
+						return err
 					}
 
-					// If depth > 0, fetch children recursively and attach them
-					if depth > 0 {
-						childrenResp, err := client.ListChildrenRecursiveWithDepth(apiCtx, itemID, depth)
-						if err != nil {
-							return fmt.Errorf("error fetching children: %w", err)
-						}
-						item.Children = childrenResp.Items
-					}
-
-					printOutput(item, format, cmd.Bool("include-empty-names"))
+					printOutput(result, format, cmd.Bool("include-empty-names"))
 					return nil
 				},
 			},
 			{
 				Name:  "list",
-				Usage: "List direct children of an item (root if omitted)",
+				Usage: "List descendants of an item as flat list (root if omitted)",
 				Arguments: []cli.Argument{
 					&cli.StringArg{
 						Name:      "item_id",
@@ -144,30 +226,36 @@ func main() {
 						UsageText: "Workflowy item ID (default: root)",
 					},
 				},
+				Flags: getFetchFlags(),
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					setupLogging(cmd.String("log"))
-
 					format := cmd.String("format")
-					if format != "json" && format != "md" && format != "markdown" {
-						return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
+					if err := validateFormat(format); err != nil {
+						return err
+					}
+
+					// Handle --all flag
+					depth := cmd.Int("depth")
+					if cmd.Bool("all") {
+						depth = -1
 					}
 
 					itemID := cmd.StringArg("item_id")
-					client := createClient(cmd.String("api-key-file"))
 
-					apiCtx := context.Background()
-					slog.Debug("fetching direct children", "item_id", itemID)
-					response, err := client.ListChildren(apiCtx, itemID)
+					// Fetch items using shared logic
+					treeResult, err := fetchItems(cmd, ctx, itemID, depth)
 					if err != nil {
-						return fmt.Errorf("error listing children: %w", err)
+						return err
 					}
 
-					printOutput(response, format, cmd.Bool("include-empty-names"))
+					// Convert tree to flat list
+					flatList := flattenTree(treeResult)
+
+					printOutput(flatList, format, cmd.Bool("include-empty-names"))
 					return nil
 				},
 			},
 			{
-				Name:  "post",
+				Name:  "create",
 				Usage: "Create a new node",
 				Arguments: []cli.Argument{
 					&cli.StringArg{
@@ -175,7 +263,7 @@ func main() {
 						UsageText: "Node name (or use --read-stdin or --read-file)",
 					},
 				},
-				Flags: []cli.Flag{
+				Flags: getWriteFlags(
 					&cli.StringFlag{
 						Name:  "parent-id",
 						Value: "None",
@@ -185,14 +273,6 @@ func main() {
 						Name:  "position",
 						Usage: "Position: \"top\" or \"bottom\" (omit for API default)",
 					},
-					&cli.StringFlag{
-						Name:  "layout-mode",
-						Usage: "Display mode: bullets, todo, h1, h2, h3",
-					},
-					&cli.StringFlag{
-						Name:  "note",
-						Usage: "Additional note content",
-					},
 					&cli.BoolFlag{
 						Name:  "read-stdin",
 						Usage: "Read node name from stdin instead of argument",
@@ -201,19 +281,16 @@ func main() {
 						Name:  "read-file",
 						Usage: "Read node name from file instead of argument",
 					},
-				},
+				),
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					setupLogging(cmd.String("log"))
-
 					format := cmd.String("format")
-					if format != "json" && format != "md" && format != "markdown" {
-						return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
+					if err := validateFormat(format); err != nil {
+						return err
 					}
 
-					// Validate position if provided
 					position := cmd.String("position")
-					if position != "" && position != "top" && position != "bottom" {
-						return fmt.Errorf("position must be 'top' or 'bottom'")
+					if err := validatePosition(position); err != nil {
+						return err
 					}
 
 					// Determine input source and read name
@@ -284,10 +361,9 @@ func main() {
 					}
 
 					client := createClient(cmd.String("api-key-file"))
-					apiCtx := context.Background()
 
 					slog.Debug("creating node", "parent_id", req.ParentID, "name", name)
-					response, err := client.CreateNode(apiCtx, req)
+					response, err := client.CreateNode(ctx, req)
 					if err != nil {
 						return fmt.Errorf("error creating node: %w", err)
 					}
@@ -302,33 +378,18 @@ func main() {
 				Arguments: []cli.Argument{
 					&cli.StringArg{
 						Name:      "item_id",
-						UsageText: "Workflowy item ID to update",
+						UsageText: "<item_id>",
 					},
 					&cli.StringArg{
-						Name:      "content",
-						UsageText: "New content for the node (or use flags for specific fields)",
+						Name:      "nameArgument",
+						UsageText: "[<name>] (or use flags for specific fields)",
 					},
 				},
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:  "name",
-						Usage: "Update node name/title",
-					},
-					&cli.StringFlag{
-						Name:  "note",
-						Usage: "Update note content",
-					},
-					&cli.StringFlag{
-						Name:  "layout-mode",
-						Usage: "Update display mode: bullets, todo, h1, h2, h3",
-					},
-				},
+				Flags: getWriteFlags(),
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					setupLogging(cmd.String("log"))
-
 					format := cmd.String("format")
-					if format != "json" && format != "md" && format != "markdown" {
-						return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
+					if err := validateFormat(format); err != nil {
+						return err
 					}
 
 					itemID := cmd.StringArg("item_id")
@@ -336,7 +397,7 @@ func main() {
 						return fmt.Errorf("item_id is required")
 					}
 
-					content := cmd.StringArg("content")
+					content := cmd.StringArg("nameArgument")
 					nameFlag := cmd.String("name")
 					noteFlag := cmd.String("note")
 					layoutMode := cmd.String("layout-mode")
@@ -365,133 +426,18 @@ func main() {
 
 					// Ensure at least one field is being updated
 					if req.Name == nil && req.Note == nil && req.LayoutMode == nil {
-						return fmt.Errorf("must specify at least one field to update (content, --name, --note, or --layout-mode)")
+						return fmt.Errorf("must specify at least one field to update (<name>, --name, --note, or --layout-mode)")
 					}
 
 					client := createClient(cmd.String("api-key-file"))
-					apiCtx := context.Background()
 
 					slog.Debug("updating node", "item_id", itemID)
-					response, err := client.UpdateNode(apiCtx, itemID, req)
+					response, err := client.UpdateNode(ctx, itemID, req)
 					if err != nil {
 						return fmt.Errorf("error updating node: %w", err)
 					}
 
 					printOutput(response, format, cmd.Bool("include-empty-names"))
-					return nil
-				},
-			},
-			{
-				Name:  "export",
-				Usage: "Export all nodes from Workflowy",
-				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:  "force-refresh",
-						Usage: "Force refresh from API, bypassing cache",
-					},
-				},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					setupLogging(cmd.String("log"))
-
-					format := cmd.String("format")
-					if format != "json" && format != "md" && format != "markdown" {
-						return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
-					}
-
-					client := createClient(cmd.String("api-key-file"))
-					apiCtx := context.Background()
-
-					forceRefresh := cmd.Bool("force-refresh")
-					slog.Debug("exporting all nodes", "force_refresh", forceRefresh)
-
-					response, err := client.ExportNodesWithCache(apiCtx, forceRefresh)
-					if err != nil {
-						return fmt.Errorf("error exporting nodes: %w", err)
-					}
-
-					slog.Info("export complete", "node_count", len(response.Nodes))
-
-					// Reconstruct tree from flat export
-					slog.Debug("reconstructing tree from export data")
-					root := workflowy.BuildTreeFromExport(response.Nodes)
-					slog.Debug("tree reconstructed", "top_level_count", len(root.Children))
-
-					// Output the tree
-					if format == "json" {
-						printJSON(root)
-					} else {
-						// For markdown, output as nested tree
-						for _, child := range root.Children {
-							fmt.Print(itemToMarkdown(child, 0))
-						}
-					}
-
-					return nil
-				},
-			},
-			{
-				Name:  "tree",
-				Usage: "Display entire Workflowy tree from backup file or export API",
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:  "use-backup-file",
-						Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
-					},
-				},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					setupLogging(cmd.String("log"))
-
-					format := cmd.String("format")
-					if format != "json" && format != "md" && format != "markdown" {
-						return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
-					}
-
-					var items []*workflowy.Item
-					var err error
-
-					backupFile := cmd.String("use-backup-file")
-					if backupFile != "" {
-						// Use backup file
-						if backupFile == "true" || backupFile == "1" {
-							// Flag was set without value, use latest
-							slog.Debug("using latest backup file")
-							items, err = workflowy.ReadLatestBackup()
-						} else {
-							// Flag has a specific filename
-							slog.Debug("using backup file", "file", backupFile)
-							items, err = workflowy.ReadBackupFile(backupFile)
-						}
-						if err != nil {
-							return fmt.Errorf("error reading backup file: %w", err)
-						}
-					} else {
-						// Use export API with cache
-						client := createClient(cmd.String("api-key-file"))
-						apiCtx := context.Background()
-
-						slog.Debug("using export API with cache")
-						response, err := client.ExportNodesWithCache(apiCtx, false)
-						if err != nil {
-							return fmt.Errorf("error exporting nodes: %w", err)
-						}
-
-						slog.Debug("reconstructing tree from export data")
-						root := workflowy.BuildTreeFromExport(response.Nodes)
-						items = root.Children
-					}
-
-					slog.Info("tree loaded", "top_level_count", len(items))
-
-					// Output the tree
-					if format == "json" {
-						printJSON(items)
-					} else {
-						// For markdown, output as nested tree
-						for _, child := range items {
-							fmt.Print(itemToMarkdown(child, 0))
-						}
-					}
-
 					return nil
 				},
 			},
@@ -502,40 +448,15 @@ func main() {
 					{
 						Name:  "count",
 						Usage: "Generate descendant count report",
-						Flags: []cli.Flag{
-							&cli.StringFlag{
-								Name:  "use-backup-file",
-								Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
-							},
-							&cli.StringFlag{
-								Name:  "item-id",
-								Value: "None",
-								Usage: "Item ID to start from (default: root)",
-							},
+						Flags: getReportFlags(
 							&cli.Float64Flag{
 								Name:  "threshold",
 								Value: 0.01,
 								Usage: "Minimum ratio threshold for filtering (0.0 to 1.0)",
 							},
-							&cli.BoolFlag{
-								Name:  "upload",
-								Usage: "Upload report to Workflowy instead of printing",
-							},
-							&cli.StringFlag{
-								Name:  "parent-id",
-								Value: "None",
-								Usage: "Parent node ID for uploaded report (default: root)",
-							},
-							&cli.StringFlag{
-								Name:  "position",
-								Usage: "Position in parent: top or bottom",
-							},
-						},
+						),
 						Action: func(ctx context.Context, cmd *cli.Command) error {
-							setupLogging(cmd.String("log"))
-
-							// Load tree
-							items, err := loadTree(cmd)
+							items, err := loadTree(ctx, cmd)
 							if err != nil {
 								return err
 							}
@@ -568,7 +489,7 @@ func main() {
 								Descendants: descendants,
 								Threshold:   threshold,
 							}
-							if err := handleReportUpload(cmd, report); err != nil {
+							if err := handleReportUpload(ctx, cmd, report); err != nil {
 								return err
 							}
 							if cmd.Bool("upload") {
@@ -594,31 +515,9 @@ func main() {
 					{
 						Name:  "children",
 						Usage: "Rank nodes by immediate children count",
-						Flags: append([]cli.Flag{
-							&cli.StringFlag{
-								Name:  "use-backup-file",
-								Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
-							},
-							&cli.StringFlag{
-								Name:  "item-id",
-								Value: "None",
-								Usage: "Item ID to start from (default: root)",
-							},
-							&cli.Float64Flag{
-								Name:  "threshold",
-								Value: 0.01,
-								Usage: "Minimum ratio threshold for filtering (0.0 to 1.0)",
-							},
-							&cli.IntFlag{
-								Name:  "top-n",
-								Value: 20,
-								Usage: "Number of top results to show (0 for all)",
-							},
-						}, uploadFlags()...),
+						Flags: getRankingReportFlags(),
 						Action: func(ctx context.Context, cmd *cli.Command) error {
-							setupLogging(cmd.String("log"))
-
-							descendants, err := loadAndCountDescendants(cmd)
+							descendants, err := loadAndCountDescendants(ctx, cmd)
 							if err != nil {
 								return err
 							}
@@ -635,7 +534,7 @@ func main() {
 								Ranked: ranked,
 								TopN:   topN,
 							}
-							if err := handleReportUpload(cmd, report); err != nil {
+							if err := handleReportUpload(ctx, cmd, report); err != nil {
 								return err
 							}
 							if cmd.Bool("upload") {
@@ -659,31 +558,9 @@ func main() {
 					{
 						Name:  "created",
 						Usage: "Rank nodes by creation date (oldest first)",
-						Flags: append([]cli.Flag{
-							&cli.StringFlag{
-								Name:  "use-backup-file",
-								Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
-							},
-							&cli.StringFlag{
-								Name:  "item-id",
-								Value: "None",
-								Usage: "Item ID to start from (default: root)",
-							},
-							&cli.Float64Flag{
-								Name:  "threshold",
-								Value: 0.01,
-								Usage: "Minimum ratio threshold for filtering (0.0 to 1.0)",
-							},
-							&cli.IntFlag{
-								Name:  "top-n",
-								Value: 20,
-								Usage: "Number of top results to show (0 for all)",
-							},
-						}, uploadFlags()...),
+						Flags: getRankingReportFlags(),
 						Action: func(ctx context.Context, cmd *cli.Command) error {
-							setupLogging(cmd.String("log"))
-
-							descendants, err := loadAndCountDescendants(cmd)
+							descendants, err := loadAndCountDescendants(ctx, cmd)
 							if err != nil {
 								return err
 							}
@@ -700,7 +577,7 @@ func main() {
 								Ranked: ranked,
 								TopN:   topN,
 							}
-							if err := handleReportUpload(cmd, report); err != nil {
+							if err := handleReportUpload(ctx, cmd, report); err != nil {
 								return err
 							}
 							if cmd.Bool("upload") {
@@ -724,31 +601,9 @@ func main() {
 					{
 						Name:  "modified",
 						Usage: "Rank nodes by modification date (oldest first)",
-						Flags: append([]cli.Flag{
-							&cli.StringFlag{
-								Name:  "use-backup-file",
-								Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
-							},
-							&cli.StringFlag{
-								Name:  "item-id",
-								Value: "None",
-								Usage: "Item ID to start from (default: root)",
-							},
-							&cli.Float64Flag{
-								Name:  "threshold",
-								Value: 0.01,
-								Usage: "Minimum ratio threshold for filtering (0.0 to 1.0)",
-							},
-							&cli.IntFlag{
-								Name:  "top-n",
-								Value: 20,
-								Usage: "Number of top results to show (0 for all)",
-							},
-						}, uploadFlags()...),
+						Flags: getRankingReportFlags(),
 						Action: func(ctx context.Context, cmd *cli.Command) error {
-							setupLogging(cmd.String("log"))
-
-							descendants, err := loadAndCountDescendants(cmd)
+							descendants, err := loadAndCountDescendants(ctx, cmd)
 							if err != nil {
 								return err
 							}
@@ -765,7 +620,7 @@ func main() {
 								Ranked: ranked,
 								TopN:   topN,
 							}
-							if err := handleReportUpload(cmd, report); err != nil {
+							if err := handleReportUpload(ctx, cmd, report); err != nil {
 								return err
 							}
 							if cmd.Bool("upload") {
@@ -789,72 +644,12 @@ func main() {
 				},
 			},
 			{
-				Name:  "markdown",
-				Usage: "Convert Workflowy item to markdown",
-				Arguments: []cli.Argument{
-					&cli.StringArg{
-						Name:      "item_id",
-						Value:     "None",
-						UsageText: "Workflowy item ID (default: root)",
-					},
-				},
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:  "use-backup-file",
-						Usage: "Use backup file instead of API (specify filename or leave empty for latest)",
-					},
-					&cli.StringFlag{
-						Name:  "output",
-						Usage: "Output file (default: stdout)",
-					},
-				},
+				Name:  "version",
+				Usage: "Show version information",
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					setupLogging(cmd.String("log"))
-
-					// Load tree
-					items, err := loadTree(cmd)
-					if err != nil {
-						return err
-					}
-
-					// Find the item to convert
-					itemID := cmd.StringArg("item_id")
-					var targetItems []*workflowy.Item
-
-					if itemID == "None" {
-						// Use all root items
-						targetItems = items
-					} else {
-						// Find specific item
-						item := findItemByID(items, itemID)
-						if item == nil {
-							return fmt.Errorf("item with ID %s not found", itemID)
-						}
-						targetItems = []*workflowy.Item{item}
-					}
-
-					// Create formatter
-					fmtr := formatter.NewDefaultFormatter()
-
-					// Convert to markdown
-					slog.Info("converting to markdown", "item_count", len(targetItems))
-					markdown, err := fmtr.FormatTree(targetItems)
-					if err != nil {
-						return fmt.Errorf("error formatting markdown: %w", err)
-					}
-
-					// Output
-					outputFile := cmd.String("output")
-					if outputFile != "" {
-						slog.Info("writing to file", "file", outputFile)
-						err := os.WriteFile(outputFile, []byte(markdown), 0644)
-						if err != nil {
-							return fmt.Errorf("error writing file: %w", err)
-						}
-					} else {
-						fmt.Print(markdown)
-					}
-
+					fmt.Printf("workflowy version %s\n", version)
+					fmt.Printf("commit: %s\n", commit)
+					fmt.Printf("built: %s\n", date)
 					return nil
 				},
 			},
@@ -891,6 +686,195 @@ func setupLogging(level string) {
 func createClient(apiKeyFile string) *workflowy.WorkflowyClient {
 	slog.Debug("loading API key", "file", apiKeyFile)
 	return workflowy.NewWorkflowyClient(workflowy.WithAPIKeyFromFile(apiKeyFile))
+}
+
+// validateFormat validates the output format and returns an error if invalid
+func validateFormat(format string) error {
+	if format != "json" && format != "md" && format != "markdown" {
+		return fmt.Errorf("format must be 'json', 'md', or 'markdown'")
+	}
+	return nil
+}
+
+// validatePosition validates the position parameter and returns an error if invalid
+func validatePosition(position string) error {
+	if position != "" && position != "top" && position != "bottom" {
+		return fmt.Errorf("position must be 'top' or 'bottom'")
+	}
+	return nil
+}
+
+// fetchItems retrieves items using the smart access method selection
+func fetchItems(cmd *cli.Command, apiCtx context.Context, itemID string, depth int) (interface{}, error) {
+	client := createClient(cmd.String("api-key-file"))
+
+	// Determine access method
+	method := cmd.String("method")
+	backupFile := cmd.String("backup-file")
+
+	// Validate method flag
+	if method != "" && method != "get" && method != "export" && method != "backup" {
+		return nil, fmt.Errorf("method must be 'get', 'export', or 'backup'")
+	}
+
+	// Determine which method to use
+	var useMethod string
+	if method != "" {
+		// Explicitly specified
+		useMethod = method
+	} else {
+		// Smart heuristic: depth 1-3 uses GET API, depth -1 or 4+ uses Export API
+		if depth == -1 || depth >= 4 {
+			useMethod = "export"
+		} else {
+			useMethod = "get"
+		}
+	}
+
+	slog.Debug("access method determined", "method", useMethod, "depth", depth)
+
+	var result interface{}
+
+	// Method 1: Backup file
+	switch useMethod {
+	case "backup":
+		var items []*workflowy.Item
+		var err error
+
+		if backupFile != "" {
+			slog.Debug("using backup file", "file", backupFile)
+			items, err = workflowy.ReadBackupFile(backupFile)
+		} else {
+			slog.Debug("using latest backup file")
+			items, err = workflowy.ReadLatestBackup()
+		}
+		if err != nil {
+			return nil, fmt.Errorf("error reading backup file: %w", err)
+		}
+
+		if itemID != "None" {
+			found := findItemInTree(items, itemID, depth)
+			if found == nil {
+				return nil, fmt.Errorf("item %s not found in backup", itemID)
+			}
+			result = found
+		} else {
+			result = &workflowy.ListChildrenResponse{Items: items}
+		}
+
+	case "export":
+		slog.Debug("using export API", "depth", depth)
+		forceRefresh := cmd.Bool("force-refresh")
+		response, err := client.ExportNodesWithCache(apiCtx, forceRefresh)
+		if err != nil {
+			return nil, fmt.Errorf("error exporting nodes: %w", err)
+		}
+
+		slog.Debug("reconstructing tree from export data")
+		root := workflowy.BuildTreeFromExport(response.Nodes)
+
+		if itemID != "None" {
+			found := findItemInTree(root.Children, itemID, depth)
+			if found == nil {
+				return nil, fmt.Errorf("item %s not found", itemID)
+			}
+			result = found
+		} else {
+			result = &workflowy.ListChildrenResponse{Items: root.Children}
+		}
+
+	case "get":
+		slog.Debug("using GET API", "depth", depth)
+		if depth < 0 {
+			return nil, fmt.Errorf("depth must be non-negative when using GET API (use --method=export for depth=-1)")
+		}
+
+		if itemID == "None" {
+			slog.Debug("fetching root items", "depth", depth)
+			response, err := client.ListChildrenRecursiveWithDepth(apiCtx, itemID, depth)
+			if err != nil {
+				return nil, fmt.Errorf("error fetching root items: %w", err)
+			}
+			result = response
+		} else {
+			slog.Debug("fetching item", "item_id", itemID, "depth", depth)
+			item, err := client.GetItem(apiCtx, itemID)
+			if err != nil {
+				return nil, fmt.Errorf("error getting item: %w", err)
+			}
+
+			if depth > 0 {
+				childrenResp, err := client.ListChildrenRecursiveWithDepth(apiCtx, itemID, depth)
+				if err != nil {
+					return nil, fmt.Errorf("error fetching children: %w", err)
+				}
+				item.Children = childrenResp.Items
+			}
+			result = item
+		}
+
+	default:
+		return nil, fmt.Errorf("unknown access method: %s", useMethod)
+	}
+
+	return result, nil
+}
+
+func findItemInTree(items []*workflowy.Item, targetID string, maxDepth int) *workflowy.Item {
+	for _, item := range items {
+		if item.ID == targetID {
+			// Found the item, now limit its depth if needed
+			if maxDepth >= 0 {
+				limitItemDepth(item, maxDepth)
+			}
+			return item
+		}
+		// Recursively search children
+		if found := findItemInTree(item.Children, targetID, maxDepth); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+func limitItemDepth(item *workflowy.Item, maxDepth int) {
+	if maxDepth == 0 {
+		// No children allowed at this depth
+		item.Children = nil
+		return
+	}
+	// Recursively limit children
+	for _, child := range item.Children {
+		limitItemDepth(child, maxDepth-1)
+	}
+}
+
+func flattenTree(data interface{}) *workflowy.ListChildrenResponse {
+	var items []*workflowy.Item
+
+	switch v := data.(type) {
+	case *workflowy.Item:
+		// Single item - flatten it and its children
+		items = flattenItem(v)
+	case *workflowy.ListChildrenResponse:
+		// List of items - flatten each
+		for _, item := range v.Items {
+			items = append(items, flattenItem(item)...)
+		}
+	}
+
+	return &workflowy.ListChildrenResponse{Items: items}
+}
+
+func flattenItem(item *workflowy.Item) []*workflowy.Item {
+	result := []*workflowy.Item{item}
+
+	// Add all descendants
+	for _, child := range item.Children {
+		result = append(result, flattenItem(child)...)
+	}
+
+	return result
 }
 
 func printJSON(response interface{}) {
@@ -990,40 +974,19 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 	}
 }
 
-// uploadFlags returns the standard upload flags for report commands
-func uploadFlags() []cli.Flag {
-	return []cli.Flag{
-		&cli.BoolFlag{
-			Name:  "upload",
-			Usage: "Upload report to Workflowy instead of printing",
-		},
-		&cli.StringFlag{
-			Name:  "parent-id",
-			Value: "None",
-			Usage: "Parent node ID for uploaded report (default: root)",
-		},
-		&cli.StringFlag{
-			Name:  "position",
-			Usage: "Position in parent: top or bottom",
-		},
-	}
-}
-
-// handleReportUpload handles uploading a report if --upload flag is set
-func handleReportUpload(cmd *cli.Command, report reports.ReportOutput) error {
+func handleReportUpload(ctx context.Context, cmd *cli.Command, report reports.ReportOutput) error {
 	if !cmd.Bool("upload") {
 		return nil // Not uploading
 	}
 
 	client := createClient(cmd.String("api-key-file"))
-	apiCtx := context.Background()
 
 	opts := reports.UploadOptions{
 		ParentID: cmd.String("parent-id"),
 		Position: cmd.String("position"),
 	}
 
-	nodeID, err := reports.UploadReport(apiCtx, client, report, opts)
+	nodeID, err := reports.UploadReport(ctx, client, report, opts)
 	if err != nil {
 		return err
 	}
@@ -1033,33 +996,47 @@ func handleReportUpload(cmd *cli.Command, report reports.ReportOutput) error {
 	return nil
 }
 
-// loadTree loads the tree from either backup file or API
-func loadTree(cmd *cli.Command) ([]*workflowy.Item, error) {
+func loadTree(ctx context.Context, cmd *cli.Command) ([]*workflowy.Item, error) {
 	var items []*workflowy.Item
 	var err error
 
-	backupFile := cmd.String("use-backup-file")
-	if backupFile != "" {
-		// Use backup file
-		if backupFile == "true" || backupFile == "1" {
-			// Flag was set without value, use latest
-			slog.Debug("using latest backup file")
-			items, err = workflowy.ReadLatestBackup()
-		} else {
-			// Flag has a specific filename
+	// Determine access method
+	method := cmd.String("method")
+	backupFile := cmd.String("backup-file")
+
+	// Validate method flag
+	if method != "" && method != "export" && method != "backup" {
+		return nil, fmt.Errorf("method must be 'export' or 'backup'")
+	}
+
+	// Determine which method to use (default to export for reports)
+	useMethod := method
+	if useMethod == "" {
+		useMethod = "export"
+	}
+
+	slog.Debug("loadTree access method", "method", useMethod)
+
+	// Method 1: Backup file
+	if useMethod == "backup" {
+		if backupFile != "" {
 			slog.Debug("using backup file", "file", backupFile)
 			items, err = workflowy.ReadBackupFile(backupFile)
+		} else {
+			slog.Debug("using latest backup file")
+			items, err = workflowy.ReadLatestBackup()
 		}
 		if err != nil {
 			return nil, fmt.Errorf("error reading backup file: %w", err)
 		}
-	} else {
-		// Use export API with cache
-		client := createClient(cmd.String("api-key-file"))
-		apiCtx := context.Background()
 
-		slog.Debug("using export API with cache")
-		response, err := client.ExportNodesWithCache(apiCtx, false)
+		// Method 2: Export API
+	} else {
+		client := createClient(cmd.String("api-key-file"))
+		forceRefresh := cmd.Bool("force-refresh")
+
+		slog.Debug("using export API", "force_refresh", forceRefresh)
+		response, err := client.ExportNodesWithCache(ctx, forceRefresh)
 		if err != nil {
 			return nil, fmt.Errorf("error exporting nodes: %w", err)
 		}
@@ -1072,9 +1049,8 @@ func loadTree(cmd *cli.Command) ([]*workflowy.Item, error) {
 	return items, nil
 }
 
-// loadAndCountDescendants loads tree and counts descendants
-func loadAndCountDescendants(cmd *cli.Command) (workflowy.Descendants, error) {
-	items, err := loadTree(cmd)
+func loadAndCountDescendants(ctx context.Context, cmd *cli.Command) (workflowy.Descendants, error) {
+	items, err := loadTree(ctx, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -1102,7 +1078,6 @@ func loadAndCountDescendants(cmd *cli.Command) (workflowy.Descendants, error) {
 	return workflowy.CountDescendants(rootItem, threshold), nil
 }
 
-// findItemByID searches for an item by ID in the tree
 func findItemByID(items []*workflowy.Item, id string) *workflowy.Item {
 	for _, item := range items {
 		if item.ID == id {
@@ -1115,7 +1090,6 @@ func findItemByID(items []*workflowy.Item, id string) *workflowy.Item {
 	return nil
 }
 
-// printCountTree prints the descendant count tree in markdown format
 func printCountTree(node workflowy.Descendants, depth int) {
 	indent := strings.Repeat("  ", depth)
 	nodeValue := node.NodeValue()

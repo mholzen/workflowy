@@ -9,13 +9,14 @@
 - [Setup](#setup)
   - [Get Your API Key](#get-your-api-key)
 - [Usage](#usage)
-  - [Read from Backup](#read-from-backup)
-  - [Export and Report Commands](#export-and-report-commands)
-  - [Advanced: Uploading Reports](#advanced-uploading-reports)
-- [Backup vs Export](#backup-vs-export)
-- [Caching](#caching)
-- [Rate Limiting](#rate-limiting)
-- [Error and Status Reporting](#error-and-status-reporting)
+  - [Basic Commands](#basic-commands)
+  - [Usage Reports](#usage-reports)
+  - [Global Options](#global-options)
+  - [Access Methods and Configuration](#access-methods-and-configuration)
+    - [Data Access Methods](#data-access-methods---method)
+    - [Configuration Flags](#configuration-flags)
+    - [Performance Comparison](#performance-comparison)
+    - [Rate Limiting](#rate-limiting)
 
 
 A command-line interface for interacting with Workflowy, including fetching, updating and
@@ -23,7 +24,7 @@ creating nodes, usage reports and markdown generation.
 
 ## Features
 
-- **Node Operations**: Get, List, Post, Update, and Tree to operate on nodes.
+- **Node Operations**: Get, List, Post, and Update to operate on nodes.
 - **Usage Reports**: Understand where the majority of your nodes are stored, which nodes have many children or which ones are possibly stale:
   - Descendant count reports with threshold filtering.
   - Rank nodes by immediate children count
@@ -92,40 +93,57 @@ Total descendants: 34437
 
 ### Basic Commands
 
-#### List Items
+#### Get Items (Tree Structure)
+
+The `get` command retrieves items with their hierarchical structure. It automatically chooses the most efficient API method based on depth.
 
 ```bash
-# List all top-level items
-workflowy list
+# Get root items with default depth (2 levels)
+workflowy get
 
-# List with custom depth
-workflowy list --depth 3
-
-# Use a backup file for faster operations
-workflowy list --use-backup-file
-```
-
-#### Get a Specific Item
-
-```bash
-# Get item by ID
+# Get specific item with default depth
 workflowy get <item-id>
 
-# Get with depth
-workflowy get <item-id> --depth 2
+# Get with custom depth (1-3 uses GET API, 4+ uses Export API)
+workflowy get <item-id> --depth 5
+
+# Get all descendants (uses Export API)
+workflowy get <item-id> --all
+
+# Force specific access method
+workflowy get <item-id> --method=backup
+workflowy get <item-id> --method=export
+workflowy get <item-id> --method=get
+
+# Use specific backup file
+workflowy get --method=backup --backup-file=/path/to/file.backup
 ```
 
-#### Get Entire Tree
+**Smart API Selection**:
+- Depth 1-3: Uses GET API (efficient for shallow fetches)
+- Depth 4+ or `--all`: Uses Export API (efficient for deep/complete fetches)
+- Override with `--method=get`, `--method=export`, or `--method=backup`
+
+#### List Items (Flat List)
+
+The `list` command retrieves items as a flat list without hierarchy. Uses the same smart API selection as `get`.
 
 ```bash
-# Get everything (single efficient API call)
-workflowy tree
+# List direct children of root (depth 1)
+workflowy list
+
+# List direct children of specific item
+workflowy list <item-id>
+
+# List with custom depth
+workflowy list <item-id> --depth 3
+
+# List all descendants as flat list
+workflowy list <item-id> --all
 
 # Use backup file for fastest access
-workflowy tree --use-backup-file
+workflowy list --method=backup
 ```
-
-**Note**: `tree` uses the export API to fetch everything in one call. `get` with high depth makes multiple API calls and is better for specific subtrees.
 
 #### Update a Node
 
@@ -208,24 +226,137 @@ workflowy report count --upload --parent-id xxx-yyy-zzz --position top
 - `--api-key-file <path>`: Path to API key file (default: ~/.workflowy/api.key)
 - `--log <level>`: Log level: debug, info, warn, error (default: info)
 - `--include-empty-names`: Include items with empty names
+- `--all`: Get/list all descendants (equivalent to `--depth=-1`)
 
-### Working with Backups
+### Access Methods and Configuration
 
-For faster operations, especially with large trees, use local backup files:
+#### Data Access Methods (`--method`)
 
+The CLI supports three ways to access your Workflowy data. By default, it automatically chooses the most efficient method based on depth:
+
+##### 1. GET API (`--method=get`)
+**When used:**
+- Default for depth 1-3
+- Explicitly via `--method=get`
+
+**Characteristics:**
+- Multiple API calls (one per depth level)
+- Best for specific items with shallow depth
+- No caching
+- Requires API key
+- Subject to rate limits
+
+**Example:**
 ```bash
-# Most commands support --use-backup-file
-workflowy list --use-backup-file
-workflowy report count --use-backup-file
-
-# Specify a specific backup file
-workflowy list --use-backup-file=/path/to/backup.json
+workflowy get <item-id> --depth 2        # Smart default uses GET
+workflowy get <item-id> --method=get     # Force GET API
 ```
 
-The default location for the backup file is the most recent file
-`~/Dropbox/Apps/Workflowy/Data` that follows the `*.workflowy.backup` pattern.
+##### 2. Export API (`--method=export`)
+**When used:**
+- Default for depth ≥4 or `--all`
+- Explicitly via `--method=export`
 
-The CLI caches export data in `~/.workflowy/export-cache.json` for improved performance.
+**Characteristics:**
+- Single API call fetches entire tree
+- Best for deep fetches or complete tree access
+- Cached locally for performance
+- Requires API key
+- More efficient for large trees
+
+**Cache location:** `~/.workflowy/export-cache.json`
+
+**Example:**
+```bash
+workflowy get --all                      # Smart default uses Export
+workflowy get --method=export            # Force Export API
+workflowy get --method=export --force-refresh  # Bypass cache
+```
+
+##### 3. Backup File (`--method=backup`)
+**When used:**
+- Explicitly via `--method=backup`
+- Fastest option, works offline
+
+**Characteristics:**
+- Reads from local Workflowy backup file
+- No API calls required
+- No rate limits
+- Works offline
+- Data may be slightly stale (depends on backup frequency)
+
+**Default backup location:** `~/Dropbox/Apps/Workflowy/Data/*.workflowy.backup` (most recent file)
+
+**Example:**
+```bash
+# Use latest backup file
+workflowy get --method=backup
+
+# Use specific backup file
+workflowy get --method=backup --backup-file=/path/to/backup.json
+```
+
+#### Configuration Flags
+
+##### `--api-key-file`
+Specifies the location of your API key file.
+
+**Default:** `~/.workflowy/api.key`
+
+**Setup:**
+```bash
+mkdir -p ~/.workflowy
+echo "your-api-key-here" > ~/.workflowy/api.key
+chmod 600 ~/.workflowy/api.key
+```
+
+**Usage:**
+```bash
+workflowy get --api-key-file=/path/to/custom-key.file
+```
+
+##### `--backup-file`
+Specifies a specific backup file to use (only relevant with `--method=backup`).
+
+**Default:** Latest file matching `~/Dropbox/Apps/Workflowy/Data/*.workflowy.backup`
+
+**Usage:**
+```bash
+workflowy get --method=backup --backup-file=/custom/path/backup.json
+```
+
+##### `--force-refresh`
+Bypasses the export cache and forces a fresh API call (only relevant with `--method=export`).
+
+**Cache location:** `~/.workflowy/export-cache.json`
+
+**Usage:**
+```bash
+workflowy get --all --force-refresh
+```
+
+**When to use:**
+- After making changes via web/mobile app
+- When you suspect stale data
+- For critical operations requiring latest data
+
+#### Performance Comparison
+
+| Method | Speed | Freshness | Offline | Rate Limits | Best For |
+|--------|-------|-----------|---------|-------------|----------|
+| GET API | Medium | Real-time | No | Yes | Specific items, shallow depth |
+| Export API | Fast* | Real-time | No | Yes | Full tree, deep fetches |
+| Backup File | Fastest | Stale | Yes | No | Bulk operations, offline work |
+
+\* After first fetch (cached)
+
+#### Rate Limiting
+
+The Workflowy API may enforce rate limits. If you encounter rate limit errors:
+- Use `--method=backup` for bulk operations
+- Use `--method=export` instead of multiple GET calls
+- Space out API requests
+- Check Workflowy's API documentation for current limits
 
 ## Examples
 
