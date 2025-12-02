@@ -21,11 +21,12 @@
 
 
 A command-line interface for interacting with Workflowy, including fetching, creating, and
-updating nodes, plus generating usage reports.
+updating nodes, searching through content, and generating usage reports.
 
 ## Features
 
 - **Node Operations**: Get, List, Create, and Update to operate on nodes.
+- **Search**: Search through all nodes with text or regex patterns, with case-sensitive/insensitive options and highlighted results.
 - **Usage Reports**: Understand where the majority of your nodes are stored, which nodes have many children or which ones are possibly stale:
   - Descendant count reports with threshold filtering.
   - Rank nodes by immediate children count
@@ -145,7 +146,7 @@ workflowy list <item-id> --all
 workflowy list --method=backup
 ```
 
-#### Update a Node
+#### Update A Node
 
 ```bash
 # Update node content
@@ -157,6 +158,42 @@ workflowy update <item-id> --note "my note"
 # Update multiple fields
 workflowy update <item-id> --name "new title" --note "new note"
 ```
+
+#### Search For Items
+
+Search through your Workflowy items by name with text or regex patterns:
+
+```bash
+# Basic search (case-sensitive)
+workflowy search "project"
+
+# Case-insensitive search
+workflowy search -i "PROJECT"
+
+# Regex search
+workflowy search -E "test.*ing"
+
+# Regex with case-insensitive
+workflowy search -iE "bug.*fix"
+
+# Search within specific subtree
+workflowy search "todo" --item-id abc-123-def
+
+# Output as JSON with match positions
+workflowy search "meeting" --format json
+```
+
+**Search Features:**
+- Text or regex pattern matching
+- Case-sensitive by default, use `-i` for case-insensitive
+- Highlights all matches with **bold** in markdown output
+- Returns markdown links to matching items
+- Search entire tree or specific subtree with `--item-id`
+- JSON output includes match positions for programmatic use
+
+**Output Formats:**
+- `--format list` (default): Markdown list with clickable links and **highlighted** matches
+- `--format json`: JSON array with match positions and metadata
 
 ### Usage Reports
 
@@ -366,6 +403,19 @@ workflowy report count --threshold 0.01 --upload
 ```bash
 # Find your 50 oldest unmodified nodes
 workflowy report modified --top-n 50
+```
+
+### Search for specific content
+
+```bash
+# Find all TODO items (case-insensitive)
+workflowy search -i "todo"
+
+# Find items with dates matching a pattern
+workflowy search -E "\d{4}-\d{2}-\d{2}"
+
+# Search for bugs in a specific project subtree
+workflowy search -i "bug" --item-id project-xyz-123
 ```
 
 ## API Reference

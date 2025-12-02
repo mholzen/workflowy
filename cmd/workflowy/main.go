@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -495,6 +496,76 @@ Examples:
 					},
 				},
 			},
+		{
+			Name:  "search",
+			Usage: "Search for items by name",
+			Arguments: []cli.Argument{
+				&cli.StringArg{
+					Name:      "pattern",
+					UsageText: "Search pattern (text or regex with -E)",
+				},
+			},
+			Flags: append([]cli.Flag{
+				&cli.BoolFlag{
+					Name:    "ignore-case",
+					Aliases: []string{"i"},
+					Usage:   "Case-insensitive search",
+				},
+				&cli.BoolFlag{
+					Name:    "regexp",
+					Aliases: []string{"E"},
+					Usage:   "Treat pattern as regular expression",
+				},
+				&cli.StringFlag{
+					Name:  "item-id",
+					Value: "None",
+					Usage: "Search within specific subtree (default: root)",
+				},
+			}, getMethodFlags()...),
+			Action: func(ctx context.Context, cmd *cli.Command) error {
+				format := cmd.String("format")
+				if err := validateFormat(format); err != nil {
+					return err
+				}
+
+				pattern := cmd.StringArg("pattern")
+				if pattern == "" {
+					return fmt.Errorf("search pattern is required")
+				}
+
+				method := cmd.String("method")
+				if method == "get" {
+					slog.Warn("GET method not supported for search, switching to export")
+					method = "export"
+				}
+
+				items, err := loadTree(ctx, cmd)
+				if err != nil {
+					return err
+				}
+
+				itemID := cmd.String("item-id")
+				rootItem := findRootItem(items, itemID)
+				if rootItem == nil && itemID != "None" {
+					return fmt.Errorf("item not found: %s", itemID)
+				}
+
+				searchRoot := items
+				if rootItem != nil {
+					searchRoot = []*workflowy.Item{rootItem}
+				}
+
+				results := searchItems(
+					searchRoot,
+					pattern,
+					cmd.Bool("regexp"),
+					cmd.Bool("ignore-case"),
+				)
+
+				printOutput(results, format, false)
+				return nil
+			},
+		},
 			{
 				Name:  "version",
 				Usage: "Show version information",
@@ -966,6 +1037,10 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 			fmt.Print(itemToMarkdownList(v, 0))
 		case *workflowy.ListChildrenResponse:
 			fmt.Print(responseToMarkdownList(v))
+		case []SearchResult:
+			for _, result := range v {
+				fmt.Println(result.String())
+			}
 		default:
 			printJSON(data)
 		}
@@ -983,6 +1058,10 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 				log.Fatalf("Error formatting markdown: %v", err)
 			}
 			fmt.Print(output)
+		case []SearchResult:
+			for _, result := range v {
+				fmt.Println(result.String())
+			}
 		default:
 			printJSON(data)
 		}
@@ -1111,7 +1190,6 @@ func printCountTree(node workflowy.Descendants, depth int) {
 	indent := strings.Repeat("  ", depth)
 	nodeValue := node.NodeValue()
 
-	// Print current node with counts
 	fmt.Printf("%s- %s (%.1f%%, %d descendants)\n",
 		indent,
 		(**nodeValue).String(),
@@ -1119,8 +1197,130 @@ func printCountTree(node workflowy.Descendants, depth int) {
 		node.Count,
 	)
 
-	// Print children
 	for child := range node.Children() {
 		printCountTree(child.Node(), depth+1)
 	}
+}
+
+type SearchResult struct {
+	ID              string          `json:"id"`
+	Name            string          `json:"name"`
+	HighlightedName string          `json:"highlighted_name"`
+	URL             string          `json:"url"`
+	MatchPositions  []MatchPosition `json:"match_positions"`
+}
+
+type MatchPosition struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
+}
+
+func (sr SearchResult) String() string {
+	return fmt.Sprintf("- [%s](%s)", sr.HighlightedName, sr.URL)
+}
+
+func findRootItem(items []*workflowy.Item, itemID string) *workflowy.Item {
+	if itemID == "None" {
+		return nil
+	}
+
+	return findItemByID(items, itemID)
+}
+
+func searchItems(items []*workflowy.Item, pattern string, useRegexp, ignoreCase bool) []SearchResult {
+	var results []SearchResult
+
+	for _, item := range items {
+		collectSearchResults(item, pattern, useRegexp, ignoreCase, &results)
+	}
+
+	return results
+}
+
+func collectSearchResults(item *workflowy.Item, pattern string, useRegexp, ignoreCase bool, results *[]SearchResult) {
+	name := item.Name
+	matchPositions := findMatches(name, pattern, useRegexp, ignoreCase)
+
+	if len(matchPositions) > 0 {
+		highlightedName := highlightMatches(name, matchPositions)
+		*results = append(*results, SearchResult{
+			ID:              item.ID,
+			Name:            name,
+			HighlightedName: highlightedName,
+			URL:             fmt.Sprintf("https://workflowy.com/#/%s", item.ID),
+			MatchPositions:  matchPositions,
+		})
+	}
+
+	for _, child := range item.Children {
+		collectSearchResults(child, pattern, useRegexp, ignoreCase, results)
+	}
+}
+
+func findMatches(text, pattern string, useRegexp, ignoreCase bool) []MatchPosition {
+	var positions []MatchPosition
+
+	if useRegexp {
+		re, err := regexp.Compile(maybeIgnoreCase(pattern, ignoreCase))
+		if err != nil {
+			slog.Warn("invalid regex pattern", "pattern", pattern, "error", err)
+			return positions
+		}
+
+		matches := re.FindAllStringIndex(text, -1)
+		for _, match := range matches {
+			positions = append(positions, MatchPosition{Start: match[0], End: match[1]})
+		}
+	} else {
+		searchText := text
+		searchPattern := pattern
+
+		if ignoreCase {
+			searchText = strings.ToLower(text)
+			searchPattern = strings.ToLower(pattern)
+		}
+
+		start := 0
+		for {
+			index := strings.Index(searchText[start:], searchPattern)
+			if index == -1 {
+				break
+			}
+			absIndex := start + index
+			positions = append(positions, MatchPosition{
+				Start: absIndex,
+				End:   absIndex + len(pattern),
+			})
+			start = absIndex + len(pattern)
+		}
+	}
+
+	return positions
+}
+
+func maybeIgnoreCase(pattern string, ignoreCase bool) string {
+	if ignoreCase {
+		return "(?i)" + pattern
+	}
+	return pattern
+}
+
+func highlightMatches(text string, positions []MatchPosition) string {
+	if len(positions) == 0 {
+		return text
+	}
+
+	var result strings.Builder
+	lastEnd := 0
+
+	for _, pos := range positions {
+		result.WriteString(text[lastEnd:pos.Start])
+		result.WriteString("**")
+		result.WriteString(text[pos.Start:pos.End])
+		result.WriteString("**")
+		lastEnd = pos.End
+	}
+
+	result.WriteString(text[lastEnd:])
+	return result.String()
 }
