@@ -82,15 +82,19 @@ Then simply paste to in Workflowy.  It will produce a report like this:
 ```
 # Descendant Count Report
 
-Root: Root
-Threshold: 1.00%
-Total descendants: 34437
+Root: usage report sample
+Threshold: 5.00%
+Total descendants: 43
 
-- [Root](https://workflowy.com/#/root) (100.0%, 34437 descendants)
-  - [projects](https://workflowy.com/#/xxx) (91.6%, 31532 descendants)
-    - [project A](https://workflowy.com/#/yyy) (90.9%, 31314 descendants)
-      - [phase 1](https://workflowy.com/#/zzz) (78.3%, 26951 descendants)
-```
+- [usage report sample](https://workflowy.com/#/...) (100.0%, 43 descendants)
+  - [Projects](https://workflowy.com/#/...) (72.1%, 31 descendants)
+    - [Project C](https://workflowy.com/#/...) (34.9%, 15 descendants)
+      - [issues](https://workflowy.com/#/...) (23.3%, 10 descendants)
+    - [Project B](https://workflowy.com/#/...) (20.9%, 9 descendants)
+      - [issues](https://workflowy.com/#/...) (9.3%, 4 descendants)
+    - [Project A](https://workflowy.com/#/...) (14.0%, 6 descendants)
+  - [Inbox](https://workflowy.com/#/...) (14.0%, 6 descendants)
+  - [People](https://workflowy.com/#/...) (11.6%, 5 descendants)```
 
 ### Basic Commands
 
