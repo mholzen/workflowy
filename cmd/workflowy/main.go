@@ -746,10 +746,35 @@ func setupLogging(level string) {
 		os.Exit(1)
 	}
 
-	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: logLevel,
-	})
+	handler := &simpleHandler{
+		level:  logLevel,
+		writer: os.Stderr,
+	}
 	slog.SetDefault(slog.New(handler))
+}
+
+type simpleHandler struct {
+	level  slog.Level
+	writer io.Writer
+}
+
+func (h *simpleHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return level >= h.level
+}
+
+func (h *simpleHandler) Handle(_ context.Context, r slog.Record) error {
+	level := r.Level.String()
+	msg := r.Message
+	fmt.Fprintf(h.writer, "%s: %s\n", level, msg)
+	return nil
+}
+
+func (h *simpleHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return h
+}
+
+func (h *simpleHandler) WithGroup(name string) slog.Handler {
+	return h
 }
 
 func createClient(apiKeyFile string) *workflowy.WorkflowyClient {
