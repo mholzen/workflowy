@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mholzen/workflowy/pkg/formatter"
 	"github.com/mholzen/workflowy/pkg/reports"
 	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
@@ -958,17 +959,34 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 		// No sorting needed for create response
 	}
 
-	if format == "list" {
+	switch format {
+	case "list":
 		switch v := data.(type) {
 		case *workflowy.Item:
 			fmt.Print(itemToMarkdownList(v, 0))
 		case *workflowy.ListChildrenResponse:
 			fmt.Print(responseToMarkdownList(v))
 		default:
-			// Fallback to JSON for unknown types
 			printJSON(data)
 		}
-	} else {
+	case "markdown":
+		switch v := data.(type) {
+		case *workflowy.Item:
+			output, err := formatter.FormatItemsAsMarkdown(v.Children)
+			if err != nil {
+				log.Fatalf("Error formatting markdown: %v", err)
+			}
+			fmt.Print(output)
+		case *workflowy.ListChildrenResponse:
+			output, err := formatter.FormatItemsAsMarkdown(v.Items)
+			if err != nil {
+				log.Fatalf("Error formatting markdown: %v", err)
+			}
+			fmt.Print(output)
+		default:
+			printJSON(data)
+		}
+	default:
 		printJSON(data)
 	}
 }

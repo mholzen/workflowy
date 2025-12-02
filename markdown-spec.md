@@ -112,9 +112,10 @@ will produce:
 # Item A
 
 This is a rather lengthy paragraph. This looks like the beginning of a list:
-    - item 1
-    - item 2
-    - item 3
+
+- item 1
+- item 2
+- item 3
 
 This looks like another lengthy paragraph.
 
