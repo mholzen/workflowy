@@ -374,3 +374,43 @@ func TestChildrenHaveGrandchildren(t *testing.T) {
 	assert.False(t, ChildrenHaveGrandchildren(empty))
 }
 
+func TestParagraphLayoutModeWithChildren(t *testing.T) {
+	items := []*workflowy.Item{
+		{
+			Name: "This is a paragraph",
+			Data: map[string]interface{}{"layoutMode": "p"},
+			Children: []*workflowy.Item{
+				{Name: "Child item 1"},
+				{Name: "Child item 2"},
+				{Name: "Child item 3"},
+			},
+		},
+		{
+			Name: "Now this would be a list",
+			Data: map[string]interface{}{"layoutMode": "p"},
+			Children: []*workflowy.Item{
+				{Name: "List item 1"},
+				{Name: "List item 2"},
+			},
+		},
+	}
+
+	expected := `This is a paragraph.
+
+- Child item 1
+- Child item 2
+- Child item 3
+
+Now this would be a list.
+
+- List item 1
+- List item 2
+`
+
+	formatter := NewMarkdownFormatter()
+	result, err := formatter.FormatTree(items)
+
+	assert.NoError(t, err)
+	assert.Equal(t, expected, result)
+}
+

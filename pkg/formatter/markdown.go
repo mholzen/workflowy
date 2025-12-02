@@ -71,7 +71,7 @@ func (f *MarkdownFormatter) formatNode(item *workflowy.Item, headerLevel int) st
 	case "h3":
 		return f.formatAsHeader(item, name, 3)
 	case "p":
-		return f.formatAsParagraph(name) + "\n\n"
+		return f.formatAsParagraphWithChildren(item, name)
 	case "ol":
 		return f.formatAsOrderedList(item, name)
 	case "quote":
@@ -283,6 +283,30 @@ func (f *MarkdownFormatter) formatWithListChildren(item *workflowy.Item, name st
 
 func (f *MarkdownFormatter) formatAsParagraph(text string) string {
 	return FormatAsSentence(text)
+}
+
+func (f *MarkdownFormatter) formatAsParagraphWithChildren(item *workflowy.Item, name string) string {
+	var result strings.Builder
+
+	result.WriteString(f.formatAsParagraph(name))
+	result.WriteString("\n\n")
+
+	if len(item.Children) > 0 {
+		for _, child := range item.Children {
+			if f.shouldExclude(child) {
+				continue
+			}
+			childName := f.stripAllTags(child.Name)
+			if !IsEmpty(childName) {
+				result.WriteString("- ")
+				result.WriteString(childName)
+				result.WriteString("\n")
+			}
+		}
+		result.WriteString("\n")
+	}
+
+	return result.String()
 }
 
 func (f *MarkdownFormatter) formatAsOrderedList(item *workflowy.Item, name string) string {
