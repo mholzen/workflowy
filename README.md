@@ -327,7 +327,7 @@ workflowy get --method=export --force-refresh  # Bypass cache
 The CLI can read from a Workflowy backup file, stored to Dropbox and sync'ed to
 your filesystem locally.  Enable "Auto-Backup my Workflowy to Dropbox" in
 [Settings](https://workflowy.com/learn/account/) and ensure your Dropbox folder
-`/Apps/Workflowy/Data/` is sync'ed locally to ``~/Dropbox/Apps/Workflowy/Data/`.
+`/Apps/Workflowy/Data/` is synced locally to `~/Dropbox/Apps/Workflowy/Data/`.
 
 **When used:**
 - Explicitly via `--method=backup`
