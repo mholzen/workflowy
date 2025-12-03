@@ -32,6 +32,7 @@ func WithAPIKey(apiKey string) client.Option {
 func WithAPIKeyFromFile(filename string) client.Option {
 	return func(c *client.Client) {
 		c.SetAuth(func(r *http.Request) {
+			slog.Debug("loading API key", "file", filename)
 			apiKeyBytes, err := os.ReadFile(filename)
 			if err != nil {
 				slog.Warn("cannot read API key file", "error", err)

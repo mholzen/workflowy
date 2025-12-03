@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -172,6 +171,5 @@ func validatePosition(position string) error {
 }
 
 func createClient(apiKeyFile string) *workflowy.WorkflowyClient {
-	slog.Debug("loading API key", "file", apiKeyFile)
 	return workflowy.NewWorkflowyClient(workflowy.WithAPIKeyFromFile(apiKeyFile))
 }
