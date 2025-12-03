@@ -2,12 +2,39 @@
 
 ## Quick Start
 
+1. [Get an API key](#get-your-api-key) or [enable backup to Dropbox](#3-backup-file---methodbackup)
+
+2. Install
 ```bash
-$ brew install mholzen/workflowy/workflowy-cli
-$ workflowy report count | pbcopy
-# then paste in Workflowy
+brew install mholzen/workflowy/workflowy-cli
+```
+
+3. Run the descendant count report and paste to Workflowy
+```bash
+workflowy report count | pbcopy
+```
+Use `clip` on Windows.
+
+It will produce a report such as:
 
 ```
+# Descendant Count Report
+
+Root: Root
+Threshold: 1.00%
+Total descendants: 43
+
+- [Root](https://workflowy.com/#/...) (100.0%, 43 descendants)
+  - [Projects](https://workflowy.com/#/...) (72.1%, 31 descendants)
+    - [Project C](https://workflowy.com/#/...) (34.9%, 15 descendants)
+      - [issues](https://workflowy.com/#/...) (23.3%, 10 descendants)
+    - [Project B](https://workflowy.com/#/...) (20.9%, 9 descendants)
+      - [issues](https://workflowy.com/#/...) (9.3%, 4 descendants)
+    - [Project A](https://workflowy.com/#/...) (14.0%, 6 descendants)
+  - [Inbox](https://workflowy.com/#/...) (14.0%, 6 descendants)
+  - [People](https://workflowy.com/#/...) (11.6%, 5 descendants)
+  ```
+
 
 
 ## Table of Contents
@@ -38,10 +65,10 @@ updating nodes, searching through content, and generating usage reports.
 - **Node Operations**: Get, List, Create, and Update to operate on nodes.
 - **Search**: Search through all nodes with text or regex patterns, with case-sensitive/insensitive options and highlighted results.
 - **Usage Reports**: Understand where the majority of your nodes are stored, which nodes have many children or which ones are possibly stale:
-  - Descendant count reports with threshold filtering.
-  - Rank nodes by immediate children count
-  - Find oldest nodes by creation date
-  - Find oldest nodes by modification date
+  - Rank nodes by the count of descendants, with a configurable threshold to the total number of nodes
+  - Rank nodes by count of immediate children
+  - Rank nodes by oldest created or modified dates
+- **Format**: produces Markdown lists or JSON
 - **Report Upload**: Upload usage reports using the API or paste
   the markdown output into Workflowy
 - **Backup File Support**: Operates on local backup files for faster operations
@@ -78,33 +105,6 @@ chmod 600 ~/.workflowy/api.key
 ```
 
 ## Usage
-
-### Quick Start
-
-Generate the descedant count report, copy it to your clipboard
-
-```bash
-workflowy report count | pbcopy
-```
-
-Then simply paste to in Workflowy.  It will produce a report like this:
-
-```
-# Descendant Count Report
-
-Root: usage report sample
-Threshold: 5.00%
-Total descendants: 43
-
-- [usage report sample](https://workflowy.com/#/...) (100.0%, 43 descendants)
-  - [Projects](https://workflowy.com/#/...) (72.1%, 31 descendants)
-    - [Project C](https://workflowy.com/#/...) (34.9%, 15 descendants)
-      - [issues](https://workflowy.com/#/...) (23.3%, 10 descendants)
-    - [Project B](https://workflowy.com/#/...) (20.9%, 9 descendants)
-      - [issues](https://workflowy.com/#/...) (9.3%, 4 descendants)
-    - [Project A](https://workflowy.com/#/...) (14.0%, 6 descendants)
-  - [Inbox](https://workflowy.com/#/...) (14.0%, 6 descendants)
-  - [People](https://workflowy.com/#/...) (11.6%, 5 descendants)```
 
 ### Basic Commands
 
@@ -153,8 +153,8 @@ workflowy list <item-id>
 # List with custom depth
 workflowy list <item-id> --depth 3
 
-# List all descendants as flat list
-workflowy list <item-id> --all
+# List all descendants a list of JSON nodes
+workflowy list --all --format=json
 
 # Use backup file for fastest access
 workflowy list --method=backup
@@ -208,6 +208,10 @@ workflowy search "meeting" --format json
 **Output Formats:**
 - `--format list` (default): Markdown list with clickable links and **highlighted** matches
 - `--format json`: JSON array with match positions and metadata
+- `—-format markdown`: **Experimental** formatter that attempts to turn a tree of
+  nodes without any `layoutMode` information into a Markdown document,
+  translating parent nodes in header nodes, joining paragraphs, capitalizing and
+  joining paragraphs, and detecting list vs paragraph items using a heuristic.
 
 ### Usage Reports
 
@@ -262,7 +266,7 @@ workflowy report count --upload --parent-id xxx-yyy-zzz --position top
 
 ### Global Options
 
-- `--format <json|md>`: Output format (default: md)
+- `--format <list|json|markdown>`: Output format: list, json, or markdown (default: "list")
 - `--log <level>`: Log level: debug, info, warn, error (default: info)
 
 ### Command-Specific Options
@@ -319,6 +323,12 @@ workflowy get --method=export --force-refresh  # Bypass cache
 ```
 
 ##### 3. Backup File (`--method=backup`)
+
+The CLI can read from a Workflowy backup file, stored to Dropbox and sync'ed to
+your filesystem locally.  Enable "Auto-Backup my Workflowy to Dropbox" in
+[Settings](https://workflowy.com/learn/account/) and ensure your Dropbox folder
+`/Apps/Workflowy/Data/` is sync'ed locally to ``~/Dropbox/Apps/Workflowy/Data/`.
+
 **When used:**
 - Explicitly via `--method=backup`
 - Fastest option, works offline
