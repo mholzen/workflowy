@@ -331,13 +331,14 @@ your filesystem locally.  Enable "Auto-Backup my Workflowy to Dropbox" in
 
 **When used:**
 - Explicitly via `--method=backup`
-- Fastest option, works offline
+- As a fallback, if no API key is found
 
 **Characteristics:**
 - Reads from local Workflowy backup file
+- Fastest option
+- Works offline
 - No API calls required
 - No rate limits
-- Works offline
 - Data may be slightly stale (depends on backup frequency)
 
 **Default backup location:** `~/Dropbox/Apps/Workflowy/Data/*.workflowy.backup` (most recent file)
