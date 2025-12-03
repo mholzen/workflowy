@@ -145,14 +145,14 @@ func getCreateCommand() *cli.Command {
 				slog.Debug("reading from stdin")
 				stdinBytes, err := io.ReadAll(os.Stdin)
 				if err != nil {
-					return fmt.Errorf("error reading stdin: %w", err)
+					return fmt.Errorf("cannot read stdin: %w", err)
 				}
 				name = strings.TrimSpace(string(stdinBytes))
 			} else if readFile != "" {
 				slog.Debug("reading from file", "file", readFile)
 				fileBytes, err := os.ReadFile(readFile)
 				if err != nil {
-					return fmt.Errorf("error reading file: %w", err)
+					return fmt.Errorf("cannot read file: %w", err)
 				}
 				name = strings.TrimSpace(string(fileBytes))
 			}
@@ -181,7 +181,7 @@ func getCreateCommand() *cli.Command {
 			slog.Debug("creating node", "parent_id", req.ParentID, "name", name)
 			response, err := client.CreateNode(ctx, req)
 			if err != nil {
-				return fmt.Errorf("error creating node: %w", err)
+				return fmt.Errorf("cannot create node: %w", err)
 			}
 
 			printOutput(response, format, cmd.Bool("include-empty-names"))
@@ -250,7 +250,7 @@ func getUpdateCommand() *cli.Command {
 			slog.Debug("updating node", "item_id", itemID)
 			response, err := client.UpdateNode(ctx, itemID, req)
 			if err != nil {
-				return fmt.Errorf("error updating node: %w", err)
+				return fmt.Errorf("cannot update node: %w", err)
 			}
 
 			printOutput(response, format, cmd.Bool("include-empty-names"))
@@ -546,4 +546,3 @@ func getVersionCommand() *cli.Command {
 		},
 	}
 }
-

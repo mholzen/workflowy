@@ -47,7 +47,7 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, itemID string, depth i
 			items, err = workflowy.ReadLatestBackup()
 		}
 		if err != nil {
-			return nil, fmt.Errorf("error reading backup file: %w", err)
+			return nil, fmt.Errorf("cannot read backup file: %w", err)
 		}
 
 		if itemID != "None" {
@@ -65,7 +65,7 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, itemID string, depth i
 		forceRefresh := cmd.Bool("force-refresh")
 		response, err := client.ExportNodesWithCache(apiCtx, forceRefresh)
 		if err != nil {
-			return nil, fmt.Errorf("error exporting nodes: %w", err)
+			return nil, fmt.Errorf("cannot export nodes: %w", err)
 		}
 
 		slog.Debug("reconstructing tree from export data")
@@ -91,20 +91,20 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, itemID string, depth i
 			slog.Debug("fetching root items", "depth", depth)
 			response, err := client.ListChildrenRecursiveWithDepth(apiCtx, itemID, depth)
 			if err != nil {
-				return nil, fmt.Errorf("error fetching root items: %w", err)
+				return nil, fmt.Errorf("cannot fetch root items: %w", err)
 			}
 			result = response
 		} else {
 			slog.Debug("fetching item", "item_id", itemID, "depth", depth)
 			item, err := client.GetItem(apiCtx, itemID)
 			if err != nil {
-				return nil, fmt.Errorf("error getting item: %w", err)
+				return nil, fmt.Errorf("cannot get item: %w", err)
 			}
 
 			if depth > 0 {
 				childrenResp, err := client.ListChildrenRecursiveWithDepth(apiCtx, itemID, depth)
 				if err != nil {
-					return nil, fmt.Errorf("error fetching children: %w", err)
+					return nil, fmt.Errorf("cannot fetch children: %w", err)
 				}
 				item.Children = childrenResp.Items
 			}
@@ -168,4 +168,3 @@ func flattenItem(item *workflowy.Item) []*workflowy.Item {
 	item.Children = nil
 	return result
 }
-

@@ -55,6 +55,6 @@ Examples:
 	}
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
-		slog.Error("error running command", "error", err)
+		slog.Error("cannot run command", "error", err)
 	}
 }

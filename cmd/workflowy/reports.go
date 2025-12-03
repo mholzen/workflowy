@@ -60,7 +60,7 @@ func loadTree(ctx context.Context, cmd *cli.Command) ([]*workflowy.Item, error) 
 			items, err = workflowy.ReadLatestBackup()
 		}
 		if err != nil {
-			return nil, fmt.Errorf("error reading backup file: %w", err)
+			return nil, fmt.Errorf("cannot read backup file: %w", err)
 		}
 	} else {
 		client := createClient(cmd.String("api-key-file"))
@@ -69,7 +69,7 @@ func loadTree(ctx context.Context, cmd *cli.Command) ([]*workflowy.Item, error) 
 		slog.Debug("using export API", "force_refresh", forceRefresh)
 		response, err := client.ExportNodesWithCache(ctx, forceRefresh)
 		if err != nil {
-			return nil, fmt.Errorf("error exporting nodes: %w", err)
+			return nil, fmt.Errorf("cannot export nodes: %w", err)
 		}
 
 		slog.Debug("reconstructing tree from export data")
@@ -133,4 +133,3 @@ func printCountTree(node workflowy.Descendants, depth int) {
 		printCountTree(child.Node(), depth+1)
 	}
 }
-

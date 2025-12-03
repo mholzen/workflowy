@@ -20,7 +20,7 @@ func UploadReport(ctx context.Context, client *workflowy.WorkflowyClient, report
 	slog.Info("converting report to nodes", "title", report.Title())
 	root, err := report.ToNodes()
 	if err != nil {
-		return "", fmt.Errorf("error converting report to nodes: %w", err)
+		return "", fmt.Errorf("cannot convert report to nodes: %w", err)
 	}
 
 	// Set default parent if not specified
@@ -32,7 +32,7 @@ func UploadReport(ctx context.Context, client *workflowy.WorkflowyClient, report
 	slog.Info("uploading report tree", "parent_id", opts.ParentID)
 	nodeID, err := uploadTree(ctx, client, root, opts.ParentID, opts.Position)
 	if err != nil {
-		return "", fmt.Errorf("error uploading report: %w", err)
+		return "", fmt.Errorf("cannot upload report: %w", err)
 	}
 
 	slog.Info("report uploaded successfully", "node_id", nodeID)
@@ -56,7 +56,7 @@ func uploadTree(ctx context.Context, client *workflowy.WorkflowyClient, item *wo
 	slog.Debug("creating node", "name", item.Name, "parent_id", parentID)
 	resp, err := client.CreateNode(ctx, req)
 	if err != nil {
-		return "", fmt.Errorf("error creating node '%s': %w", item.Name, err)
+		return "", fmt.Errorf("cannot create node '%s': %w", item.Name, err)
 	}
 
 	newNodeID := resp.ItemID

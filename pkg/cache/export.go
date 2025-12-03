@@ -45,12 +45,12 @@ func ReadExportCache() (*ExportCache, error) {
 			slog.Debug("cache file does not exist", "path", cachePath)
 			return nil, nil // No cache exists, not an error
 		}
-		return nil, fmt.Errorf("error reading cache file: %w", err)
+		return nil, fmt.Errorf("cannot read cache file: %w", err)
 	}
 
 	var cache ExportCache
 	if err := json.Unmarshal(data, &cache); err != nil {
-		return nil, fmt.Errorf("error parsing cache file: %w", err)
+		return nil, fmt.Errorf("cannot parse cache file: %w", err)
 	}
 
 	slog.Debug("cache file read successfully", "path", cachePath, "timestamp", cache.Timestamp)
@@ -68,13 +68,13 @@ func WriteExportCache(data interface{}) error {
 	// Ensure cache directory exists
 	cacheDir := filepath.Dir(cachePath)
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return fmt.Errorf("error creating cache directory: %w", err)
+		return fmt.Errorf("cannot create cache directory: %w", err)
 	}
 
 	// Marshal the data to JSON
 	dataJSON, err := json.Marshal(data)
 	if err != nil {
-		return fmt.Errorf("error encoding data: %w", err)
+		return fmt.Errorf("cannot encode data: %w", err)
 	}
 
 	cache := ExportCache{
@@ -84,11 +84,11 @@ func WriteExportCache(data interface{}) error {
 
 	cacheData, err := json.MarshalIndent(cache, "", "  ")
 	if err != nil {
-		return fmt.Errorf("error encoding cache data: %w", err)
+		return fmt.Errorf("cannot encode cache data: %w", err)
 	}
 
 	if err := os.WriteFile(cachePath, cacheData, 0644); err != nil {
-		return fmt.Errorf("error writing cache file: %w", err)
+		return fmt.Errorf("cannot write cache file: %w", err)
 	}
 
 	slog.Debug("cache file written", "path", cachePath, "timestamp", cache.Timestamp)

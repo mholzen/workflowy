@@ -20,7 +20,7 @@ type FetchParameters struct {
 func getMethodFlags() []cli.Flag {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatalf("Error getting home directory: %v", err)
+		log.Fatalf("cannot get home directory: %v", err)
 	}
 	defaultAPIKeyFile := filepath.Join(homeDir, ".workflowy", "api.key")
 
@@ -175,4 +175,3 @@ func createClient(apiKeyFile string) *workflowy.WorkflowyClient {
 	slog.Debug("loading API key", "file", apiKeyFile)
 	return workflowy.NewWorkflowyClient(workflowy.WithAPIKeyFromFile(apiKeyFile))
 }
-

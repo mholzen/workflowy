@@ -34,7 +34,7 @@ func WithAPIKeyFromFile(filename string) client.Option {
 		c.SetAuth(func(r *http.Request) {
 			apiKeyBytes, err := os.ReadFile(filename)
 			if err != nil {
-				slog.Warn("error reading API key file", "error", err)
+				slog.Warn("cannot read API key file", "error", err)
 				return // fail silently, let the API call fail with auth error
 			}
 			apiKey := strings.TrimSpace(string(apiKeyBytes))
@@ -290,18 +290,18 @@ func BackupNodeToItem(node BackupNode) *Item {
 func ReadBackupFile(filename string) ([]*Item, error) {
 	file, err := os.Open(filename)
 	if err != nil {
-		return nil, fmt.Errorf("error opening backup file: %w", err)
+		return nil, fmt.Errorf("cannot open backup file: %w", err)
 	}
 	defer file.Close()
 
 	data, err := io.ReadAll(file)
 	if err != nil {
-		return nil, fmt.Errorf("error reading backup file: %w", err)
+		return nil, fmt.Errorf("cannot read backup file: %w", err)
 	}
 
 	var backupNodes []BackupNode
 	if err := json.Unmarshal(data, &backupNodes); err != nil {
-		return nil, fmt.Errorf("error parsing backup file: %w", err)
+		return nil, fmt.Errorf("cannot parse backup file: %w", err)
 	}
 
 	// Convert backup nodes to Items
@@ -324,7 +324,7 @@ func ReadLatestBackup() ([]*Item, error) {
 
 	files, err := filepath.Glob(filepath.Join(dropboxPath, "*.workflowy.backup"))
 	if err != nil {
-		return nil, fmt.Errorf("error searching for backup files: %w", err)
+		return nil, fmt.Errorf("cannot search for backup files: %w", err)
 	}
 
 	if len(files) == 0 {
@@ -435,7 +435,7 @@ func (wc *WorkflowyClient) ExportNodesWithCache(ctx context.Context, forceRefres
 	// Try to read cache first
 	cachedData, err := cache.ReadExportCache()
 	if err != nil {
-		slog.Warn("error reading cache, will fetch from API", "error", err)
+		slog.Warn("cannot read cache, will fetch from API", "error", err)
 	}
 
 	// Use cache if valid and not forcing refresh
@@ -446,7 +446,7 @@ func (wc *WorkflowyClient) ExportNodesWithCache(ctx context.Context, forceRefres
 		// Unmarshal cached data
 		var resp ExportNodesResponse
 		if err := json.Unmarshal(cachedData.Data, &resp); err != nil {
-			slog.Warn("error unmarshaling cached data, will fetch from API", "error", err)
+			slog.Warn("cannot unmarshal cached data, will fetch from API", "error", err)
 		} else {
 			return &resp, nil
 		}
@@ -475,12 +475,12 @@ func (wc *WorkflowyClient) ExportNodesWithCache(ctx context.Context, forceRefres
 				return &fallbackResp, nil
 			}
 		}
-		return nil, fmt.Errorf("error fetching export data: %w", err)
+		return nil, fmt.Errorf("cannot fetch export data: %w", err)
 	}
 
 	// Write to cache
 	if err := cache.WriteExportCache(resp); err != nil {
-		slog.Warn("error writing cache (continuing anyway)", "error", err)
+		slog.Warn("cannot write cache (continuing anyway)", "error", err)
 	}
 
 	return resp, nil

@@ -14,7 +14,7 @@ import (
 func printJSON(response interface{}) {
 	prettyJSON, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		log.Fatalf("Error formatting JSON: %v", err)
+		log.Fatalf("cannot format JSON: %v", err)
 	}
 	fmt.Printf("%s\n", prettyJSON)
 }
@@ -107,13 +107,13 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 		case *workflowy.Item:
 			output, err := formatter.FormatItemsAsMarkdown(v.Children)
 			if err != nil {
-				log.Fatalf("Error formatting markdown: %v", err)
+				log.Fatalf("cannot format markdown: %v", err)
 			}
 			fmt.Print(output)
 		case *workflowy.ListChildrenResponse:
 			output, err := formatter.FormatItemsAsMarkdown(v.Items)
 			if err != nil {
-				log.Fatalf("Error formatting markdown: %v", err)
+				log.Fatalf("cannot format markdown: %v", err)
 			}
 			fmt.Print(output)
 		case []SearchResult:
@@ -127,4 +127,3 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 		printJSON(data)
 	}
 }
-
