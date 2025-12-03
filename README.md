@@ -1,5 +1,15 @@
 # Workflowy CLI
 
+## Quick Start
+
+```bash
+$ brew install mholzen/workflowy/workflowy-cli
+$ workflowy report count | pbcopy
+# then paste in Workflowy
+
+```
+
+
 ## Table of Contents
 
 - [Features](#features)

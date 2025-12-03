@@ -496,76 +496,76 @@ Examples:
 					},
 				},
 			},
-		{
-			Name:  "search",
-			Usage: "Search for items by name",
-			Arguments: []cli.Argument{
-				&cli.StringArg{
-					Name:      "pattern",
-					UsageText: "Search pattern (text or regex with -E)",
+			{
+				Name:  "search",
+				Usage: "Search for items by name",
+				Arguments: []cli.Argument{
+					&cli.StringArg{
+						Name:      "pattern",
+						UsageText: "Search pattern (text or regex with -E)",
+					},
+				},
+				Flags: append([]cli.Flag{
+					&cli.BoolFlag{
+						Name:    "ignore-case",
+						Aliases: []string{"i"},
+						Usage:   "Case-insensitive search",
+					},
+					&cli.BoolFlag{
+						Name:    "regexp",
+						Aliases: []string{"E"},
+						Usage:   "Treat pattern as regular expression",
+					},
+					&cli.StringFlag{
+						Name:  "item-id",
+						Value: "None",
+						Usage: "Search within specific subtree (default: root)",
+					},
+				}, getMethodFlags()...),
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					format := cmd.String("format")
+					if err := validateFormat(format); err != nil {
+						return err
+					}
+
+					pattern := cmd.StringArg("pattern")
+					if pattern == "" {
+						return fmt.Errorf("search pattern is required")
+					}
+
+					method := cmd.String("method")
+					if method == "get" {
+						slog.Warn("GET method not supported for search, switching to export")
+						method = "export"
+					}
+
+					items, err := loadTree(ctx, cmd)
+					if err != nil {
+						return err
+					}
+
+					itemID := cmd.String("item-id")
+					rootItem := findRootItem(items, itemID)
+					if rootItem == nil && itemID != "None" {
+						return fmt.Errorf("item not found: %s", itemID)
+					}
+
+					searchRoot := items
+					if rootItem != nil {
+						searchRoot = []*workflowy.Item{rootItem}
+					}
+
+					results := searchItems(
+						searchRoot,
+						pattern,
+						cmd.Bool("regexp"),
+						cmd.Bool("ignore-case"),
+					)
+
+					printOutput(results, format, false)
+					return nil
 				},
 			},
-			Flags: append([]cli.Flag{
-				&cli.BoolFlag{
-					Name:    "ignore-case",
-					Aliases: []string{"i"},
-					Usage:   "Case-insensitive search",
-				},
-				&cli.BoolFlag{
-					Name:    "regexp",
-					Aliases: []string{"E"},
-					Usage:   "Treat pattern as regular expression",
-				},
-				&cli.StringFlag{
-					Name:  "item-id",
-					Value: "None",
-					Usage: "Search within specific subtree (default: root)",
-				},
-			}, getMethodFlags()...),
-			Action: func(ctx context.Context, cmd *cli.Command) error {
-				format := cmd.String("format")
-				if err := validateFormat(format); err != nil {
-					return err
-				}
-
-				pattern := cmd.StringArg("pattern")
-				if pattern == "" {
-					return fmt.Errorf("search pattern is required")
-				}
-
-				method := cmd.String("method")
-				if method == "get" {
-					slog.Warn("GET method not supported for search, switching to export")
-					method = "export"
-				}
-
-				items, err := loadTree(ctx, cmd)
-				if err != nil {
-					return err
-				}
-
-				itemID := cmd.String("item-id")
-				rootItem := findRootItem(items, itemID)
-				if rootItem == nil && itemID != "None" {
-					return fmt.Errorf("item not found: %s", itemID)
-				}
-
-				searchRoot := items
-				if rootItem != nil {
-					searchRoot = []*workflowy.Item{rootItem}
-				}
-
-				results := searchItems(
-					searchRoot,
-					pattern,
-					cmd.Bool("regexp"),
-					cmd.Bool("ignore-case"),
-				)
-
-				printOutput(results, format, false)
-				return nil
-			},
-		},
 			{
 				Name:  "version",
 				Usage: "Show version information",
@@ -580,7 +580,7 @@ Examples:
 	}
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
-		log.Fatal(err)
+		slog.Error("error running command", "error", err)
 	}
 }
 
@@ -765,7 +765,16 @@ func (h *simpleHandler) Enabled(_ context.Context, level slog.Level) bool {
 func (h *simpleHandler) Handle(_ context.Context, r slog.Record) error {
 	level := r.Level.String()
 	msg := r.Message
-	fmt.Fprintf(h.writer, "%s: %s\n", level, msg)
+	var attrs []string
+	r.Attrs(func(a slog.Attr) bool {
+		attrs = append(attrs, fmt.Sprintf("%s=%v", a.Key, a.Value))
+		return true
+	})
+	if len(attrs) > 0 {
+		fmt.Fprintf(h.writer, "%s: %s (%s)\n", level, msg, strings.Join(attrs, " "))
+	} else {
+		fmt.Fprintf(h.writer, "%s: %s\n", level, msg)
+	}
 	return nil
 }
 
@@ -1136,7 +1145,7 @@ func loadTree(ctx context.Context, cmd *cli.Command) ([]*workflowy.Item, error) 
 		useMethod = "export"
 	}
 
-	slog.Debug("loadTree access method", "method", useMethod)
+	slog.Debug("access method for complete load", "method", useMethod)
 
 	// Method 1: Backup file
 	if useMethod == "backup" {

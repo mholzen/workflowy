@@ -34,6 +34,7 @@ func WithAPIKeyFromFile(filename string) client.Option {
 		c.SetAuth(func(r *http.Request) {
 			apiKeyBytes, err := os.ReadFile(filename)
 			if err != nil {
+				slog.Warn("error reading API key file", "error", err)
 				return // fail silently, let the API call fail with auth error
 			}
 			apiKey := strings.TrimSpace(string(apiKeyBytes))
