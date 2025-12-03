@@ -35,7 +35,6 @@ func uploadReport(ctx context.Context, cmd *cli.Command, report reports.ReportOu
 
 func loadTree(ctx context.Context, cmd *cli.Command) ([]*workflowy.Item, error) {
 	var items []*workflowy.Item
-	var err error
 
 	method := cmd.String("method")
 	backupFile := cmd.String("backup-file")
@@ -49,34 +48,47 @@ func loadTree(ctx context.Context, cmd *cli.Command) ([]*workflowy.Item, error) 
 		useMethod = "export"
 	}
 
-	slog.Debug("access method for complete load", "method", useMethod)
-
 	if useMethod == "backup" {
-		if backupFile != "" {
-			slog.Debug("using backup file", "file", backupFile)
-			items, err = workflowy.ReadBackupFile(backupFile)
-		} else {
-			slog.Debug("using latest backup file")
-			items, err = workflowy.ReadLatestBackup()
-		}
-		if err != nil {
-			return nil, fmt.Errorf("cannot read backup file: %w", err)
-		}
-	} else {
-		client := createClient(cmd.String("api-key-file"))
-		forceRefresh := cmd.Bool("force-refresh")
-
-		slog.Debug("using export API", "force_refresh", forceRefresh)
-		response, err := client.ExportNodesWithCache(ctx, forceRefresh)
-		if err != nil {
-			return nil, fmt.Errorf("cannot export nodes: %w", err)
-		}
-
-		slog.Debug("reconstructing tree from export data")
-		root := workflowy.BuildTreeFromExport(response.Nodes)
-		items = root.Children
+		return loadFromBackup(backupFile)
 	}
 
+	client := createClient(cmd.String("api-key-file"))
+	forceRefresh := cmd.Bool("force-refresh")
+
+	slog.Debug("using export API", "force_refresh", forceRefresh)
+	response, err := client.ExportNodesWithCache(ctx, forceRefresh)
+	if err != nil {
+		if method == "" {
+			slog.Warn("export failed, falling back to backup", "error", err)
+			return loadFromBackup(backupFile)
+		}
+		return nil, fmt.Errorf("cannot export nodes: %w", err)
+	}
+
+	slog.Debug("reconstructing tree from export data")
+	root := workflowy.BuildTreeFromExport(response.Nodes)
+	items = root.Children
+
+	return items, nil
+}
+
+func loadFromBackup(backupFile string) ([]*workflowy.Item, error) {
+	if backupFile != "" {
+		slog.Debug("using backup file", "file", backupFile)
+	} else {
+		slog.Debug("using latest backup file")
+	}
+
+	var items []*workflowy.Item
+	var err error
+	if backupFile != "" {
+		items, err = workflowy.ReadBackupFile(backupFile)
+	} else {
+		items, err = workflowy.ReadLatestBackup()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("cannot read backup file: %w", err)
+	}
 	return items, nil
 }
 

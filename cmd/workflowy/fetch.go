@@ -36,35 +36,17 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, itemID string, depth i
 
 	switch useMethod {
 	case "backup":
-		var items []*workflowy.Item
-		var err error
-
-		if backupFile != "" {
-			slog.Debug("using backup file", "file", backupFile)
-			items, err = workflowy.ReadBackupFile(backupFile)
-		} else {
-			slog.Debug("using latest backup file")
-			items, err = workflowy.ReadLatestBackup()
-		}
-		if err != nil {
-			return nil, fmt.Errorf("cannot read backup file: %w", err)
-		}
-
-		if itemID != "None" {
-			found := findItemInTree(items, itemID, depth)
-			if found == nil {
-				return nil, fmt.Errorf("item %s not found in backup", itemID)
-			}
-			result = found
-		} else {
-			result = &workflowy.ListChildrenResponse{Items: items}
-		}
+		return fetchFromBackup(backupFile, itemID, depth)
 
 	case "export":
 		slog.Debug("using export API", "depth", depth)
 		forceRefresh := cmd.Bool("force-refresh")
 		response, err := client.ExportNodesWithCache(apiCtx, forceRefresh)
 		if err != nil {
+			if method == "" {
+				slog.Warn("export failed, falling back to backup", "error", err)
+				return fetchFromBackup(backupFile, itemID, depth)
+			}
 			return nil, fmt.Errorf("cannot export nodes: %w", err)
 		}
 
@@ -78,6 +60,10 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, itemID string, depth i
 			}
 			result = found
 		} else {
+			if depth >= 0 {
+				slog.Debug("limiting depth for export results", "depth", depth, "item_count", len(root.Children))
+				limitItemsDepth(root.Children, depth)
+			}
 			result = &workflowy.ListChildrenResponse{Items: root.Children}
 		}
 
@@ -87,23 +73,35 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, itemID string, depth i
 			return nil, fmt.Errorf("depth must be non-negative when using GET API (use --method=export for depth=-1)")
 		}
 
+		var err error
 		if itemID == "None" {
 			slog.Debug("fetching root items", "depth", depth)
-			response, err := client.ListChildrenRecursiveWithDepth(apiCtx, itemID, depth)
+			result, err = client.ListChildrenRecursiveWithDepth(apiCtx, itemID, depth)
 			if err != nil {
+				if method == "" {
+					slog.Warn("get API failed, falling back to backup", "error", err)
+					return fetchFromBackup(backupFile, itemID, depth)
+				}
 				return nil, fmt.Errorf("cannot fetch root items: %w", err)
 			}
-			result = response
 		} else {
 			slog.Debug("fetching item", "item_id", itemID, "depth", depth)
 			item, err := client.GetItem(apiCtx, itemID)
 			if err != nil {
+				if method == "" {
+					slog.Warn("get API failed, falling back to backup", "error", err)
+					return fetchFromBackup(backupFile, itemID, depth)
+				}
 				return nil, fmt.Errorf("cannot get item: %w", err)
 			}
 
 			if depth > 0 {
 				childrenResp, err := client.ListChildrenRecursiveWithDepth(apiCtx, itemID, depth)
 				if err != nil {
+					if method == "" {
+						slog.Warn("get API failed fetching children, falling back to backup", "error", err)
+						return fetchFromBackup(backupFile, itemID, depth)
+					}
 					return nil, fmt.Errorf("cannot fetch children: %w", err)
 				}
 				item.Children = childrenResp.Items
@@ -116,6 +114,36 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, itemID string, depth i
 	}
 
 	return result, nil
+}
+
+func fetchFromBackup(backupFile string, itemID string, depth int) (interface{}, error) {
+	items, err := loadFromBackup(backupFile)
+	if err != nil {
+		return nil, err
+	}
+
+	if itemID != "None" {
+		found := findItemInTree(items, itemID, depth)
+		if found == nil {
+			return nil, fmt.Errorf("item %s not found in backup", itemID)
+		}
+		return found, nil
+	}
+
+	if depth >= 0 {
+		limitItemsDepth(items, depth)
+	}
+	return &workflowy.ListChildrenResponse{Items: items}, nil
+}
+
+func limitItemsDepth(items []*workflowy.Item, depth int) {
+	for _, item := range items {
+		if depth <= 1 {
+			item.Children = nil
+		} else {
+			limitItemDepth(item, depth-1)
+		}
+	}
 }
 
 func findItemInTree(items []*workflowy.Item, targetID string, maxDepth int) *workflowy.Item {
