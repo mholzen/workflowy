@@ -35,6 +35,7 @@ Total descendants: 43
   - [People](https://workflowy.com/#/...) (11.6%, 5 descendants)
   ```
 
+to understand where the majority of your nodes are located.
 
 
 ## Table of Contents
