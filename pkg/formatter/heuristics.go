@@ -126,6 +126,3 @@ func EnsurePunctuated(s string) string {
 func FormatAsSentence(s string) string {
 	return EnsurePunctuated(EnsureCapitalized(s))
 }
-
-
-

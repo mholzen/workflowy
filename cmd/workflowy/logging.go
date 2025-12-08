@@ -64,4 +64,3 @@ func (h *simpleHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 func (h *simpleHandler) WithGroup(name string) slog.Handler {
 	return h
 }
-
