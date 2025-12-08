@@ -19,6 +19,8 @@ func getCommands() []*cli.Command {
 		getListCommand(),
 		getCreateCommand(),
 		getUpdateCommand(),
+		getCompleteCommand(),
+		getUncompleteCommand(),
 		getReportCommand(),
 		getSearchCommand(),
 		getVersionCommand(),
@@ -254,6 +256,63 @@ func getUpdateCommand() *cli.Command {
 			}
 
 			printOutput(response, format, cmd.Bool("include-empty-names"))
+			return nil
+		},
+	}
+}
+
+func getCompleteCommand() *cli.Command {
+	return getCompletionCommand("complete", "Mark a node as complete", "completing")
+}
+
+func getUncompleteCommand() *cli.Command {
+	return getCompletionCommand("uncomplete", "Mark a node as uncomplete", "uncompleting")
+}
+
+func getCompletionCommand(commandName, usage, action string) *cli.Command {
+	return &cli.Command{
+		Name:  commandName,
+		Usage: usage,
+		Arguments: []cli.Argument{
+			&cli.StringArg{
+				Name:      "item_id",
+				UsageText: "<item_id>",
+			},
+		},
+		Flags: getMethodFlags(),
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			format := cmd.String("format")
+			if err := validateFormat(format); err != nil {
+				return err
+			}
+
+			itemID := cmd.StringArg("item_id")
+			if itemID == "" {
+				return fmt.Errorf("item_id is required")
+			}
+
+			client := createClient(cmd.String("api-key-file"))
+
+			slog.Debug(action+" node", "item_id", itemID)
+
+			var response *workflowy.UpdateNodeResponse
+			var err error
+
+			if commandName == "complete" {
+				response, err = client.CompleteNode(ctx, itemID)
+			} else {
+				response, err = client.UncompleteNode(ctx, itemID)
+			}
+
+			if err != nil {
+				return fmt.Errorf("cannot %s node: %w", commandName, err)
+			}
+
+			if format == "json" {
+				printJSON(response)
+			} else {
+				fmt.Printf("%s %sd\n", itemID, commandName)
+			}
 			return nil
 		},
 	}

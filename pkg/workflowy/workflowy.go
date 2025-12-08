@@ -219,6 +219,28 @@ func (wc *WorkflowyClient) UpdateNode(ctx context.Context, itemID string, req *U
 	return &resp, nil
 }
 
+func (wc *WorkflowyClient) CompleteNode(ctx context.Context, itemID string) (*UpdateNodeResponse, error) {
+	var resp UpdateNodeResponse
+	path := fmt.Sprintf("/nodes/%s/complete", itemID)
+	err := wc.Do(ctx, "POST", path, nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
+func (wc *WorkflowyClient) UncompleteNode(ctx context.Context, itemID string) (*UpdateNodeResponse, error) {
+	var resp UpdateNodeResponse
+	path := fmt.Sprintf("/nodes/%s/uncomplete", itemID)
+	err := wc.Do(ctx, "POST", path, nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
 // ExportNode represents a node from the export API with parent_id for tree reconstruction
 type ExportNode struct {
 	ID          string                 `json:"id"`
