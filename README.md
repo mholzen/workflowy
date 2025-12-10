@@ -9,11 +9,11 @@
 brew install mholzen/workflowy/workflowy-cli
 ```
 
-3. Run the descendant count report and paste to Workflowy
+3. Run the descendant count report, send the output to the clipboard and paste directly to Workflowy:
 ```bash
-workflowy report count | pbcopy
+workflowy report count | pbcopy   # or clip, wl-copy or xclip
 ```
-Use `clip` on Windows.
+Use `pbcopy` on macOS, `clip` on Windows, `wl-copy` on Linux, or `xclip` for X11 systems.
 
 It will produce a report such as:
 
