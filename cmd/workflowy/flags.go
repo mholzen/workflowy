@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
 )
 
@@ -67,7 +66,18 @@ func getFetchFlags() []cli.Flag {
 }
 
 func getWriteFlags(commandFlags ...cli.Flag) []cli.Flag {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("cannot get home directory: %v", err)
+	}
+	defaultAPIKeyFile := filepath.Join(homeDir, ".workflowy", "api.key")
+
 	flags := []cli.Flag{
+		&cli.StringFlag{
+			Name:  "api-key-file",
+			Value: defaultAPIKeyFile,
+			Usage: "Path to API key file",
+		},
 		&cli.StringFlag{
 			Name:  "name",
 			Usage: "Update node name/title",
@@ -168,8 +178,4 @@ func validatePosition(position string) error {
 		return fmt.Errorf("position must be 'top' or 'bottom'")
 	}
 	return nil
-}
-
-func createClient(apiKeyFile string) *workflowy.WorkflowyClient {
-	return workflowy.NewWorkflowyClient(workflowy.WithAPIKeyFromFile(apiKeyFile))
 }

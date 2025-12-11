@@ -46,7 +46,7 @@ func (h *simpleHandler) Handle(_ context.Context, r slog.Record) error {
 	msg := r.Message
 	var attrs []string
 	r.Attrs(func(a slog.Attr) bool {
-		attrs = append(attrs, fmt.Sprintf("%s=%v", a.Key, a.Value))
+		attrs = append(attrs, fmt.Sprintf("%s='%v'", a.Key, a.Value))
 		return true
 	})
 	if len(attrs) > 0 {

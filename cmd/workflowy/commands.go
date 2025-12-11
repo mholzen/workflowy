@@ -33,20 +33,20 @@ func getGetCommand() *cli.Command {
 		Usage:     "Get item with optional recursive children (root if omitted)",
 		Arguments: getFetchArguments(),
 		Flags:     getFetchFlags(),
-		Action: func(ctx context.Context, cmd *cli.Command) error {
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
 			params, err := getAndValidateFetchParams(cmd)
 			if err != nil {
 				return err
 			}
 
-			result, err := fetchItems(cmd, ctx, params.itemID, params.depth)
+			result, err := fetchItems(cmd, ctx, client, params.itemID, params.depth)
 			if err != nil {
 				return err
 			}
 
 			printOutput(result, params.format, cmd.Bool("include-empty-names"))
 			return nil
-		},
+		}),
 	}
 }
 
@@ -56,13 +56,13 @@ func getListCommand() *cli.Command {
 		Usage:     "List descendants of an item as flat list (root if omitted)",
 		Arguments: getFetchArguments(),
 		Flags:     getFetchFlags(),
-		Action: func(ctx context.Context, cmd *cli.Command) error {
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
 			params, err := getAndValidateFetchParams(cmd)
 			if err != nil {
 				return err
 			}
 
-			treeResult, err := fetchItems(cmd, ctx, params.itemID, params.depth)
+			treeResult, err := fetchItems(cmd, ctx, client, params.itemID, params.depth)
 			if err != nil {
 				return err
 			}
@@ -71,7 +71,7 @@ func getListCommand() *cli.Command {
 
 			printOutput(flatList, params.format, cmd.Bool("include-empty-names"))
 			return nil
-		},
+		}),
 	}
 }
 
@@ -104,7 +104,7 @@ func getCreateCommand() *cli.Command {
 				Usage: "Read node name from file instead of argument",
 			},
 		),
-		Action: func(ctx context.Context, cmd *cli.Command) error {
+		Action: withClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
@@ -178,8 +178,6 @@ func getCreateCommand() *cli.Command {
 				req.Note = &note
 			}
 
-			client := createClient(cmd.String("api-key-file"))
-
 			slog.Debug("creating node", "parent_id", req.ParentID, "name", name)
 			response, err := client.CreateNode(ctx, req)
 			if err != nil {
@@ -188,7 +186,7 @@ func getCreateCommand() *cli.Command {
 
 			printOutput(response, format, cmd.Bool("include-empty-names"))
 			return nil
-		},
+		}),
 	}
 }
 
@@ -207,7 +205,7 @@ func getUpdateCommand() *cli.Command {
 			},
 		},
 		Flags: getWriteFlags(),
-		Action: func(ctx context.Context, cmd *cli.Command) error {
+		Action: withClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
@@ -247,8 +245,6 @@ func getUpdateCommand() *cli.Command {
 				return fmt.Errorf("must specify at least one field to update (<name>, --name, --note, or --layout-mode)")
 			}
 
-			client := createClient(cmd.String("api-key-file"))
-
 			slog.Debug("updating node", "item_id", itemID)
 			response, err := client.UpdateNode(ctx, itemID, req)
 			if err != nil {
@@ -257,7 +253,7 @@ func getUpdateCommand() *cli.Command {
 
 			printOutput(response, format, cmd.Bool("include-empty-names"))
 			return nil
-		},
+		}),
 	}
 }
 
@@ -280,7 +276,7 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 			},
 		},
 		Flags: getMethodFlags(),
-		Action: func(ctx context.Context, cmd *cli.Command) error {
+		Action: withClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
@@ -290,8 +286,6 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 			if itemID == "" {
 				return fmt.Errorf("item_id is required")
 			}
-
-			client := createClient(cmd.String("api-key-file"))
 
 			slog.Debug(action+" node", "item_id", itemID)
 
@@ -314,7 +308,7 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 				fmt.Printf("%s %sd\n", itemID, commandName)
 			}
 			return nil
-		},
+		}),
 	}
 }
 
@@ -342,8 +336,8 @@ func getCountReportCommand() *cli.Command {
 				Usage: "Minimum ratio threshold for filtering (0.0 to 1.0)",
 			},
 		),
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			items, err := loadTree(ctx, cmd)
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
+			items, err := loadTree(ctx, cmd, client)
 			if err != nil {
 				return err
 			}
@@ -364,7 +358,7 @@ func getCountReportCommand() *cli.Command {
 			}
 
 			threshold := cmd.Float64("threshold")
-			slog.Info("counting descendants", "threshold", threshold)
+			slog.Debug("counting descendants", "threshold", threshold)
 			descendants := workflowy.CountDescendants(rootItem, threshold)
 
 			report := &reports.CountReportOutput{
@@ -372,11 +366,8 @@ func getCountReportCommand() *cli.Command {
 				Descendants: descendants,
 				Threshold:   threshold,
 			}
-			if err := uploadReport(ctx, cmd, report); err != nil {
-				return err
-			}
 			if cmd.Bool("upload") {
-				return nil
+				return uploadReport(ctx, cmd, client, report)
 			}
 
 			format := cmd.String("format")
@@ -391,7 +382,7 @@ func getCountReportCommand() *cli.Command {
 			}
 
 			return nil
-		},
+		}),
 	}
 }
 
@@ -400,8 +391,8 @@ func getChildrenReportCommand() *cli.Command {
 		Name:  "children",
 		Usage: "Rank nodes by immediate children count",
 		Flags: getRankingReportFlags(),
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			descendants, err := loadAndCountDescendants(ctx, cmd)
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
+			descendants, err := loadAndCountDescendants(ctx, cmd, client)
 			if err != nil {
 				return err
 			}
@@ -415,11 +406,8 @@ func getChildrenReportCommand() *cli.Command {
 				Ranked: ranked,
 				TopN:   topN,
 			}
-			if err := uploadReport(ctx, cmd, report); err != nil {
-				return err
-			}
 			if cmd.Bool("upload") {
-				return nil
+				return uploadReport(ctx, cmd, client, report)
 			}
 
 			format := cmd.String("format")
@@ -433,7 +421,7 @@ func getChildrenReportCommand() *cli.Command {
 			}
 
 			return nil
-		},
+		}),
 	}
 }
 
@@ -442,8 +430,8 @@ func getCreatedReportCommand() *cli.Command {
 		Name:  "created",
 		Usage: "Rank nodes by creation date (oldest first)",
 		Flags: getRankingReportFlags(),
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			descendants, err := loadAndCountDescendants(ctx, cmd)
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
+			descendants, err := loadAndCountDescendants(ctx, cmd, client)
 			if err != nil {
 				return err
 			}
@@ -457,11 +445,8 @@ func getCreatedReportCommand() *cli.Command {
 				Ranked: ranked,
 				TopN:   topN,
 			}
-			if err := uploadReport(ctx, cmd, report); err != nil {
-				return err
-			}
 			if cmd.Bool("upload") {
-				return nil
+				return uploadReport(ctx, cmd, client, report)
 			}
 
 			format := cmd.String("format")
@@ -475,7 +460,7 @@ func getCreatedReportCommand() *cli.Command {
 			}
 
 			return nil
-		},
+		}),
 	}
 }
 
@@ -484,8 +469,8 @@ func getModifiedReportCommand() *cli.Command {
 		Name:  "modified",
 		Usage: "Rank nodes by modification date (oldest first)",
 		Flags: getRankingReportFlags(),
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			descendants, err := loadAndCountDescendants(ctx, cmd)
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
+			descendants, err := loadAndCountDescendants(ctx, cmd, client)
 			if err != nil {
 				return err
 			}
@@ -499,11 +484,8 @@ func getModifiedReportCommand() *cli.Command {
 				Ranked: ranked,
 				TopN:   topN,
 			}
-			if err := uploadReport(ctx, cmd, report); err != nil {
-				return err
-			}
 			if cmd.Bool("upload") {
-				return nil
+				return uploadReport(ctx, cmd, client, report)
 			}
 
 			format := cmd.String("format")
@@ -517,7 +499,7 @@ func getModifiedReportCommand() *cli.Command {
 			}
 
 			return nil
-		},
+		}),
 	}
 }
 
@@ -548,7 +530,7 @@ func getSearchCommand() *cli.Command {
 				Usage: "Search within specific subtree (default: root)",
 			},
 		}, getMethodFlags()...),
-		Action: func(ctx context.Context, cmd *cli.Command) error {
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
@@ -561,10 +543,10 @@ func getSearchCommand() *cli.Command {
 
 			method := cmd.String("method")
 			if method == "get" {
-				slog.Warn("GET method not supported for search, switching to export")
+				return fmt.Errorf("cannot search using the GET method")
 			}
 
-			items, err := loadTree(ctx, cmd)
+			items, err := loadTree(ctx, cmd, client)
 			if err != nil {
 				return err
 			}
@@ -589,7 +571,7 @@ func getSearchCommand() *cli.Command {
 
 			printOutput(results, format, false)
 			return nil
-		},
+		}),
 	}
 }
 
@@ -603,5 +585,35 @@ func getVersionCommand() *cli.Command {
 			fmt.Printf("built: %s\n", date)
 			return nil
 		},
+	}
+}
+
+func createClient(apiKeyFile string) (*workflowy.WorkflowyClient, error) {
+	option, err := workflowy.WithAPIKeyFromFile(apiKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	return workflowy.NewWorkflowyClient(option), nil
+}
+
+type ClientActionFunc func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error
+
+func withClient(fn ClientActionFunc) cli.ActionFunc {
+	return func(ctx context.Context, cmd *cli.Command) error {
+		client, err := createClient(cmd.String("api-key-file"))
+		if err != nil {
+			return err
+		}
+		return fn(ctx, cmd, client)
+	}
+}
+
+func withOptionalClient(fn ClientActionFunc) cli.ActionFunc {
+	return func(ctx context.Context, cmd *cli.Command) error {
+		client, err := createClient(cmd.String("api-key-file"))
+		if err != nil {
+			slog.Warn("cannot create API client -- using backup method", "error", err)
+		}
+		return fn(ctx, cmd, client)
 	}
 }

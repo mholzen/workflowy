@@ -9,9 +9,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func fetchItems(cmd *cli.Command, apiCtx context.Context, itemID string, depth int) (interface{}, error) {
-	client := createClient(cmd.String("api-key-file"))
-
+func fetchItems(cmd *cli.Command, apiCtx context.Context, client *workflowy.WorkflowyClient, itemID string, depth int) (interface{}, error) {
 	method := cmd.String("method")
 	backupFile := cmd.String("backup-file")
 
@@ -22,12 +20,18 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, itemID string, depth i
 	var useMethod string
 	if method != "" {
 		useMethod = method
+	} else if client == nil {
+		useMethod = "backup"
 	} else {
 		if depth == -1 || depth >= 4 {
 			useMethod = "export"
 		} else {
 			useMethod = "get"
 		}
+	}
+
+	if client == nil && (useMethod == "get" || useMethod == "export") {
+		return nil, fmt.Errorf("cannot use method '%s' without using the API", useMethod)
 	}
 
 	slog.Debug("access method determined", "method", useMethod, "depth", depth)

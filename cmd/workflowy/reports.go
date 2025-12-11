@@ -11,12 +11,10 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func uploadReport(ctx context.Context, cmd *cli.Command, report reports.ReportOutput) error {
-	if !cmd.Bool("upload") {
-		return nil
+func uploadReport(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient, report reports.ReportOutput) error {
+	if client == nil {
+		return fmt.Errorf("cannot upload a report without an API client")
 	}
-
-	client := createClient(cmd.String("api-key-file"))
 
 	opts := reports.UploadOptions{
 		ParentID: cmd.String("parent-id"),
@@ -33,7 +31,7 @@ func uploadReport(ctx context.Context, cmd *cli.Command, report reports.ReportOu
 	return nil
 }
 
-func loadTree(ctx context.Context, cmd *cli.Command) ([]*workflowy.Item, error) {
+func loadTree(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) ([]*workflowy.Item, error) {
 	var items []*workflowy.Item
 
 	method := cmd.String("method")
@@ -45,14 +43,21 @@ func loadTree(ctx context.Context, cmd *cli.Command) ([]*workflowy.Item, error) 
 
 	useMethod := method
 	if useMethod == "" {
-		useMethod = "export"
+		if client == nil {
+			useMethod = "backup"
+		} else {
+			useMethod = "export"
+		}
+	}
+
+	if client == nil && useMethod == "export" {
+		return nil, fmt.Errorf("cannot use 'export' without an API client")
 	}
 
 	if useMethod == "backup" {
 		return loadFromBackup(backupFile)
 	}
 
-	client := createClient(cmd.String("api-key-file"))
 	forceRefresh := cmd.Bool("force-refresh")
 
 	slog.Debug("using export API", "force_refresh", forceRefresh)
@@ -92,8 +97,8 @@ func loadFromBackup(backupFile string) ([]*workflowy.Item, error) {
 	return items, nil
 }
 
-func loadAndCountDescendants(ctx context.Context, cmd *cli.Command) (workflowy.Descendants, error) {
-	items, err := loadTree(ctx, cmd)
+func loadAndCountDescendants(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) (workflowy.Descendants, error) {
+	items, err := loadTree(ctx, cmd, client)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +119,6 @@ func loadAndCountDescendants(ctx context.Context, cmd *cli.Command) (workflowy.D
 	}
 
 	threshold := cmd.Float64("threshold")
-	slog.Info("counting descendants", "threshold", threshold)
 	return workflowy.CountDescendants(rootItem, threshold), nil
 }
 

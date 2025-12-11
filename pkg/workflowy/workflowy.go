@@ -29,19 +29,19 @@ func WithAPIKey(apiKey string) client.Option {
 }
 
 // WithAPIKeyFromFile reads API key from file and sets up Bearer token authentication
-func WithAPIKeyFromFile(filename string) client.Option {
+func WithAPIKeyFromFile(filename string) (client.Option, error) {
+	slog.Debug("loading API key", "file", filename)
+	apiKeyBytes, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read API key file -- get an API key from https://workflowy.com/api-key/ (file='%s', error='%w')", filename, err)
+	}
+	apiKey := strings.TrimSpace(string(apiKeyBytes))
+
 	return func(c *client.Client) {
 		c.SetAuth(func(r *http.Request) {
-			slog.Debug("loading API key", "file", filename)
-			apiKeyBytes, err := os.ReadFile(filename)
-			if err != nil {
-				slog.Warn("cannot read API key file", "error", err)
-				return // fail silently, let the API call fail with auth error
-			}
-			apiKey := strings.TrimSpace(string(apiKeyBytes))
 			r.Header.Set("Authorization", "Bearer "+apiKey)
 		})
-	}
+	}, nil
 }
 
 // WorkflowyClient wraps the generic Client with Workflowy-specific methods
@@ -368,7 +368,7 @@ func ReadLatestBackup() ([]*Item, error) {
 		}
 	}
 
-	slog.Info("reading latest backup file", "file", filepath.Base(latest))
+	slog.Debug("reading latest backup file", "file", filepath.Base(latest))
 	return ReadBackupFile(latest)
 }
 
