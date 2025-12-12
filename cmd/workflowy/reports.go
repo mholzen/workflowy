@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/mholzen/workflowy/pkg/reports"
@@ -11,7 +13,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func uploadReport(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient, report reports.ReportOutput) error {
+func uploadReport(ctx context.Context, cmd *cli.Command, client workflowy.Client, report reports.ReportOutput) error {
 	if client == nil {
 		return fmt.Errorf("cannot upload a report without an API client")
 	}
@@ -31,7 +33,11 @@ func uploadReport(ctx context.Context, cmd *cli.Command, client *workflowy.Workf
 	return nil
 }
 
-func loadTree(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) ([]*workflowy.Item, error) {
+func loadTree(ctx context.Context, cmd *cli.Command, client workflowy.Client) ([]*workflowy.Item, error) {
+	return loadTreeWithBackupProvider(ctx, cmd, client, workflowy.DefaultBackupProvider)
+}
+
+func loadTreeWithBackupProvider(ctx context.Context, cmd *cli.Command, client workflowy.Client, backupProvider workflowy.BackupProvider) ([]*workflowy.Item, error) {
 	var items []*workflowy.Item
 
 	method := cmd.String("method")
@@ -55,7 +61,7 @@ func loadTree(ctx context.Context, cmd *cli.Command, client *workflowy.Workflowy
 	}
 
 	if useMethod == "backup" {
-		return loadFromBackup(backupFile)
+		return loadFromBackupProvider(backupFile, backupProvider)
 	}
 
 	forceRefresh := cmd.Bool("force-refresh")
@@ -65,7 +71,7 @@ func loadTree(ctx context.Context, cmd *cli.Command, client *workflowy.Workflowy
 	if err != nil {
 		if method == "" {
 			slog.Warn("export failed, falling back to backup", "error", err)
-			return loadFromBackup(backupFile)
+			return loadFromBackupProvider(backupFile, backupProvider)
 		}
 		return nil, fmt.Errorf("cannot export nodes: %w", err)
 	}
@@ -77,7 +83,7 @@ func loadTree(ctx context.Context, cmd *cli.Command, client *workflowy.Workflowy
 	return items, nil
 }
 
-func loadFromBackup(backupFile string) ([]*workflowy.Item, error) {
+func loadFromBackupProvider(backupFile string, provider workflowy.BackupProvider) ([]*workflowy.Item, error) {
 	if backupFile != "" {
 		slog.Debug("using backup file", "file", backupFile)
 	} else {
@@ -87,9 +93,9 @@ func loadFromBackup(backupFile string) ([]*workflowy.Item, error) {
 	var items []*workflowy.Item
 	var err error
 	if backupFile != "" {
-		items, err = workflowy.ReadBackupFile(backupFile)
+		items, err = provider.ReadBackupFile(backupFile)
 	} else {
-		items, err = workflowy.ReadLatestBackup()
+		items, err = provider.ReadLatestBackup()
 	}
 	if err != nil {
 		return nil, fmt.Errorf("cannot read backup file: %w", err)
@@ -97,8 +103,12 @@ func loadFromBackup(backupFile string) ([]*workflowy.Item, error) {
 	return items, nil
 }
 
-func loadAndCountDescendants(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) (workflowy.Descendants, error) {
-	items, err := loadTree(ctx, cmd, client)
+func loadAndCountDescendants(ctx context.Context, cmd *cli.Command, client workflowy.Client) (workflowy.Descendants, error) {
+	return loadAndCountDescendantsWithBackupProvider(ctx, cmd, client, workflowy.DefaultBackupProvider)
+}
+
+func loadAndCountDescendantsWithBackupProvider(ctx context.Context, cmd *cli.Command, client workflowy.Client, backupProvider workflowy.BackupProvider) (workflowy.Descendants, error) {
+	items, err := loadTreeWithBackupProvider(ctx, cmd, client, backupProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -134,11 +144,11 @@ func findItemByID(items []*workflowy.Item, id string) *workflowy.Item {
 	return nil
 }
 
-func printCountTree(node workflowy.Descendants, depth int) {
+func printCountTreeToWriter(w io.Writer, node workflowy.Descendants, depth int) {
 	indent := strings.Repeat("  ", depth)
 	nodeValue := node.NodeValue()
 
-	fmt.Printf("%s- %s (%.1f%%, %d descendants)\n",
+	fmt.Fprintf(w, "%s- %s (%.1f%%, %d descendants)\n",
 		indent,
 		(**nodeValue).String(),
 		node.RatioToRoot*100,
@@ -146,6 +156,68 @@ func printCountTree(node workflowy.Descendants, depth int) {
 	)
 
 	for child := range node.Children() {
-		printCountTree(child.Node(), depth+1)
+		printCountTreeToWriter(w, child.Node(), depth+1)
+	}
+}
+
+type ReportDeps struct {
+	BackupProvider workflowy.BackupProvider
+	Output         io.Writer
+}
+
+func DefaultReportDeps() ReportDeps {
+	return ReportDeps{
+		BackupProvider: workflowy.DefaultBackupProvider,
+		Output:         os.Stdout,
+	}
+}
+
+func countReportAction(deps ReportDeps) func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+	return func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+		items, err := loadTreeWithBackupProvider(ctx, cmd, client, deps.BackupProvider)
+		if err != nil {
+			return err
+		}
+
+		var rootItem *workflowy.Item
+		itemID := cmd.String("item-id")
+		if itemID == "None" && len(items) > 0 {
+			rootItem = &workflowy.Item{
+				ID:       "root",
+				Name:     "Root",
+				Children: items,
+			}
+		} else {
+			rootItem = findItemByID(items, itemID)
+			if rootItem == nil {
+				return fmt.Errorf("item with ID %s not found", itemID)
+			}
+		}
+
+		threshold := cmd.Float64("threshold")
+		slog.Debug("counting descendants", "threshold", threshold)
+		descendants := workflowy.CountDescendants(rootItem, threshold)
+
+		report := &reports.CountReportOutput{
+			RootItem:    rootItem,
+			Descendants: descendants,
+			Threshold:   threshold,
+		}
+		if cmd.Bool("upload") {
+			return uploadReport(ctx, cmd, client, report)
+		}
+
+		format := cmd.String("format")
+		if format == "json" {
+			printJSONToWriter(deps.Output, descendants)
+		} else {
+			fmt.Fprintf(deps.Output, "# Descendant Count Report\n\n")
+			fmt.Fprintf(deps.Output, "Root: %s\n", rootItem.Name)
+			fmt.Fprintf(deps.Output, "Threshold: %.2f%%\n", threshold*100)
+			fmt.Fprintf(deps.Output, "Total descendants: %d\n\n", descendants.Count)
+			printCountTreeToWriter(deps.Output, descendants, 0)
+		}
+
+		return nil
 	}
 }

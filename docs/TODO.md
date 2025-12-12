@@ -4,6 +4,7 @@
 
 - [ ] BUG: when reports are uploaded, links are not created
 - [ ] BUG: strip html tags when creating links in reports, as they are not recognized when pasting to WF
+- [ ] BUG: rename 'markdown' format to 'document' to avoid confusion with 'list'
 - [ ] FEATURE: add last modified to count report
 - [ ] FEATURE: search and replace
 - [ ] FEATURE: build an MCP server

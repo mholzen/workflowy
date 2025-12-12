@@ -33,7 +33,7 @@ func getGetCommand() *cli.Command {
 		Usage:     "Get item with optional recursive children (root if omitted)",
 		Arguments: getFetchArguments(),
 		Flags:     getFetchFlags(),
-		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			params, err := getAndValidateFetchParams(cmd)
 			if err != nil {
 				return err
@@ -56,7 +56,7 @@ func getListCommand() *cli.Command {
 		Usage:     "List descendants of an item as flat list (root if omitted)",
 		Arguments: getFetchArguments(),
 		Flags:     getFetchFlags(),
-		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			params, err := getAndValidateFetchParams(cmd)
 			if err != nil {
 				return err
@@ -104,7 +104,7 @@ func getCreateCommand() *cli.Command {
 				Usage: "Read node name from file instead of argument",
 			},
 		),
-		Action: withClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
+		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
@@ -205,7 +205,7 @@ func getUpdateCommand() *cli.Command {
 			},
 		},
 		Flags: getWriteFlags(),
-		Action: withClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
+		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
@@ -276,7 +276,7 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 			},
 		},
 		Flags: getMethodFlags(),
-		Action: withClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
+		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
@@ -326,6 +326,10 @@ func getReportCommand() *cli.Command {
 }
 
 func getCountReportCommand() *cli.Command {
+	return getCountReportCommandWithDeps(DefaultReportDeps(), withOptionalClient)
+}
+
+func getCountReportCommandWithDeps(deps ReportDeps, clientProvider ClientProvider) *cli.Command {
 	return &cli.Command{
 		Name:  "count",
 		Usage: "Generate descendant count report",
@@ -336,53 +340,7 @@ func getCountReportCommand() *cli.Command {
 				Usage: "Minimum ratio threshold for filtering (0.0 to 1.0)",
 			},
 		),
-		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
-			items, err := loadTree(ctx, cmd, client)
-			if err != nil {
-				return err
-			}
-
-			var rootItem *workflowy.Item
-			itemID := cmd.String("item-id")
-			if itemID == "None" && len(items) > 0 {
-				rootItem = &workflowy.Item{
-					ID:       "root",
-					Name:     "Root",
-					Children: items,
-				}
-			} else {
-				rootItem = findItemByID(items, itemID)
-				if rootItem == nil {
-					return fmt.Errorf("item with ID %s not found", itemID)
-				}
-			}
-
-			threshold := cmd.Float64("threshold")
-			slog.Debug("counting descendants", "threshold", threshold)
-			descendants := workflowy.CountDescendants(rootItem, threshold)
-
-			report := &reports.CountReportOutput{
-				RootItem:    rootItem,
-				Descendants: descendants,
-				Threshold:   threshold,
-			}
-			if cmd.Bool("upload") {
-				return uploadReport(ctx, cmd, client, report)
-			}
-
-			format := cmd.String("format")
-			if format == "json" {
-				printJSON(descendants)
-			} else {
-				fmt.Printf("# Descendant Count Report\n\n")
-				fmt.Printf("Root: %s\n", rootItem.Name)
-				fmt.Printf("Threshold: %.2f%%\n", threshold*100)
-				fmt.Printf("Total descendants: %d\n\n", descendants.Count)
-				printCountTree(descendants, 0)
-			}
-
-			return nil
-		}),
+		Action: clientProvider(countReportAction(deps)),
 	}
 }
 
@@ -391,7 +349,7 @@ func getChildrenReportCommand() *cli.Command {
 		Name:  "children",
 		Usage: "Rank nodes by immediate children count",
 		Flags: getRankingReportFlags(),
-		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			descendants, err := loadAndCountDescendants(ctx, cmd, client)
 			if err != nil {
 				return err
@@ -430,7 +388,7 @@ func getCreatedReportCommand() *cli.Command {
 		Name:  "created",
 		Usage: "Rank nodes by creation date (oldest first)",
 		Flags: getRankingReportFlags(),
-		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			descendants, err := loadAndCountDescendants(ctx, cmd, client)
 			if err != nil {
 				return err
@@ -469,7 +427,7 @@ func getModifiedReportCommand() *cli.Command {
 		Name:  "modified",
 		Usage: "Rank nodes by modification date (oldest first)",
 		Flags: getRankingReportFlags(),
-		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			descendants, err := loadAndCountDescendants(ctx, cmd, client)
 			if err != nil {
 				return err
@@ -530,7 +488,7 @@ func getSearchCommand() *cli.Command {
 				Usage: "Search within specific subtree (default: root)",
 			},
 		}, getMethodFlags()...),
-		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error {
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
@@ -596,7 +554,9 @@ func createClient(apiKeyFile string) (*workflowy.WorkflowyClient, error) {
 	return workflowy.NewWorkflowyClient(option), nil
 }
 
-type ClientActionFunc func(ctx context.Context, cmd *cli.Command, client *workflowy.WorkflowyClient) error
+type ClientActionFunc func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error
+
+type ClientProvider func(ClientActionFunc) cli.ActionFunc
 
 func withClient(fn ClientActionFunc) cli.ActionFunc {
 	return func(ctx context.Context, cmd *cli.Command) error {
@@ -613,6 +573,7 @@ func withOptionalClient(fn ClientActionFunc) cli.ActionFunc {
 		client, err := createClient(cmd.String("api-key-file"))
 		if err != nil {
 			slog.Warn("cannot create API client -- using backup method", "error", err)
+			return fn(ctx, cmd, nil)
 		}
 		return fn(ctx, cmd, client)
 	}

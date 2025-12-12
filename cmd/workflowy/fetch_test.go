@@ -10,45 +10,35 @@ import (
 
 func TestFetchItems_NilClient_ExplicitGetMethod_ReturnsError(t *testing.T) {
 	cmd := &cli.Command{
-		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "method", Value: "get"},
-			&cli.StringFlag{Name: "backup-file"},
-			&cli.BoolFlag{Name: "force-refresh"},
-		},
+		Flags: getMethodFlags(),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			_, err := fetchItems(c, ctx, nil, "None", 2)
 			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "cannot use method 'get' without using the API")
 			return nil
 		},
 	}
-	err := cmd.Run(context.Background(), []string{"test"})
+	err := cmd.Run(context.Background(), []string{"test", "--method=get"})
 	assert.NoError(t, err)
 }
 
 func TestFetchItems_NilClient_ExplicitExportMethod_ReturnsError(t *testing.T) {
 	cmd := &cli.Command{
-		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "method", Value: "export"},
-			&cli.StringFlag{Name: "backup-file"},
-			&cli.BoolFlag{Name: "force-refresh"},
-		},
+		Flags: getMethodFlags(),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			_, err := fetchItems(c, ctx, nil, "None", 2)
 			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "cannot use method 'export' without using the API")
 			return nil
 		},
 	}
-	err := cmd.Run(context.Background(), []string{"test"})
+	err := cmd.Run(context.Background(), []string{"test", "--method=export"})
 	assert.NoError(t, err)
 }
 
 func TestFetchItems_NilClient_ExplicitBackupMethod_AttemptsBackup(t *testing.T) {
 	cmd := &cli.Command{
-		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "method", Value: "backup"},
-			&cli.StringFlag{Name: "backup-file", Value: "/nonexistent/backup.json"},
-			&cli.BoolFlag{Name: "force-refresh"},
-		},
+		Flags: getMethodFlags(),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			_, err := fetchItems(c, ctx, nil, "None", 2)
 			assert.Error(t, err)
@@ -56,17 +46,13 @@ func TestFetchItems_NilClient_ExplicitBackupMethod_AttemptsBackup(t *testing.T) 
 			return nil
 		},
 	}
-	err := cmd.Run(context.Background(), []string{"test"})
+	err := cmd.Run(context.Background(), []string{"test", "--method=backup", "--backup-file=/nonexistent/backup.json"})
 	assert.NoError(t, err)
 }
 
 func TestFetchItems_NilClient_AutoMethod_AttemptsBackup(t *testing.T) {
 	cmd := &cli.Command{
-		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "method"},
-			&cli.StringFlag{Name: "backup-file", Value: "/nonexistent/backup.json"},
-			&cli.BoolFlag{Name: "force-refresh"},
-		},
+		Flags: getMethodFlags(),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			_, err := fetchItems(c, ctx, nil, "None", 2)
 			assert.Error(t, err)
@@ -74,6 +60,6 @@ func TestFetchItems_NilClient_AutoMethod_AttemptsBackup(t *testing.T) {
 			return nil
 		},
 	}
-	err := cmd.Run(context.Background(), []string{"test"})
+	err := cmd.Run(context.Background(), []string{"test", "--backup-file=/nonexistent/backup.json"})
 	assert.NoError(t, err)
 }

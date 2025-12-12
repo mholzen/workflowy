@@ -9,7 +9,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func fetchItems(cmd *cli.Command, apiCtx context.Context, client *workflowy.WorkflowyClient, itemID string, depth int) (interface{}, error) {
+func fetchItems(cmd *cli.Command, apiCtx context.Context, client workflowy.Client, itemID string, depth int) (interface{}, error) {
 	method := cmd.String("method")
 	backupFile := cmd.String("backup-file")
 
@@ -121,7 +121,7 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, client *workflowy.Work
 }
 
 func fetchFromBackup(backupFile string, itemID string, depth int) (interface{}, error) {
-	items, err := loadFromBackup(backupFile)
+	items, err := loadFromBackupProvider(backupFile, workflowy.DefaultBackupProvider)
 	if err != nil {
 		return nil, err
 	}

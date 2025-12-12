@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"sort"
 	"strings"
 
@@ -12,11 +14,15 @@ import (
 )
 
 func printJSON(response interface{}) {
+	printJSONToWriter(os.Stdout, response)
+}
+
+func printJSONToWriter(w io.Writer, response interface{}) {
 	prettyJSON, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
 		log.Fatalf("cannot format JSON: %v", err)
 	}
-	fmt.Printf("%s\n", prettyJSON)
+	fmt.Fprintf(w, "%s\n", prettyJSON)
 }
 
 func sortItemsByPriority(items []*workflowy.Item) {
