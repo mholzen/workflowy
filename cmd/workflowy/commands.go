@@ -370,7 +370,11 @@ func getChildrenReportCommand() *cli.Command {
 
 			format := cmd.String("format")
 			if format == "json" {
-				printJSON(ranked)
+				item, err := report.ToNodes()
+				if err != nil {
+					return err
+				}
+				printJSON(item)
 			} else {
 				return printReportToWriter(os.Stdout, report)
 			}
@@ -406,7 +410,11 @@ func getCreatedReportCommand() *cli.Command {
 
 			format := cmd.String("format")
 			if format == "json" {
-				printJSON(ranked)
+				item, err := report.ToNodes()
+				if err != nil {
+					return err
+				}
+				printJSON(item)
 			} else {
 				return printReportToWriter(os.Stdout, report)
 			}
@@ -442,7 +450,11 @@ func getModifiedReportCommand() *cli.Command {
 
 			format := cmd.String("format")
 			if format == "json" {
-				printJSON(ranked)
+				item, err := report.ToNodes()
+				if err != nil {
+					return err
+				}
+				printJSON(item)
 			} else {
 				return printReportToWriter(os.Stdout, report)
 			}

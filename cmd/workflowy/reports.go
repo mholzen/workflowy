@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/mholzen/workflowy/pkg/reports"
 	"github.com/mholzen/workflowy/pkg/workflowy"
@@ -153,20 +152,26 @@ func printReportToWriter(w io.Writer, report reports.ReportOutput) error {
 	// Print the title (root node name)
 	fmt.Fprintf(w, "# %s\n\n", item.Name)
 
-	// Print children as markdown list
+	// Print children recursively
 	for _, child := range item.Children {
-		printItemAsMarkdownList(w, child, 0)
+		printReportItem(w, child, 0)
 	}
 
 	return nil
 }
 
-func printItemAsMarkdownList(w io.Writer, item *workflowy.Item, depth int) {
-	indent := strings.Repeat("  ", depth)
+func printReportItem(w io.Writer, item *workflowy.Item, depth int) {
+	indent := ""
+	if depth > 0 {
+		indent = fmt.Sprintf("%*s", depth*2, "")
+	}
 	fmt.Fprintf(w, "%s- %s\n", indent, item.Name)
 
-	for _, child := range item.Children {
-		printItemAsMarkdownList(w, child, depth+1)
+	// Only recurse if children don't have IDs (meaning they're formatted report items, not raw workflowy Items)
+	if len(item.Children) > 0 && item.Children[0].ID == "" {
+		for _, child := range item.Children {
+			printReportItem(w, child, depth+1)
+		}
 	}
 }
 
@@ -219,7 +224,11 @@ func countReportAction(deps ReportDeps) func(ctx context.Context, cmd *cli.Comma
 
 		format := cmd.String("format")
 		if format == "json" {
-			printJSONToWriter(deps.Output, descendants)
+			item, err := report.ToNodes()
+			if err != nil {
+				return err
+			}
+			printJSONToWriter(deps.Output, item)
 		} else {
 			return printReportToWriter(deps.Output, report)
 		}

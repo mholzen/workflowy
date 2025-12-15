@@ -35,7 +35,8 @@ func (r *ChildrenCountReportOutput) ToNodes() (*workflowy.Item, error) {
 		)
 
 		children[i] = &workflowy.Item{
-			Name: name,
+			Name:     name,
+			Children: []*workflowy.Item{rankable.Node.Item},
 		}
 	}
 
@@ -76,7 +77,8 @@ func (r *CreatedReportOutput) ToNodes() (*workflowy.Item, error) {
 		}
 
 		children[i] = &workflowy.Item{
-			Name: name,
+			Name:     name,
+			Children: []*workflowy.Item{rankable.Node.Item},
 		}
 	}
 
@@ -122,7 +124,8 @@ func (r *ModifiedReportOutput) ToNodes() (*workflowy.Item, error) {
 		}
 
 		children[i] = &workflowy.Item{
-			Name: name,
+			Name:     name,
+			Children: []*workflowy.Item{rankable.Node.Item},
 		}
 	}
 

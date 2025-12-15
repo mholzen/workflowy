@@ -532,6 +532,11 @@ func (n *ItemNode) Node() *ItemNode {
 	return n
 }
 
+// Item returns the underlying Item
+func (n *ItemNode) Item() *Item {
+	return n.item
+}
+
 // Name returns the item's name
 func (n *ItemNode) Name() string {
 	return n.item.Name
@@ -602,6 +607,7 @@ func CountDescendants(item *Item, threshold float64) Descendants {
 // NodeWithTimestamps combines a descendant count node with timestamp information
 type NodeWithTimestamps struct {
 	Count      Descendants
+	Item       *Item
 	CreatedAt  int64
 	ModifiedAt int64
 }
@@ -613,10 +619,12 @@ func CollectNodesWithTimestamps(root Descendants) []*NodeWithTimestamps {
 
 	for i, node := range allNodes {
 		nodeValue := node.NodeValue()
+		item := (**nodeValue).Item()
 		result[i] = &NodeWithTimestamps{
 			Count:      node,
-			CreatedAt:  (**nodeValue).item.CreatedAt,
-			ModifiedAt: (**nodeValue).item.ModifiedAt,
+			Item:       item,
+			CreatedAt:  item.CreatedAt,
+			ModifiedAt: item.ModifiedAt,
 		}
 	}
 
