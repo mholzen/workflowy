@@ -32,6 +32,25 @@ func uploadReport(ctx context.Context, cmd *cli.Command, client workflowy.Client
 	return nil
 }
 
+func outputReport(ctx context.Context, cmd *cli.Command, client workflowy.Client, report reports.ReportOutput, output io.Writer) error {
+	if cmd.Bool("upload") {
+		return uploadReport(ctx, cmd, client, report)
+	}
+
+	format := cmd.String("format")
+	if format == "json" {
+		item, err := report.ToNodes()
+		if err != nil {
+			return err
+		}
+		printJSONToWriter(output, item)
+	} else {
+		return printReportToWriter(output, report)
+	}
+
+	return nil
+}
+
 func loadTree(ctx context.Context, cmd *cli.Command, client workflowy.Client) ([]*workflowy.Item, error) {
 	return loadTreeWithBackupProvider(ctx, cmd, client, workflowy.DefaultBackupProvider)
 }
@@ -218,21 +237,7 @@ func countReportAction(deps ReportDeps) func(ctx context.Context, cmd *cli.Comma
 			Descendants: descendants,
 			Threshold:   threshold,
 		}
-		if cmd.Bool("upload") {
-			return uploadReport(ctx, cmd, client, report)
-		}
 
-		format := cmd.String("format")
-		if format == "json" {
-			item, err := report.ToNodes()
-			if err != nil {
-				return err
-			}
-			printJSONToWriter(deps.Output, item)
-		} else {
-			return printReportToWriter(deps.Output, report)
-		}
-
-		return nil
+		return outputReport(ctx, cmd, client, report, deps.Output)
 	}
 }

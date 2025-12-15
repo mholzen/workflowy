@@ -364,22 +364,8 @@ func getChildrenReportCommand() *cli.Command {
 				Ranked: ranked,
 				TopN:   topN,
 			}
-			if cmd.Bool("upload") {
-				return uploadReport(ctx, cmd, client, report)
-			}
 
-			format := cmd.String("format")
-			if format == "json" {
-				item, err := report.ToNodes()
-				if err != nil {
-					return err
-				}
-				printJSON(item)
-			} else {
-				return printReportToWriter(os.Stdout, report)
-			}
-
-			return nil
+			return outputReport(ctx, cmd, client, report, os.Stdout)
 		}),
 	}
 }
@@ -404,22 +390,8 @@ func getCreatedReportCommand() *cli.Command {
 				Ranked: ranked,
 				TopN:   topN,
 			}
-			if cmd.Bool("upload") {
-				return uploadReport(ctx, cmd, client, report)
-			}
 
-			format := cmd.String("format")
-			if format == "json" {
-				item, err := report.ToNodes()
-				if err != nil {
-					return err
-				}
-				printJSON(item)
-			} else {
-				return printReportToWriter(os.Stdout, report)
-			}
-
-			return nil
+			return outputReport(ctx, cmd, client, report, os.Stdout)
 		}),
 	}
 }
@@ -444,22 +416,8 @@ func getModifiedReportCommand() *cli.Command {
 				Ranked: ranked,
 				TopN:   topN,
 			}
-			if cmd.Bool("upload") {
-				return uploadReport(ctx, cmd, client, report)
-			}
 
-			format := cmd.String("format")
-			if format == "json" {
-				item, err := report.ToNodes()
-				if err != nil {
-					return err
-				}
-				printJSON(item)
-			} else {
-				return printReportToWriter(os.Stdout, report)
-			}
-
-			return nil
+			return outputReport(ctx, cmd, client, report, os.Stdout)
 		}),
 	}
 }
