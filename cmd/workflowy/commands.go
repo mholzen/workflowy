@@ -372,10 +372,7 @@ func getChildrenReportCommand() *cli.Command {
 			if format == "json" {
 				printJSON(ranked)
 			} else {
-				fmt.Printf("# Top Nodes by Children Count\n\n")
-				for i, r := range ranked {
-					fmt.Printf("%d. %s\n", i+1, r.String())
-				}
+				return printReportToWriter(os.Stdout, report)
 			}
 
 			return nil
@@ -411,10 +408,7 @@ func getCreatedReportCommand() *cli.Command {
 			if format == "json" {
 				printJSON(ranked)
 			} else {
-				fmt.Printf("# Oldest Nodes by Creation Date\n\n")
-				for i, r := range ranked {
-					fmt.Printf("%d. %s\n", i+1, r.String())
-				}
+				return printReportToWriter(os.Stdout, report)
 			}
 
 			return nil
@@ -450,10 +444,7 @@ func getModifiedReportCommand() *cli.Command {
 			if format == "json" {
 				printJSON(ranked)
 			} else {
-				fmt.Printf("# Oldest Nodes by Modification Date\n\n")
-				for i, r := range ranked {
-					fmt.Printf("%d. %s\n", i+1, r.String())
-				}
+				return printReportToWriter(os.Stdout, report)
 			}
 
 			return nil

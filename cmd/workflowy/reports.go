@@ -144,19 +144,29 @@ func findItemByID(items []*workflowy.Item, id string) *workflowy.Item {
 	return nil
 }
 
-func printCountTreeToWriter(w io.Writer, node workflowy.Descendants, depth int) {
+func printReportToWriter(w io.Writer, report reports.ReportOutput) error {
+	item, err := report.ToNodes()
+	if err != nil {
+		return err
+	}
+
+	// Print the title (root node name)
+	fmt.Fprintf(w, "# %s\n\n", item.Name)
+
+	// Print children as markdown list
+	for _, child := range item.Children {
+		printItemAsMarkdownList(w, child, 0)
+	}
+
+	return nil
+}
+
+func printItemAsMarkdownList(w io.Writer, item *workflowy.Item, depth int) {
 	indent := strings.Repeat("  ", depth)
-	nodeValue := node.NodeValue()
+	fmt.Fprintf(w, "%s- %s\n", indent, item.Name)
 
-	fmt.Fprintf(w, "%s- %s (%.1f%%, %d descendants)\n",
-		indent,
-		(**nodeValue).String(),
-		node.RatioToRoot*100,
-		node.Count,
-	)
-
-	for child := range node.Children() {
-		printCountTreeToWriter(w, child.Node(), depth+1)
+	for _, child := range item.Children {
+		printItemAsMarkdownList(w, child, depth+1)
 	}
 }
 
@@ -211,11 +221,7 @@ func countReportAction(deps ReportDeps) func(ctx context.Context, cmd *cli.Comma
 		if format == "json" {
 			printJSONToWriter(deps.Output, descendants)
 		} else {
-			fmt.Fprintf(deps.Output, "# Descendant Count Report\n\n")
-			fmt.Fprintf(deps.Output, "Root: %s\n", rootItem.Name)
-			fmt.Fprintf(deps.Output, "Threshold: %.2f%%\n", threshold*100)
-			fmt.Fprintf(deps.Output, "Total descendants: %d\n\n", descendants.Count)
-			printCountTreeToWriter(deps.Output, descendants, 0)
+			return printReportToWriter(deps.Output, report)
 		}
 
 		return nil
