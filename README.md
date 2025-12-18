@@ -48,6 +48,8 @@ to understand where the majority of your nodes are located.
   - [Get Your API Key](#get-your-api-key)
 - [Usage](#usage)
   - [Basic Commands](#basic-commands)
+    - [Search For Items](#search-for-items)
+    - [Search and Replace](#search-and-replace)
   - [Usage Reports](#usage-reports)
   - [Global Options](#global-options)
   - [Command-Specific Options](#command-specific-options)
@@ -56,6 +58,7 @@ to understand where the majority of your nodes are located.
     - [Configuration Flags](#configuration-flags)
     - [Performance Comparison](#performance-comparison)
     - [Rate Limiting](#rate-limiting)
+- [Examples](#examples)
 
 
 A command-line interface for interacting with Workflowy, including fetching, creating, and
@@ -65,6 +68,7 @@ updating nodes, searching through content, and generating usage reports.
 
 - **Node Operations**: Get, List, Create, Update, Complete, Uncomplete, and Delete to operate on nodes.
 - **Search**: Search through all nodes with text or regex patterns, with case-sensitive/insensitive options and highlighted results.
+- **Search and Replace**: Bulk find-and-replace across node names using regex with capture group support, interactive mode, and dry-run preview.
 - **Usage Reports**: Understand where the majority of your nodes are stored, which nodes have many children or which ones are possibly stale:
   - Rank nodes by the count of descendants, with a configurable threshold to the total number of nodes
   - Rank nodes by count of immediate children
@@ -236,6 +240,50 @@ workflowy search "meeting" --format json
   nodes without any `layoutMode` information into a Markdown document,
   translating parent nodes in header nodes, joining paragraphs, capitalizing and
   joining paragraphs, and detecting list vs paragraph items using a heuristic.
+
+#### Search and Replace
+
+Bulk find-and-replace text in node names using regular expressions:
+
+```bash
+# Simple text replacement
+workflowy replace "old-text" "new-text"
+
+# Case-insensitive replacement
+workflowy replace -i "todo" "DONE"
+
+# Using capture groups (use ${N} when followed by alphanumerics)
+workflowy replace "task-([0-9]+)" 'issue_$1'        # task-123 → issue_123
+workflowy replace "(\w+) (\w+)" '$2 $1'             # "hello world" → "world hello"
+
+# Preview changes without applying (dry-run)
+workflowy replace --dry-run "pattern" "replacement"
+
+# Interactive mode - confirm each replacement
+workflowy replace --interactive "pattern" "replacement"
+
+# Limit to a specific subtree
+workflowy replace --parent-id abc-123-def "pattern" "replacement"
+
+# Limit depth of traversal
+workflowy replace --parent-id abc-123-def --depth 3 "pattern" "replacement"
+
+# JSON output
+workflowy replace --format json "pattern" "replacement"
+```
+
+**Replace Features:**
+- Regular expression patterns with capture group support
+- Substitution syntax: `$1`, `$2` (or `${1}`, `${2}` when followed by alphanumerics)
+- `--dry-run`: Preview all changes without modifying any nodes
+- `--interactive`: Prompt for confirmation before each replacement (y/N/q to quit)
+- `--parent-id`: Limit replacements to a specific subtree
+- `--depth`: Control how deep to traverse (-1 for unlimited, default)
+- `-i`: Case-insensitive pattern matching
+
+**Output Formats:**
+- `--format list` (default): Shows before/after for each match with node IDs
+- `--format json`: JSON array with old_name, new_name, applied status, and URLs
 
 ### Usage Reports
 
@@ -465,6 +513,22 @@ workflowy search -E "\d{4}-\d{2}-\d{2}"
 
 # Search for bugs in a specific project subtree
 workflowy search -i "bug" --item-id project-xyz-123
+```
+
+### Bulk search and replace
+
+```bash
+# Preview changes before applying
+workflowy replace --dry-run "TODO" "DONE"
+
+# Replace with confirmation for each match
+workflowy replace --interactive "TODO" "DONE"
+
+# Rename task prefixes using capture groups
+workflowy replace "TASK-([0-9]+)" 'ISSUE-$1'
+
+# Bulk rename within a specific project
+workflowy replace --parent-id project-xyz-123 "v1" "v2"
 ```
 
 ## API Reference
