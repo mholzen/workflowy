@@ -107,6 +107,10 @@ func getReportFlags(commandFlags ...cli.Flag) []cli.Flag {
 			Name:  "position",
 			Usage: "Position in parent: top or bottom",
 		},
+		&cli.BoolFlag{
+			Name:  "preserve-tags",
+			Usage: "Preserve HTML tags in list output (by default, HTML tags are stripped)",
+		},
 	)
 
 	return flags

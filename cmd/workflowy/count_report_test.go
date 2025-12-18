@@ -180,3 +180,71 @@ func searchSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+func TestCountReportCommand_StripHTMLTags_Default(t *testing.T) {
+	testItems := []*workflowy.Item{
+		{
+			ID:   "abc123",
+			Name: "<b>Bold Parent</b> Item",
+			Children: []*workflowy.Item{
+				{
+					ID:   "def456",
+					Name: "<i>Italic</i> Child",
+				},
+			},
+		},
+	}
+
+	mockBackup := &MockBackupProvider{Items: testItems}
+	var output bytes.Buffer
+
+	deps := ReportDeps{
+		BackupProvider: mockBackup,
+		Output:         &output,
+	}
+
+	cmd := getCountReportCommandWithDeps(deps, withOptionalClient)
+	err := cmd.Run(context.Background(), []string{"count", "--method=backup", "--threshold=0"})
+	assert.NoError(t, err)
+
+	outputStr := output.String()
+	t.Logf("Output:\n%s", outputStr)
+
+	assert.Contains(t, outputStr, "Bold Parent Item", "HTML tags should be stripped by default")
+	assert.Contains(t, outputStr, "Italic Child", "HTML tags should be stripped by default")
+	assert.NotContains(t, outputStr, "<b>", "HTML tags should not be present")
+	assert.NotContains(t, outputStr, "<i>", "HTML tags should not be present")
+}
+
+func TestCountReportCommand_PreserveHTMLTags(t *testing.T) {
+	testItems := []*workflowy.Item{
+		{
+			ID:   "abc123",
+			Name: "<b>Bold Parent</b> Item",
+			Children: []*workflowy.Item{
+				{
+					ID:   "def456",
+					Name: "<i>Italic</i> Child",
+				},
+			},
+		},
+	}
+
+	mockBackup := &MockBackupProvider{Items: testItems}
+	var output bytes.Buffer
+
+	deps := ReportDeps{
+		BackupProvider: mockBackup,
+		Output:         &output,
+	}
+
+	cmd := getCountReportCommandWithDeps(deps, withOptionalClient)
+	err := cmd.Run(context.Background(), []string{"count", "--method=backup", "--threshold=0", "--preserve-tags"})
+	assert.NoError(t, err)
+
+	outputStr := output.String()
+	t.Logf("Output:\n%s", outputStr)
+
+	assert.Contains(t, outputStr, "<b>Bold Parent</b>", "HTML tags should be preserved with --preserve-tags")
+	assert.Contains(t, outputStr, "<i>Italic</i>", "HTML tags should be preserved with --preserve-tags")
+}

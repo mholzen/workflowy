@@ -6,11 +6,14 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"regexp"
 
 	"github.com/mholzen/workflowy/pkg/reports"
 	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
 )
+
+var htmlTagStripper = regexp.MustCompile(`<[^>]*>`)
 
 func uploadReport(ctx context.Context, cmd *cli.Command, client workflowy.Client, report reports.ReportOutput) error {
 	if client == nil {
@@ -45,7 +48,8 @@ func outputReport(ctx context.Context, cmd *cli.Command, client workflowy.Client
 		}
 		printJSONToWriter(output, item)
 	} else {
-		return printReportToWriter(output, report)
+		preserveTags := cmd.Bool("preserve-tags")
+		return printReportToWriter(output, report, preserveTags)
 	}
 
 	return nil
@@ -162,34 +166,44 @@ func findItemByID(items []*workflowy.Item, id string) *workflowy.Item {
 	return nil
 }
 
-func printReportToWriter(w io.Writer, report reports.ReportOutput) error {
+func stripHTMLTags(text string) string {
+	return htmlTagStripper.ReplaceAllString(text, "")
+}
+
+func printReportToWriter(w io.Writer, report reports.ReportOutput, preserveTags bool) error {
 	item, err := report.ToNodes()
 	if err != nil {
 		return err
 	}
 
-	// Print the title (root node name)
-	fmt.Fprintf(w, "# %s\n\n", item.Name)
+	title := item.Name
+	if !preserveTags {
+		title = stripHTMLTags(title)
+	}
+	fmt.Fprintf(w, "# %s\n\n", title)
 
-	// Print children recursively
 	for _, child := range item.Children {
-		printReportItem(w, child, 0)
+		printReportItem(w, child, 0, preserveTags)
 	}
 
 	return nil
 }
 
-func printReportItem(w io.Writer, item *workflowy.Item, depth int) {
+func printReportItem(w io.Writer, item *workflowy.Item, depth int, preserveTags bool) {
 	indent := ""
 	if depth > 0 {
 		indent = fmt.Sprintf("%*s", depth*2, "")
 	}
-	fmt.Fprintf(w, "%s- %s\n", indent, item.Name)
 
-	// Only recurse if children don't have IDs (meaning they're formatted report items, not raw workflowy Items)
+	name := item.Name
+	if !preserveTags {
+		name = stripHTMLTags(name)
+	}
+	fmt.Fprintf(w, "%s- %s\n", indent, name)
+
 	if len(item.Children) > 0 && item.Children[0].ID == "" {
 		for _, child := range item.Children {
-			printReportItem(w, child, depth+1)
+			printReportItem(w, child, depth+1, preserveTags)
 		}
 	}
 }
