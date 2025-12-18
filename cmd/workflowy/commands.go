@@ -116,11 +116,15 @@ func getCreateCommand() *cli.Command {
 			}
 
 			nameArg := cmd.StringArg("name")
+			nameFlag := cmd.String("name")
 			readStdin := cmd.Bool("read-stdin")
 			readFile := cmd.String("read-file")
 
 			inputSources := 0
 			if nameArg != "" {
+				inputSources++
+			}
+			if nameFlag != "" {
 				inputSources++
 			}
 			if readStdin {
@@ -131,10 +135,10 @@ func getCreateCommand() *cli.Command {
 			}
 
 			if inputSources == 0 {
-				return fmt.Errorf("must provide node name via argument, --read-stdin, or --read-file")
+				return fmt.Errorf("must provide node name via argument, --name, --read-stdin, or --read-file")
 			}
 			if inputSources > 1 {
-				return fmt.Errorf("cannot use multiple input sources (choose one: argument, --read-stdin, or --read-file)")
+				return fmt.Errorf("cannot use multiple input sources (choose one: argument, --name, --read-stdin, or --read-file)")
 			}
 
 			var name string
@@ -143,6 +147,9 @@ func getCreateCommand() *cli.Command {
 			if nameArg != "" {
 				name = nameArg
 				slog.Debug("using name from argument", "name", name)
+			} else if nameFlag != "" {
+				name = nameFlag
+				slog.Debug("using name from flag", "name", name)
 			} else if readStdin {
 				slog.Debug("reading from stdin")
 				stdinBytes, err := io.ReadAll(os.Stdin)
