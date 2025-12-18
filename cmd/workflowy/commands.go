@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/mholzen/workflowy/pkg/reports"
@@ -24,6 +25,7 @@ func getCommands() []*cli.Command {
 		getUncompleteCommand(),
 		getReportCommand(),
 		getSearchCommand(),
+		getReplaceCommand(),
 		getVersionCommand(),
 	}
 }
@@ -487,23 +489,7 @@ func getSearchCommand() *cli.Command {
 				UsageText: "Search pattern (text or regex with -E)",
 			},
 		},
-		Flags: append([]cli.Flag{
-			&cli.BoolFlag{
-				Name:    "ignore-case",
-				Aliases: []string{"i"},
-				Usage:   "Case-insensitive search",
-			},
-			&cli.BoolFlag{
-				Name:    "regexp",
-				Aliases: []string{"E"},
-				Usage:   "Treat pattern as regular expression",
-			},
-			&cli.StringFlag{
-				Name:  "item-id",
-				Value: "None",
-				Usage: "Search within specific subtree (default: root)",
-			},
-		}, getMethodFlags()...),
+		Flags: append(getSearchFlags(), getMethodFlags()...),
 		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
@@ -544,6 +530,176 @@ func getSearchCommand() *cli.Command {
 			)
 
 			printOutput(results, format, false)
+			return nil
+		}),
+	}
+}
+
+func getReplaceCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "replace",
+		Usage: "Search and replace text in node names using regular expressions",
+		Description: `Search for a pattern and replace matches in node names.
+
+The pattern is a regular expression. The substitution string supports group
+references using Go's syntax:
+  - $1, $2, ... $9 for numbered groups (when not followed by digits/letters)
+  - ${1}, ${2}, etc. for numbered groups (always safe, use when followed by alphanumerics)
+  - ${name} for named groups
+  - $$ for a literal dollar sign
+
+Examples:
+  # Simple text replacement
+  workflowy replace "old-text" "new-text"
+
+  # Case-insensitive replacement
+  workflowy replace -i "todo" "TODO"
+
+  # Using capture groups (note: use ${N} when followed by alphanumerics)
+  workflowy replace "(\w+)-(\d+)" "${2}_${1}"   # "task-123" → "123_task"
+  workflowy replace "(\w+) (\w+)" "$2 $1"       # "hello world" → "world hello"
+
+  # Preview changes without applying
+  workflowy replace --dry-run "pattern" "replacement"
+
+  # Interactive mode - confirm each replacement
+  workflowy replace --interactive "pattern" "replacement"
+
+  # Limit to a specific subtree
+  workflowy replace --parent-id=abc123 --depth=3 "pattern" "replacement"`,
+		Arguments: []cli.Argument{
+			&cli.StringArg{
+				Name:      "pattern",
+				UsageText: "Regular expression pattern to match",
+			},
+			&cli.StringArg{
+				Name:      "substitution",
+				UsageText: "Replacement string (supports $1, $2, etc. for groups)",
+			},
+		},
+		Flags: getReplaceFlags(),
+		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+			format := cmd.String("format")
+			if err := validateFormat(format); err != nil {
+				return err
+			}
+
+			pattern := cmd.StringArg("pattern")
+			if pattern == "" {
+				return fmt.Errorf("pattern is required")
+			}
+
+			substitution := cmd.StringArg("substitution")
+
+			if cmd.Bool("ignore-case") {
+				pattern = "(?i)" + pattern
+			}
+
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				return fmt.Errorf("invalid regular expression: %w", err)
+			}
+
+			items, err := loadTree(ctx, cmd, client)
+			if err != nil {
+				return err
+			}
+
+			parentID := cmd.String("parent-id")
+			searchRoot := items
+			if parentID != "None" {
+				rootItem := findItemByID(items, parentID)
+				if rootItem == nil {
+					return fmt.Errorf("parent item not found: %s", parentID)
+				}
+				searchRoot = []*workflowy.Item{rootItem}
+			}
+
+			opts := ReplaceOptions{
+				Pattern:     re,
+				Replacement: substitution,
+				Interactive: cmd.Bool("interactive"),
+				DryRun:      cmd.Bool("dry-run"),
+				Depth:       int(cmd.Int("depth")),
+			}
+
+			var results []ReplaceResult
+			collectReplacements(searchRoot, opts, 0, &results)
+
+			if len(results) == 0 {
+				if format == "json" {
+					fmt.Println("[]")
+				} else {
+					fmt.Println("No matches found")
+				}
+				return nil
+			}
+
+			appliedCount := 0
+			skippedCount := 0
+
+			for i := range results {
+				result := &results[i]
+
+				if opts.DryRun {
+					continue
+				}
+
+				shouldApply := true
+				if opts.Interactive {
+					confirm, quit := promptConfirmation(*result)
+					if quit {
+						result.Skipped = true
+						result.SkipReason = "user quit"
+						for j := i + 1; j < len(results); j++ {
+							results[j].Skipped = true
+							results[j].SkipReason = "user quit"
+						}
+						skippedCount += len(results) - i
+						break
+					}
+					shouldApply = confirm
+					if !shouldApply {
+						result.Skipped = true
+						result.SkipReason = "user declined"
+						skippedCount++
+						continue
+					}
+				}
+
+				if shouldApply {
+					req := &workflowy.UpdateNodeRequest{
+						Name: &result.NewName,
+					}
+					_, err := client.UpdateNode(ctx, result.ID, req)
+					if err != nil {
+						result.Skipped = true
+						result.SkipReason = fmt.Sprintf("update failed: %v", err)
+						skippedCount++
+						continue
+					}
+					result.Applied = true
+					appliedCount++
+				}
+			}
+
+			if format == "json" {
+				printJSON(results)
+			} else {
+				for _, result := range results {
+					fmt.Println(result.String())
+				}
+				if opts.DryRun {
+					fmt.Printf("\nDry run: %d node(s) would be updated\n", len(results))
+				} else {
+					fmt.Printf("\nUpdated %d node(s)", appliedCount)
+					if skippedCount > 0 {
+						fmt.Printf(", skipped %d", skippedCount)
+					}
+					fmt.Println()
+				}
+			}
+
 			return nil
 		}),
 	}

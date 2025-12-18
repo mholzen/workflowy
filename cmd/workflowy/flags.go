@@ -45,12 +45,7 @@ func getMethodFlags() []cli.Flag {
 
 func getFetchFlags() []cli.Flag {
 	flags := []cli.Flag{
-		&cli.IntFlag{
-			Name:    "depth",
-			Aliases: []string{"d"},
-			Value:   2,
-			Usage:   "Recursion depth for get/list operations (positive integer)",
-		},
+		getDepthFlag(2, "Recursion depth for get/list operations (positive integer)"),
 		&cli.BoolFlag{
 			Name:  "all",
 			Usage: "Get/list all descendants (equivalent to --depth=-1)",
@@ -100,22 +95,14 @@ func getReportFlags(commandFlags ...cli.Flag) []cli.Flag {
 	flags = append(flags, getMethodFlags()...)
 	flags = append(flags, commandFlags...)
 
-	flags = append(flags, &cli.StringFlag{
-		Name:  "item-id",
-		Value: "None",
-		Usage: "Item ID to start from (default: root)",
-	})
+	flags = append(flags, getItemIdFlag("Item ID to start from (default: root)"))
 
 	flags = append(flags,
 		&cli.BoolFlag{
 			Name:  "upload",
 			Usage: "Upload report to Workflowy instead of printing",
 		},
-		&cli.StringFlag{
-			Name:  "parent-id",
-			Value: "None",
-			Usage: "Parent node ID for uploaded report (default: root)",
-		},
+		getParentIdFlag("Parent node ID for uploaded report (default: root)"),
 		&cli.StringFlag{
 			Name:  "position",
 			Usage: "Position in parent: top or bottom",
@@ -128,11 +115,7 @@ func getReportFlags(commandFlags ...cli.Flag) []cli.Flag {
 func getRankingReportFlags() []cli.Flag {
 	reportFlags := getReportFlags()
 	reportFlags = append(reportFlags,
-		&cli.StringFlag{
-			Name:  "item-id",
-			Value: "None",
-			Usage: "Item ID to start from (default: root)",
-		},
+		getItemIdFlag("Item ID to start from (default: root)"),
 		&cli.IntFlag{
 			Name:  "top-n",
 			Value: 20,
@@ -178,4 +161,71 @@ func validatePosition(position string) error {
 		return fmt.Errorf("position must be 'top' or 'bottom'")
 	}
 	return nil
+}
+
+func getIgnoreCaseFlag() cli.Flag {
+	return &cli.BoolFlag{
+		Name:    "ignore-case",
+		Aliases: []string{"i"},
+		Usage:   "Case-insensitive matching",
+	}
+}
+
+func getRegexpFlag() cli.Flag {
+	return &cli.BoolFlag{
+		Name:    "regexp",
+		Aliases: []string{"E"},
+		Usage:   "Treat pattern as regular expression",
+	}
+}
+
+func getParentIdFlag(usage string) cli.Flag {
+	return &cli.StringFlag{
+		Name:  "parent-id",
+		Value: "None",
+		Usage: usage,
+	}
+}
+
+func getItemIdFlag(usage string) cli.Flag {
+	return &cli.StringFlag{
+		Name:  "item-id",
+		Value: "None",
+		Usage: usage,
+	}
+}
+
+func getDepthFlag(defaultValue int, usage string) cli.Flag {
+	return &cli.IntFlag{
+		Name:    "depth",
+		Aliases: []string{"d"},
+		Value:   defaultValue,
+		Usage:   usage,
+	}
+}
+
+func getSearchFlags() []cli.Flag {
+	return []cli.Flag{
+		getIgnoreCaseFlag(),
+		getRegexpFlag(),
+		getItemIdFlag("Search within specific subtree (default: root)"),
+	}
+}
+
+func getReplaceFlags() []cli.Flag {
+	flags := []cli.Flag{
+		getIgnoreCaseFlag(),
+		getParentIdFlag("Limit replacement to subtree under this node ID"),
+		getDepthFlag(-1, "Maximum depth to traverse (-1 for unlimited)"),
+		&cli.BoolFlag{
+			Name:  "interactive",
+			Usage: "Prompt for confirmation before each replacement",
+		},
+		&cli.BoolFlag{
+			Name:  "dry-run",
+			Usage: "Show what would be replaced without making changes",
+		},
+	}
+	flags = append(flags, getMethodFlags()...)
+	return flags
 }

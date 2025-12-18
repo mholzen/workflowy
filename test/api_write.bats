@@ -6,6 +6,74 @@
 
 load test_helper
 
+# Temp file to store node IDs created in setup_file (bats runs tests in subshells)
+SEARCH_TEST_NODES_FILE=""
+
+setup_file() {
+    export WORKFLOWY_BIN="${WORKFLOWY_BIN:-./workflowy}"
+    export API_KEY_FILE="${API_KEY_FILE:-$HOME/.workflowy/api.key}"
+    export TEST_PARENT_ID="${TEST_PARENT_ID:-}"
+
+    if [[ ! -x "$WORKFLOWY_BIN" ]]; then
+        return
+    fi
+    if [[ ! -f "$API_KEY_FILE" ]]; then
+        return
+    fi
+    if [[ -z "$TEST_PARENT_ID" ]]; then
+        return
+    fi
+
+    SEARCH_TEST_NODES_FILE=$(mktemp)
+    export SEARCH_TEST_NODES_FILE
+
+    local output node_id
+
+    output=$("$WORKFLOWY_BIN" create --parent-id="$TEST_PARENT_ID" --name="batsearch_static test node")
+    node_id=$(echo "$output" | awk '{print $1}')
+    echo "SEARCH_BASIC=$node_id" >> "$SEARCH_TEST_NODES_FILE"
+
+    output=$("$WORKFLOWY_BIN" create --parent-id="$TEST_PARENT_ID" --name="BATSEARCHUPPER_STATIC test node")
+    node_id=$(echo "$output" | awk '{print $1}')
+    echo "SEARCH_CASE=$node_id" >> "$SEARCH_TEST_NODES_FILE"
+
+    output=$("$WORKFLOWY_BIN" create --parent-id="$TEST_PARENT_ID" --name="batregex_static-123 test")
+    node_id=$(echo "$output" | awk '{print $1}')
+    echo "SEARCH_REGEX=$node_id" >> "$SEARCH_TEST_NODES_FILE"
+
+    output=$("$WORKFLOWY_BIN" create --parent-id="$TEST_PARENT_ID" --name="batreplace_dryrun DRYRUN_OLD value")
+    node_id=$(echo "$output" | awk '{print $1}')
+    echo "REPLACE_DRYRUN=$node_id" >> "$SEARCH_TEST_NODES_FILE"
+
+    output=$("$WORKFLOWY_BIN" create --parent-id="$TEST_PARENT_ID" --name="batreplace_apply APPLY_OLD here")
+    node_id=$(echo "$output" | awk '{print $1}')
+    echo "REPLACE_APPLY=$node_id" >> "$SEARCH_TEST_NODES_FILE"
+
+    output=$("$WORKFLOWY_BIN" create --parent-id="$TEST_PARENT_ID" --name="batcapture_static task-888")
+    node_id=$(echo "$output" | awk '{print $1}')
+    echo "REPLACE_CAPTURE=$node_id" >> "$SEARCH_TEST_NODES_FILE"
+
+    output=$("$WORKFLOWY_BIN" create --parent-id="$TEST_PARENT_ID" --name="batcasei_static TODO_CASE item")
+    node_id=$(echo "$output" | awk '{print $1}')
+    echo "REPLACE_CASEI=$node_id" >> "$SEARCH_TEST_NODES_FILE"
+
+    "$WORKFLOWY_BIN" search --force-refresh "batsearch_static" > /dev/null 2>&1 || true
+}
+
+teardown_file() {
+    if [[ -n "$SEARCH_TEST_NODES_FILE" && -f "$SEARCH_TEST_NODES_FILE" ]]; then
+        while IFS='=' read -r key node_id; do
+            "$WORKFLOWY_BIN" delete "$node_id" 2>/dev/null || true
+        done < "$SEARCH_TEST_NODES_FILE"
+        rm -f "$SEARCH_TEST_NODES_FILE"
+    fi
+}
+
+get_test_node_id() {
+    local key="$1"
+    grep "^${key}=" "$SEARCH_TEST_NODES_FILE" | cut -d'=' -f2
+}
+
 setup() {
     if [[ ! -x "$WORKFLOWY_BIN" ]]; then
         skip "Binary not found at $WORKFLOWY_BIN - run 'just build' first"
@@ -25,7 +93,6 @@ teardown() {
     [ "$status" -eq 0 ]
     [[ "$output" =~ "created" ]]
 
-    # Output format is: <node-id> created
     node_id=$(echo "$output" | awk '{print $1}')
     [[ "$node_id" =~ ^[a-f0-9-]+$ ]]
     track_node_for_cleanup "$node_id"
@@ -35,23 +102,19 @@ teardown() {
     run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="bats id test $(date +%s)"
     [ "$status" -eq 0 ]
 
-    # Output format is: <node-id> created
     node_id=$(echo "$output" | awk '{print $1}')
     [[ "$node_id" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]
     track_node_for_cleanup "$node_id"
 }
 
 @test "create and retrieve node" {
-    # Create
     local test_name="bats retrieve test $(date +%s)"
     run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="$test_name"
     [ "$status" -eq 0 ]
 
-    # Output format is: <node-id> created
     node_id=$(echo "$output" | awk '{print $1}')
     track_node_for_cleanup "$node_id"
 
-    # Retrieve and verify
     run run_workflowy get "$node_id"
     [ "$status" -eq 0 ]
     [[ "$output" =~ "$test_name" ]]
@@ -60,49 +123,41 @@ teardown() {
 # Complete/Uncomplete Command Tests
 
 @test "complete node" {
-    # Create a test node first
     run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="bats complete test $(date +%s)"
     [ "$status" -eq 0 ]
     node_id=$(echo "$output" | awk '{print $1}')
     track_node_for_cleanup "$node_id"
 
-    # Complete it
     run run_workflowy complete "$node_id"
     [ "$status" -eq 0 ]
     [[ "$output" =~ "completed" ]]
 }
 
 @test "uncomplete node" {
-    # Create a test node first
     run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="bats uncomplete test $(date +%s)"
     [ "$status" -eq 0 ]
     node_id=$(echo "$output" | awk '{print $1}')
     track_node_for_cleanup "$node_id"
 
-    # Complete it
     run run_workflowy complete "$node_id"
     [ "$status" -eq 0 ]
 
-    # Uncomplete it
     run run_workflowy uncomplete "$node_id"
     [ "$status" -eq 0 ]
     [[ "$output" =~ "uncompleted" ]]
 }
 
 @test "complete and uncomplete roundtrip" {
-    # Create
     run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="bats roundtrip test $(date +%s)"
     [ "$status" -eq 0 ]
     node_id=$(echo "$output" | awk '{print $1}')
     track_node_for_cleanup "$node_id"
 
-    # Complete
     run run_workflowy complete "$node_id"
     [ "$status" -eq 0 ]
     [[ "$output" =~ "$node_id" ]]
     [[ "$output" =~ "completed" ]]
 
-    # Uncomplete
     run run_workflowy uncomplete "$node_id"
     [ "$status" -eq 0 ]
     [[ "$output" =~ "$node_id" ]]
@@ -112,19 +167,16 @@ teardown() {
 # Update Command Tests
 
 @test "update node name" {
-    # Create a test node first
     run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="bats update test $(date +%s)"
     [ "$status" -eq 0 ]
     node_id=$(echo "$output" | awk '{print $1}')
     track_node_for_cleanup "$node_id"
 
-    # Update the name
     local new_name="bats updated name $(date +%s)"
     run run_workflowy update "$node_id" --name="$new_name"
     [ "$status" -eq 0 ]
     [[ "$output" =~ "updated" ]]
 
-    # Verify the update
     run run_workflowy get "$node_id"
     [ "$status" -eq 0 ]
     [[ "$output" =~ "$new_name" ]]
@@ -167,4 +219,86 @@ teardown() {
 @test "complete invalid node id fails gracefully" {
     run run_workflowy complete "invalid-node-id"
     [ "$status" -ne 0 ]
+}
+
+# Search Command Tests (use pre-created nodes from setup_file)
+
+@test "search finds created node" {
+    run run_workflowy search "batsearch_static" --item-id="$TEST_PARENT_ID"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "batsearch_static" ]]
+}
+
+@test "search case insensitive" {
+    run run_workflowy search -i "batsearchupper_static" --item-id="$TEST_PARENT_ID"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "BATSEARCHUPPER_STATIC" ]]
+}
+
+@test "search with regex" {
+    run run_workflowy search -E "batregex_static-[0-9]+" --item-id="$TEST_PARENT_ID"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "batregex_static" ]]
+}
+
+# Replace Command Tests (use pre-created nodes from setup_file)
+
+@test "replace dry-run shows changes without applying" {
+    local node_id
+    node_id=$(get_test_node_id "REPLACE_DRYRUN")
+
+    run run_workflowy replace --dry-run --parent-id="$TEST_PARENT_ID" "DRYRUN_OLD" "DRYRUN_NEW"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "dry-run" ]]
+    [[ "$output" =~ "DRYRUN_OLD" ]]
+    [[ "$output" =~ "DRYRUN_NEW" ]]
+
+    run run_workflowy get "$node_id"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "DRYRUN_OLD" ]]
+}
+
+@test "replace applies changes" {
+    local node_id
+    node_id=$(get_test_node_id "REPLACE_APPLY")
+
+    run run_workflowy replace --parent-id="$TEST_PARENT_ID" "APPLY_OLD" "APPLY_NEW"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Updated 1 node" ]]
+
+    run run_workflowy get "$node_id"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "APPLY_NEW" ]]
+}
+
+@test "replace with capture groups" {
+    local node_id
+    node_id=$(get_test_node_id "REPLACE_CAPTURE")
+
+    run run_workflowy replace --parent-id="$TEST_PARENT_ID" "task-([0-9]+)" 'item_$1'
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Updated 1 node" ]]
+
+    run run_workflowy get "$node_id"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "item_888" ]]
+}
+
+@test "replace case insensitive" {
+    local node_id
+    node_id=$(get_test_node_id "REPLACE_CASEI")
+
+    run run_workflowy replace -i --parent-id="$TEST_PARENT_ID" "todo_case" "DONE_CASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Updated 1 node" ]]
+
+    run run_workflowy get "$node_id"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "DONE_CASE" ]]
+}
+
+@test "replace no matches" {
+    run run_workflowy replace --parent-id="$TEST_PARENT_ID" "NONEXISTENT_PATTERN_xyz123" "replacement"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "No matches found" ]]
 }
