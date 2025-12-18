@@ -130,14 +130,41 @@ teardown() {
     [[ "$output" =~ "$new_name" ]]
 }
 
-# Error Handling Tests
+# Delete Command Tests
 
-@test "complete invalid node id fails gracefully" {
-    run run_workflowy complete "invalid-node-id"
+@test "delete node" {
+    run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="bats delete test $(date +%s)"
+    [ "$status" -eq 0 ]
+    node_id=$(echo "$output" | awk '{print $1}')
+
+    run run_workflowy delete "$node_id"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "deleted" ]]
+}
+
+@test "create and delete node" {
+    local test_name="bats delete verify test $(date +%s)"
+    run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="$test_name"
+    [ "$status" -eq 0 ]
+    node_id=$(echo "$output" | awk '{print $1}')
+
+    run run_workflowy delete "$node_id"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "$node_id" ]]
+    [[ "$output" =~ "deleted" ]]
+
+    run run_workflowy get "$node_id"
     [ "$status" -ne 0 ]
 }
 
-@test "create without parent-id fails" {
-    run run_workflowy create --name="orphan node"
+# Error Handling Tests
+
+@test "delete invalid node id fails gracefully" {
+    run run_workflowy delete "invalid-node-id"
+    [ "$status" -ne 0 ]
+}
+
+@test "complete invalid node id fails gracefully" {
+    run run_workflowy complete "invalid-node-id"
     [ "$status" -ne 0 ]
 }

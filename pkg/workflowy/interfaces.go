@@ -11,6 +11,7 @@ type Client interface {
 	UpdateNode(ctx context.Context, itemID string, req *UpdateNodeRequest) (*UpdateNodeResponse, error)
 	CompleteNode(ctx context.Context, itemID string) (*UpdateNodeResponse, error)
 	UncompleteNode(ctx context.Context, itemID string) (*UpdateNodeResponse, error)
+	DeleteNode(ctx context.Context, itemID string) (*UpdateNodeResponse, error)
 	ExportNodesWithCache(ctx context.Context, forceRefresh bool) (*ExportNodesResponse, error)
 }
 

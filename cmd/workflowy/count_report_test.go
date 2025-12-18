@@ -97,6 +97,10 @@ func (m *MockClient) UncompleteNode(ctx context.Context, itemID string) (*workfl
 	return nil, nil
 }
 
+func (m *MockClient) DeleteNode(ctx context.Context, itemID string) (*workflowy.UpdateNodeResponse, error) {
+	return nil, nil
+}
+
 func (m *MockClient) ExportNodesWithCache(ctx context.Context, forceRefresh bool) (*workflowy.ExportNodesResponse, error) {
 	return nil, nil
 }

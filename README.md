@@ -63,7 +63,7 @@ updating nodes, searching through content, and generating usage reports.
 
 ## Features
 
-- **Node Operations**: Get, List, Create, Update, Complete, and Uncomplete to operate on nodes.
+- **Node Operations**: Get, List, Create, Update, Complete, Uncomplete, and Delete to operate on nodes.
 - **Search**: Search through all nodes with text or regex patterns, with case-sensitive/insensitive options and highlighted results.
 - **Usage Reports**: Understand where the majority of your nodes are stored, which nodes have many children or which ones are possibly stale:
   - Rank nodes by the count of descendants, with a configurable threshold to the total number of nodes
@@ -185,6 +185,16 @@ workflowy uncomplete <item-id>
 
 # JSON output
 workflowy complete <item-id> --format json
+```
+
+#### Delete A Node
+
+```bash
+# Permanently delete a node
+workflowy delete <item-id>
+
+# JSON output
+workflowy delete <item-id> --format json
 ```
 
 #### Search For Items

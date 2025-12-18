@@ -19,6 +19,7 @@ func getCommands() []*cli.Command {
 		getListCommand(),
 		getCreateCommand(),
 		getUpdateCommand(),
+		getDeleteCommand(),
 		getCompleteCommand(),
 		getUncompleteCommand(),
 		getReportCommand(),
@@ -266,6 +267,45 @@ func getUpdateCommand() *cli.Command {
 				printJSON(response)
 			} else {
 				fmt.Printf("%s updated\n", itemID)
+			}
+			return nil
+		}),
+	}
+}
+
+func getDeleteCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "delete",
+		Usage: "Permanently delete a node",
+		Arguments: []cli.Argument{
+			&cli.StringArg{
+				Name:      "item_id",
+				UsageText: "<item_id>",
+			},
+		},
+		Flags: getMethodFlags(),
+		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+			format := cmd.String("format")
+			if err := validateFormat(format); err != nil {
+				return err
+			}
+
+			itemID := cmd.StringArg("item_id")
+			if itemID == "" {
+				return fmt.Errorf("item_id is required")
+			}
+
+			slog.Debug("deleting node", "item_id", itemID)
+
+			response, err := client.DeleteNode(ctx, itemID)
+			if err != nil {
+				return fmt.Errorf("cannot delete node: %w", err)
+			}
+
+			if format == "json" {
+				printJSON(response)
+			} else {
+				fmt.Printf("%s deleted\n", itemID)
 			}
 			return nil
 		}),

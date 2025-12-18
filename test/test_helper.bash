@@ -60,7 +60,7 @@ track_node_for_cleanup() {
 
 cleanup_created_nodes() {
     for node_id in "${CREATED_NODES[@]}"; do
-        "$WORKFLOWY_BIN" delete "$node_id" 2>/dev/null || true
+        "$WORKFLOWY_BIN" delete "$node_id"
     done
     CREATED_NODES=()
 }

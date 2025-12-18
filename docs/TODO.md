@@ -25,6 +25,7 @@
 # DONE
 
 ## Next version
+- [x] FEATURE: add delete command
 - [x] BUG: errors now return non-zero exit code
 - [x] BUG: when reports are uploaded, links are not created
 - [x] FEATURE: add integration tests

@@ -241,6 +241,17 @@ func (wc *WorkflowyClient) UncompleteNode(ctx context.Context, itemID string) (*
 	return &resp, nil
 }
 
+func (wc *WorkflowyClient) DeleteNode(ctx context.Context, itemID string) (*UpdateNodeResponse, error) {
+	var resp UpdateNodeResponse
+	path := fmt.Sprintf("/nodes/%s", itemID)
+	err := wc.Do(ctx, "DELETE", path, nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
 // ExportNode represents a node from the export API with parent_id for tree reconstruction
 type ExportNode struct {
 	ID          string                 `json:"id"`
