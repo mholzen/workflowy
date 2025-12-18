@@ -184,7 +184,11 @@ func getCreateCommand() *cli.Command {
 				return fmt.Errorf("cannot create node: %w", err)
 			}
 
-			printOutput(response, format, cmd.Bool("include-empty-names"))
+			if format == "json" {
+				printJSON(response)
+			} else {
+				fmt.Printf("%s created\n", response.ItemID)
+			}
 			return nil
 		}),
 	}
@@ -251,7 +255,11 @@ func getUpdateCommand() *cli.Command {
 				return fmt.Errorf("cannot update node: %w", err)
 			}
 
-			printOutput(response, format, cmd.Bool("include-empty-names"))
+			if format == "json" {
+				printJSON(response)
+			} else {
+				fmt.Printf("%s updated\n", itemID)
+			}
 			return nil
 		}),
 	}

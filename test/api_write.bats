@@ -25,8 +25,9 @@ teardown() {
     [ "$status" -eq 0 ]
     [[ "$output" =~ "created" ]]
 
-    node_id=$(extract_node_id "$output")
-    [ -n "$node_id" ]
+    # Output format is: <node-id> created
+    node_id=$(echo "$output" | awk '{print $1}')
+    [[ "$node_id" =~ ^[a-f0-9-]+$ ]]
     track_node_for_cleanup "$node_id"
 }
 
@@ -34,7 +35,8 @@ teardown() {
     run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="bats id test $(date +%s)"
     [ "$status" -eq 0 ]
 
-    node_id=$(extract_node_id "$output")
+    # Output format is: <node-id> created
+    node_id=$(echo "$output" | awk '{print $1}')
     [[ "$node_id" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]
     track_node_for_cleanup "$node_id"
 }
@@ -45,7 +47,8 @@ teardown() {
     run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="$test_name"
     [ "$status" -eq 0 ]
 
-    node_id=$(extract_node_id "$output")
+    # Output format is: <node-id> created
+    node_id=$(echo "$output" | awk '{print $1}')
     track_node_for_cleanup "$node_id"
 
     # Retrieve and verify
@@ -60,7 +63,7 @@ teardown() {
     # Create a test node first
     run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="bats complete test $(date +%s)"
     [ "$status" -eq 0 ]
-    node_id=$(extract_node_id "$output")
+    node_id=$(echo "$output" | awk '{print $1}')
     track_node_for_cleanup "$node_id"
 
     # Complete it
@@ -73,7 +76,7 @@ teardown() {
     # Create a test node first
     run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="bats uncomplete test $(date +%s)"
     [ "$status" -eq 0 ]
-    node_id=$(extract_node_id "$output")
+    node_id=$(echo "$output" | awk '{print $1}')
     track_node_for_cleanup "$node_id"
 
     # Complete it
@@ -90,7 +93,7 @@ teardown() {
     # Create
     run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="bats roundtrip test $(date +%s)"
     [ "$status" -eq 0 ]
-    node_id=$(extract_node_id "$output")
+    node_id=$(echo "$output" | awk '{print $1}')
     track_node_for_cleanup "$node_id"
 
     # Complete
@@ -112,13 +115,14 @@ teardown() {
     # Create a test node first
     run run_workflowy create --parent-id="$TEST_PARENT_ID" --name="bats update test $(date +%s)"
     [ "$status" -eq 0 ]
-    node_id=$(extract_node_id "$output")
+    node_id=$(echo "$output" | awk '{print $1}')
     track_node_for_cleanup "$node_id"
 
     # Update the name
     local new_name="bats updated name $(date +%s)"
     run run_workflowy update "$node_id" --name="$new_name"
     [ "$status" -eq 0 ]
+    [[ "$output" =~ "updated" ]]
 
     # Verify the update
     run run_workflowy get "$node_id"
