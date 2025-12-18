@@ -4,6 +4,22 @@ build:
 test:
 	go test ./...
 
+test-integration: build
+	bats test/reports.bats
+
+test-integration-api: build
+	bats test/api_read.bats
+
+test-integration-write: build
+	@echo "WARNING: This will create/modify nodes in your Workflowy account"
+	@echo "Requires TEST_PARENT_ID to be set to a sandbox node"
+	bats test/api_write.bats
+
+test-integration-all: build
+	bats test/*.bats
+
+test-all: test test-integration
+
 # Test release build locally without publishing
 release-test:
 	goreleaser release --snapshot --clean
