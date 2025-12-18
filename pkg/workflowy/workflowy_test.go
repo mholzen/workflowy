@@ -366,6 +366,114 @@ func calculateDepth(items []*Item) int {
 	return maxChildDepth + 1
 }
 
+func TestWorkflowyClient_ListTargets(t *testing.T) {
+	tests := []struct {
+		name            string
+		serverResponse  interface{}
+		statusCode      int
+		expectedTargets []Target
+		expectError     bool
+	}{
+		{
+			name: "successful list targets with shortcuts",
+			serverResponse: ListTargetsResponse{
+				Targets: []Target{
+					{
+						Key:  "home",
+						Type: "shortcut",
+						Name: stringPtr("My Home Page"),
+					},
+					{
+						Key:  "inbox",
+						Type: "system",
+						Name: stringPtr("Inbox"),
+					},
+				},
+			},
+			statusCode: http.StatusOK,
+			expectedTargets: []Target{
+				{
+					Key:  "home",
+					Type: "shortcut",
+					Name: stringPtr("My Home Page"),
+				},
+				{
+					Key:  "inbox",
+					Type: "system",
+					Name: stringPtr("Inbox"),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "system target not yet created",
+			serverResponse: ListTargetsResponse{
+				Targets: []Target{
+					{
+						Key:  "inbox",
+						Type: "system",
+						Name: nil,
+					},
+				},
+			},
+			statusCode: http.StatusOK,
+			expectedTargets: []Target{
+				{
+					Key:  "inbox",
+					Type: "system",
+					Name: nil,
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:            "empty targets list",
+			serverResponse:  ListTargetsResponse{Targets: []Target{}},
+			statusCode:      http.StatusOK,
+			expectedTargets: []Target{},
+			expectError:     false,
+		},
+		{
+			name:            "server error",
+			serverResponse:  map[string]string{"error": "Unauthorized"},
+			statusCode:      http.StatusUnauthorized,
+			expectedTargets: nil,
+			expectError:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "GET", r.Method)
+				assert.Equal(t, "/targets", r.URL.Path)
+				assert.Equal(t, "application/json", r.Header.Get("Accept"))
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				json.NewEncoder(w).Encode(tt.serverResponse)
+			}))
+			defer server.Close()
+
+			client := &WorkflowyClient{
+				Client: client.New(server.URL),
+			}
+
+			ctx := context.Background()
+			result, err := client.ListTargets(ctx)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Nil(t, result)
+			} else {
+				assert.NoError(t, err)
+				require.NotNil(t, result)
+				assert.Equal(t, tt.expectedTargets, result.Targets)
+			}
+		})
+	}
+}
+
 // Helper function to create string pointers
 func stringPtr(s string) *string {
 	return &s

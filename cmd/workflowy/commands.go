@@ -23,6 +23,7 @@ func getCommands() []*cli.Command {
 		getDeleteCommand(),
 		getCompleteCommand(),
 		getUncompleteCommand(),
+		getTargetsCommand(),
 		getReportCommand(),
 		getSearchCommand(),
 		getReplaceCommand(),
@@ -320,6 +321,29 @@ func getCompleteCommand() *cli.Command {
 
 func getUncompleteCommand() *cli.Command {
 	return getCompletionCommand("uncomplete", "Mark a node as uncomplete", "uncompleting")
+}
+
+func getTargetsCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "targets",
+		Usage: "List all available targets (shortcuts and system targets)",
+		Flags: getMethodFlags(),
+		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+			format := cmd.String("format")
+			if err := validateFormat(format); err != nil {
+				return err
+			}
+
+			slog.Debug("listing targets")
+			response, err := client.ListTargets(ctx)
+			if err != nil {
+				return fmt.Errorf("cannot list targets: %w", err)
+			}
+
+			printOutput(response.Targets, format, false)
+			return nil
+		}),
+	}
 }
 
 func getCompletionCommand(commandName, usage, action string) *cli.Command {

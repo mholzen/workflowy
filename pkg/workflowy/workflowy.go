@@ -271,10 +271,33 @@ type ExportNodesResponse struct {
 	Nodes []ExportNode `json:"nodes"`
 }
 
+// Target represents a Workflowy target (shortcuts or system targets)
+type Target struct {
+	Key  string  `json:"key"`
+	Type string  `json:"type"`
+	Name *string `json:"name"`
+}
+
+// ListTargetsResponse represents the response from GET /targets
+type ListTargetsResponse struct {
+	Targets []Target `json:"targets"`
+}
+
 // ExportNodes retrieves all nodes from Workflowy (rate limited to 1 req/min)
 func (wc *WorkflowyClient) ExportNodes(ctx context.Context) (*ExportNodesResponse, error) {
 	var resp ExportNodesResponse
 	err := wc.Do(ctx, "GET", "/nodes-export", nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
+// ListTargets retrieves all available targets (shortcuts and system targets)
+func (wc *WorkflowyClient) ListTargets(ctx context.Context) (*ListTargetsResponse, error) {
+	var resp ListTargetsResponse
+	err := wc.Do(ctx, "GET", "/targets", nil, &resp)
 	if err != nil {
 		return nil, err
 	}

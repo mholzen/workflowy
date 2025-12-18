@@ -105,6 +105,14 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 			for _, result := range v {
 				fmt.Println(result.String())
 			}
+		case []workflowy.Target:
+			for _, target := range v {
+				name := "null"
+				if target.Name != nil {
+					name = *target.Name
+				}
+				fmt.Printf("%s (%s): %s\n", target.Key, target.Type, name)
+			}
 		default:
 			printJSON(data)
 		}
@@ -125,6 +133,14 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 		case []SearchResult:
 			for _, result := range v {
 				fmt.Println(result.String())
+			}
+		case []workflowy.Target:
+			for _, target := range v {
+				name := "null"
+				if target.Name != nil {
+					name = *target.Name
+				}
+				fmt.Printf("- **%s** (%s): %s\n", target.Key, target.Type, name)
 			}
 		default:
 			printJSON(data)

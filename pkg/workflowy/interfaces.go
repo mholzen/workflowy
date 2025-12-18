@@ -13,6 +13,7 @@ type Client interface {
 	UncompleteNode(ctx context.Context, itemID string) (*UpdateNodeResponse, error)
 	DeleteNode(ctx context.Context, itemID string) (*UpdateNodeResponse, error)
 	ExportNodesWithCache(ctx context.Context, forceRefresh bool) (*ExportNodesResponse, error)
+	ListTargets(ctx context.Context) (*ListTargetsResponse, error)
 }
 
 type BackupProvider interface {

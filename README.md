@@ -48,6 +48,7 @@ to understand where the majority of your nodes are located.
   - [Get Your API Key](#get-your-api-key)
 - [Usage](#usage)
   - [Basic Commands](#basic-commands)
+    - [List Targets](#list-targets)
     - [Search For Items](#search-for-items)
     - [Search and Replace](#search-and-replace)
   - [Usage Reports](#usage-reports)
@@ -67,6 +68,7 @@ updating nodes, searching through content, and generating usage reports.
 ## Features
 
 - **Node Operations**: Get, List, Create, Update, Complete, Uncomplete, and Delete to operate on nodes.
+- **Targets**: List all available shortcuts and system targets (like "inbox") for use in commands.
 - **Search**: Search through all nodes with text or regex patterns, with case-sensitive/insensitive options and highlighted results.
 - **Search and Replace**: Bulk find-and-replace across node names using regex with capture group support, interactive mode, and dry-run preview.
 - **Usage Reports**: Understand where the majority of your nodes are stored, which nodes have many children or which ones are possibly stale:
@@ -199,6 +201,36 @@ workflowy delete <item-id>
 
 # JSON output
 workflowy delete <item-id> --format json
+```
+
+#### List Targets
+
+List all available targets (shortcuts and system targets like "inbox") that can be used as IDs in other commands:
+
+```bash
+# List all targets
+workflowy targets
+
+# JSON output with full details
+workflowy targets --format json
+
+# Markdown output
+workflowy targets --format markdown
+```
+
+**What are targets?**
+- **System targets**: Built-in locations like `inbox`
+- **Shortcuts**: User-defined shortcuts you create in Workflowy
+
+**Use targets as IDs**: You can use target keys (like `inbox`) instead of UUIDs in commands that accept parent IDs or item IDs.
+
+**Example:**
+```bash
+# Create a node in your inbox using the "inbox" target
+workflowy create --parent-id=inbox "New task"
+
+# Get contents of a shortcut using its key
+workflowy get home
 ```
 
 #### Search For Items

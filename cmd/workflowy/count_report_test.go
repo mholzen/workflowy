@@ -105,6 +105,10 @@ func (m *MockClient) ExportNodesWithCache(ctx context.Context, forceRefresh bool
 	return nil, nil
 }
 
+func (m *MockClient) ListTargets(ctx context.Context) (*workflowy.ListTargetsResponse, error) {
+	return nil, nil
+}
+
 func withMockClient(client workflowy.Client) ClientProvider {
 	return func(fn ClientActionFunc) cli.ActionFunc {
 		return func(ctx context.Context, cmd *cli.Command) error {

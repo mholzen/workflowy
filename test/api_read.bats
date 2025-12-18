@@ -76,6 +76,33 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+# Targets Command Tests
+
+@test "targets command returns list of targets" {
+    run run_workflowy targets
+    [ "$status" -eq 0 ]
+    [ -n "$output" ]
+}
+
+@test "targets with json format is valid" {
+    require_jq
+    run run_workflowy targets --format=json --log=error
+    [ "$status" -eq 0 ]
+    assert_valid_json "$output"
+}
+
+@test "targets with list format shows keys" {
+    run run_workflowy targets --format=list --log=error
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "(" ]] && [[ "$output" =~ ")" ]]
+}
+
+@test "targets with markdown format is valid" {
+    run run_workflowy targets --format=markdown --log=error
+    [ "$status" -eq 0 ]
+    [ -n "$output" ]
+}
+
 # Version Command Tests
 
 @test "version command outputs version info" {
