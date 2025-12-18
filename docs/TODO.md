@@ -25,11 +25,11 @@
 # DONE
 
 ## Next version
-
+- [x] BUG: errors now return non-zero exit code
 - [x] BUG: when reports are uploaded, links are not created
+- [x] FEATURE: add integration tests
 - [x] BUG: create does not receive the location the api key on create
 - [x] FEATURE: inform user of where to get api an api key if missing
   - [x] CODE: unify client creation code to single function
 - [x] FEATURE: unify error and log messaging for consistency
 - [x] improve status and error reporting: error reporting looks like a log mesage (time not necessary)
-- [x] add integration tests
