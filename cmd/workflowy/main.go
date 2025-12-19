@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/mholzen/workflowy/pkg/mcp"
 	"github.com/urfave/cli/v3"
 )
 
@@ -46,9 +47,34 @@ Examples:
 				Value: "info",
 				Usage: "Log level: debug, info, warn, error",
 			},
+			&cli.BoolFlag{
+				Name:  "mcp-server",
+				Usage: "Run as MCP server (stdio transport)",
+			},
+			&cli.StringFlag{
+				Name:  "expose",
+				Value: "read",
+				Usage: "MCP tools to expose: read (default), write, all, or comma-separated list",
+			},
+			getAPIKeyFlag(),
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			setupLogging(cmd.String("log"))
+
+			if cmd.Bool("mcp-server") {
+				serverConfig := mcp.Config{
+					APIKeyFile: cmd.String("api-key-file"),
+					Expose:     cmd.String("expose"),
+					Version:    version,
+				}
+
+				if err := mcp.RunServer(ctx, serverConfig); err != nil {
+					return ctx, err
+				}
+
+				return ctx, cli.Exit("", 0)
+			}
+
 			return ctx, nil
 		},
 		Commands: getCommands(),

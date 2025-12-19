@@ -16,22 +16,12 @@ type FetchParameters struct {
 }
 
 func getMethodFlags() []cli.Flag {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("cannot get home directory: %v", err)
-	}
-	defaultAPIKeyFile := filepath.Join(homeDir, ".workflowy", "api.key")
-
 	return []cli.Flag{
 		&cli.StringFlag{
 			Name:  "method",
 			Usage: "Access method: get, export or backup\n\tDefaults to 'get' for depth 1-3, 'export' for depth 4+, 'backup' if no api key provided",
 		},
-		&cli.StringFlag{
-			Name:  "api-key-file",
-			Value: defaultAPIKeyFile,
-			Usage: "Path to API key file",
-		},
+		getAPIKeyFlag(),
 		&cli.StringFlag{
 			Name:  "backup-file",
 			Usage: "Path to backup file (default: latest in ~/Dropbox/Apps/Workflowy/Data)",
@@ -61,18 +51,8 @@ func getFetchFlags() []cli.Flag {
 }
 
 func getWriteFlags(commandFlags ...cli.Flag) []cli.Flag {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("cannot get home directory: %v", err)
-	}
-	defaultAPIKeyFile := filepath.Join(homeDir, ".workflowy", "api.key")
-
 	flags := []cli.Flag{
-		&cli.StringFlag{
-			Name:  "api-key-file",
-			Value: defaultAPIKeyFile,
-			Usage: "Path to API key file",
-		},
+		getAPIKeyFlag(),
 		&cli.StringFlag{
 			Name:  "name",
 			Usage: "Update node name/title",
@@ -232,4 +212,17 @@ func getReplaceFlags() []cli.Flag {
 	}
 	flags = append(flags, getMethodFlags()...)
 	return flags
+}
+
+func getAPIKeyFlag() *cli.StringFlag {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("cannot get home directory: %v", err)
+	}
+	defaultAPIKeyFile := filepath.Join(homeDir, ".workflowy", "api.key")
+	return &cli.StringFlag{
+		Name:  "api-key-file",
+		Value: defaultAPIKeyFile,
+		Usage: "Path to API key file",
+	}
 }

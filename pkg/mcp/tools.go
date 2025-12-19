@@ -1,0 +1,1047 @@
+package mcp
+
+import (
+	"context"
+	"fmt"
+	"regexp"
+	"strings"
+
+	mcptypes "github.com/mark3labs/mcp-go/mcp"
+	mcpserver "github.com/mark3labs/mcp-go/server"
+	"github.com/mholzen/workflowy/pkg/reports"
+	"github.com/mholzen/workflowy/pkg/workflowy"
+)
+
+const (
+	ToolGet            = "workflowy_get"
+	ToolList           = "workflowy_list"
+	ToolSearch         = "workflowy_search"
+	ToolTargets        = "workflowy_targets"
+	ToolCreate         = "workflowy_create"
+	ToolUpdate         = "workflowy_update"
+	ToolDelete         = "workflowy_delete"
+	ToolComplete       = "workflowy_complete"
+	ToolUncomplete     = "workflowy_uncomplete"
+	ToolReportCount    = "workflowy_report_count"
+	ToolReportChildren = "workflowy_report_children"
+	ToolReportCreated  = "workflowy_report_created"
+	ToolReportModified = "workflowy_report_modified"
+	ToolReplace        = "workflowy_replace"
+)
+
+// ToolBuilder wires Workflowy operations into MCP tool handlers.
+type ToolBuilder struct {
+	client workflowy.Client
+}
+
+// NewToolBuilder creates a builder bound to the provided Workflowy client.
+func NewToolBuilder(client workflowy.Client) ToolBuilder {
+	return ToolBuilder{client: client}
+}
+
+// BuildTools constructs the requested tools in the order provided.
+func (b ToolBuilder) BuildTools(toolNames []string) ([]mcpserver.ServerTool, error) {
+	factories := map[string]func() mcpserver.ServerTool{
+		ToolGet:            b.buildGetTool,
+		ToolList:           b.buildListTool,
+		ToolSearch:         b.buildSearchTool,
+		ToolTargets:        b.buildTargetsTool,
+		ToolCreate:         b.buildCreateTool,
+		ToolUpdate:         b.buildUpdateTool,
+		ToolDelete:         b.buildDeleteTool,
+		ToolComplete:       b.buildCompleteTool,
+		ToolUncomplete:     b.buildUncompleteTool,
+		ToolReportCount:    b.buildReportCountTool,
+		ToolReportChildren: b.buildReportChildrenTool,
+		ToolReportCreated:  b.buildReportCreatedTool,
+		ToolReportModified: b.buildReportModifiedTool,
+		ToolReplace:        b.buildReplaceTool,
+	}
+
+	var tools []mcpserver.ServerTool
+	for _, name := range toolNames {
+		factory, ok := factories[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown tool: %s", name)
+		}
+		tools = append(tools, factory())
+	}
+	return tools, nil
+}
+
+func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolGet,
+			mcptypes.WithDescription("Get a node and optional descendants"),
+			mcptypes.WithString("item_id",
+				mcptypes.Description("Workflowy item ID (None for root)"),
+				mcptypes.DefaultString("None"),
+			),
+			mcptypes.WithNumber("depth",
+				mcptypes.Description("Recursion depth (-1 for all, default 2)"),
+				mcptypes.DefaultNumber(2),
+			),
+			mcptypes.WithBoolean("include_empty_names",
+				mcptypes.Description("Include items with empty names"),
+				mcptypes.DefaultBool(false),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			itemID := req.GetString("item_id", "None")
+			depth := req.GetInt("depth", 2)
+			includeEmpty := req.GetBool("include_empty_names", false)
+
+			result, err := b.fetchItems(ctx, itemID, depth)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot get item", err), nil
+			}
+
+			if !includeEmpty {
+				switch v := result.(type) {
+				case *workflowy.Item:
+					result = filterEmptyItem(v)
+				case *workflowy.ListChildrenResponse:
+					result = filterEmptyList(v)
+				}
+			}
+
+			return mcptypes.NewToolResultJSON(result)
+		},
+	}
+}
+
+func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolList,
+			mcptypes.WithDescription("List descendants of a node as a flat list"),
+			mcptypes.WithString("item_id",
+				mcptypes.Description("Workflowy item ID (None for root)"),
+				mcptypes.DefaultString("None"),
+			),
+			mcptypes.WithNumber("depth",
+				mcptypes.Description("Recursion depth (-1 for all, default 2)"),
+				mcptypes.DefaultNumber(2),
+			),
+			mcptypes.WithBoolean("include_empty_names",
+				mcptypes.Description("Include items with empty names"),
+				mcptypes.DefaultBool(false),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			itemID := req.GetString("item_id", "None")
+			depth := req.GetInt("depth", 2)
+			includeEmpty := req.GetBool("include_empty_names", false)
+
+			data, err := b.fetchItems(ctx, itemID, depth)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot list items", err), nil
+			}
+
+			flattened := flattenTree(data)
+			if !includeEmpty {
+				flattened = filterEmptyList(flattened)
+			}
+
+			return mcptypes.NewToolResultJSON(flattened)
+		},
+	}
+}
+
+func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolSearch,
+			mcptypes.WithDescription("Search node names by text or regular expression"),
+			mcptypes.WithString("pattern",
+				mcptypes.Description("Search text or regular expression"),
+				mcptypes.Required(),
+			),
+			mcptypes.WithString("item_id",
+				mcptypes.Description("Limit search to this subtree (None for root)"),
+				mcptypes.DefaultString("None"),
+			),
+			mcptypes.WithBoolean("regexp",
+				mcptypes.Description("Treat pattern as regular expression"),
+				mcptypes.DefaultBool(false),
+			),
+			mcptypes.WithBoolean("ignore_case",
+				mcptypes.Description("Case-insensitive search"),
+				mcptypes.DefaultBool(false),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			pattern := strings.TrimSpace(req.GetString("pattern", ""))
+			if pattern == "" {
+				return mcptypes.NewToolResultError("pattern is required"), nil
+			}
+
+			itemID := req.GetString("item_id", "None")
+			useRegexp := req.GetBool("regexp", false)
+			ignoreCase := req.GetBool("ignore_case", false)
+
+			items, err := b.loadExportTree(ctx)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot load tree for search", err), nil
+			}
+
+			rootItem := findRootItem(items, itemID)
+			if rootItem == nil && itemID != "None" {
+				return mcptypes.NewToolResultErrorf("item not found: %s", itemID), nil
+			}
+
+			searchRoot := items
+			if rootItem != nil {
+				searchRoot = []*workflowy.Item{rootItem}
+			}
+
+			results := searchItems(searchRoot, pattern, useRegexp, ignoreCase)
+			return mcptypes.NewToolResultJSON(results)
+		},
+	}
+}
+
+func (b ToolBuilder) buildTargetsTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolTargets,
+			mcptypes.WithDescription("List available Workflowy targets (shortcuts and system targets)"),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			response, err := b.client.ListTargets(ctx)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot list targets", err), nil
+			}
+			return mcptypes.NewToolResultJSON(response.Targets)
+		},
+	}
+}
+
+func (b ToolBuilder) buildCreateTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolCreate,
+			mcptypes.WithDescription("Create a new node"),
+			mcptypes.WithString("name",
+				mcptypes.Description("Node name"),
+				mcptypes.Required(),
+			),
+			mcptypes.WithString("parent_id",
+				mcptypes.Description(`Parent node ID or "None" for top-level`),
+				mcptypes.DefaultString("None"),
+			),
+			mcptypes.WithString("position",
+				mcptypes.Description(`Position: "top" or "bottom"`),
+			),
+			mcptypes.WithString("layout_mode",
+				mcptypes.Description("Display mode: bullets, todo, h1, h2, h3"),
+			),
+			mcptypes.WithString("note",
+				mcptypes.Description("Optional note content"),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			name := strings.TrimSpace(req.GetString("name", ""))
+			if name == "" {
+				return mcptypes.NewToolResultError("name is required"), nil
+			}
+
+			position := strings.TrimSpace(req.GetString("position", ""))
+			if err := validatePosition(position); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
+
+			layoutMode := strings.TrimSpace(req.GetString("layout_mode", ""))
+			note := strings.TrimSpace(req.GetString("note", ""))
+
+			request := &workflowy.CreateNodeRequest{
+				ParentID: req.GetString("parent_id", "None"),
+				Name:     name,
+			}
+
+			if position != "" {
+				request.Position = &position
+			}
+			if layoutMode != "" {
+				request.LayoutMode = &layoutMode
+			}
+			if note != "" {
+				request.Note = &note
+			}
+
+			response, err := b.client.CreateNode(ctx, request)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot create node", err), nil
+			}
+
+			return mcptypes.NewToolResultJSON(response)
+		},
+	}
+}
+
+func (b ToolBuilder) buildUpdateTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolUpdate,
+			mcptypes.WithDescription("Update an existing node"),
+			mcptypes.WithString("item_id",
+				mcptypes.Description("Node ID to update"),
+				mcptypes.Required(),
+			),
+			mcptypes.WithString("name",
+				mcptypes.Description("New node name"),
+			),
+			mcptypes.WithString("note",
+				mcptypes.Description("New note content"),
+			),
+			mcptypes.WithString("layout_mode",
+				mcptypes.Description("Display mode: bullets, todo, h1, h2, h3"),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			itemID := strings.TrimSpace(req.GetString("item_id", ""))
+			if itemID == "" {
+				return mcptypes.NewToolResultError("item_id is required"), nil
+			}
+
+			name := strings.TrimSpace(req.GetString("name", ""))
+			note := strings.TrimSpace(req.GetString("note", ""))
+			layoutMode := strings.TrimSpace(req.GetString("layout_mode", ""))
+
+			request := &workflowy.UpdateNodeRequest{}
+
+			if name != "" {
+				request.Name = &name
+			}
+			if note != "" {
+				request.Note = &note
+			}
+			if layoutMode != "" {
+				request.LayoutMode = &layoutMode
+			}
+
+			if request.Name == nil && request.Note == nil && request.LayoutMode == nil {
+				return mcptypes.NewToolResultError("specify at least one of name, note, or layout_mode"), nil
+			}
+
+			response, err := b.client.UpdateNode(ctx, itemID, request)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot update node", err), nil
+			}
+
+			return mcptypes.NewToolResultJSON(response)
+		},
+	}
+}
+
+func (b ToolBuilder) buildDeleteTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolDelete,
+			mcptypes.WithDescription("Delete a node"),
+			mcptypes.WithString("item_id",
+				mcptypes.Description("Node ID to delete"),
+				mcptypes.Required(),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			itemID := strings.TrimSpace(req.GetString("item_id", ""))
+			if itemID == "" {
+				return mcptypes.NewToolResultError("item_id is required"), nil
+			}
+
+			response, err := b.client.DeleteNode(ctx, itemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot delete node", err), nil
+			}
+
+			return mcptypes.NewToolResultJSON(response)
+		},
+	}
+}
+
+func (b ToolBuilder) buildCompleteTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolComplete,
+			mcptypes.WithDescription("Mark a node as complete"),
+			mcptypes.WithString("item_id",
+				mcptypes.Description("Node ID to complete"),
+				mcptypes.Required(),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			itemID := strings.TrimSpace(req.GetString("item_id", ""))
+			if itemID == "" {
+				return mcptypes.NewToolResultError("item_id is required"), nil
+			}
+
+			response, err := b.client.CompleteNode(ctx, itemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot complete node", err), nil
+			}
+
+			return mcptypes.NewToolResultJSON(response)
+		},
+	}
+}
+
+func (b ToolBuilder) buildUncompleteTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolUncomplete,
+			mcptypes.WithDescription("Mark a node as uncomplete"),
+			mcptypes.WithString("item_id",
+				mcptypes.Description("Node ID to uncomplete"),
+				mcptypes.Required(),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			itemID := strings.TrimSpace(req.GetString("item_id", ""))
+			if itemID == "" {
+				return mcptypes.NewToolResultError("item_id is required"), nil
+			}
+
+			response, err := b.client.UncompleteNode(ctx, itemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot uncomplete node", err), nil
+			}
+
+			return mcptypes.NewToolResultJSON(response)
+		},
+	}
+}
+
+func (b ToolBuilder) buildReportCountTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolReportCount,
+			mcptypes.WithDescription("Generate descendant count report"),
+			mcptypes.WithString("item_id",
+				mcptypes.Description("Workflowy item ID (None for root)"),
+				mcptypes.DefaultString("None"),
+			),
+			mcptypes.WithNumber("threshold",
+				mcptypes.Description("Minimum ratio threshold (0.0 to 1.0)"),
+				mcptypes.DefaultNumber(0.01),
+			),
+			mcptypes.WithBoolean("preserve_tags",
+				mcptypes.Description("Preserve HTML tags in output"),
+				mcptypes.DefaultBool(false),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			itemID := req.GetString("item_id", "None")
+			threshold := req.GetFloat("threshold", 0.01)
+
+			root, err := b.buildReportRoot(ctx, itemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
+			}
+
+			descendants := workflowy.CountDescendants(root, threshold)
+			output := &reports.CountReportOutput{
+				RootItem:    root,
+				Descendants: descendants,
+				Threshold:   threshold,
+			}
+
+			return mcptypes.NewToolResultJSON(output)
+		},
+	}
+}
+
+func (b ToolBuilder) buildReportChildrenTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolReportChildren,
+			mcptypes.WithDescription("Rank nodes by immediate children count"),
+			mcptypes.WithString("item_id",
+				mcptypes.Description("Workflowy item ID (None for root)"),
+				mcptypes.DefaultString("None"),
+			),
+			mcptypes.WithNumber("top_n",
+				mcptypes.Description("Number of top results to include (0 for all)"),
+				mcptypes.DefaultNumber(20),
+			),
+			mcptypes.WithBoolean("preserve_tags",
+				mcptypes.Description("Preserve HTML tags in output"),
+				mcptypes.DefaultBool(false),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			itemID := req.GetString("item_id", "None")
+			topN := req.GetInt("top_n", 20)
+
+			root, err := b.buildReportRoot(ctx, itemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
+			}
+
+			descendants := workflowy.CountDescendants(root, 0.0)
+			nodesWithTimestamps := workflowy.CollectNodesWithTimestamps(descendants)
+			ranked := workflowy.RankByChildrenCount(nodesWithTimestamps, topN)
+
+			output := &reports.ChildrenCountReportOutput{
+				Ranked: ranked,
+				TopN:   topN,
+			}
+
+			return mcptypes.NewToolResultJSON(output)
+		},
+	}
+}
+
+func (b ToolBuilder) buildReportCreatedTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolReportCreated,
+			mcptypes.WithDescription("Rank nodes by creation date (oldest first)"),
+			mcptypes.WithString("item_id",
+				mcptypes.Description("Workflowy item ID (None for root)"),
+				mcptypes.DefaultString("None"),
+			),
+			mcptypes.WithNumber("top_n",
+				mcptypes.Description("Number of top results to include (0 for all)"),
+				mcptypes.DefaultNumber(20),
+			),
+			mcptypes.WithBoolean("preserve_tags",
+				mcptypes.Description("Preserve HTML tags in output"),
+				mcptypes.DefaultBool(false),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			itemID := req.GetString("item_id", "None")
+			topN := req.GetInt("top_n", 20)
+
+			root, err := b.buildReportRoot(ctx, itemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
+			}
+
+			descendants := workflowy.CountDescendants(root, 0.0)
+			nodesWithTimestamps := workflowy.CollectNodesWithTimestamps(descendants)
+			ranked := workflowy.RankByCreated(nodesWithTimestamps, topN)
+
+			output := &reports.CreatedReportOutput{
+				Ranked: ranked,
+				TopN:   topN,
+			}
+
+			return mcptypes.NewToolResultJSON(output)
+		},
+	}
+}
+
+func (b ToolBuilder) buildReportModifiedTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolReportModified,
+			mcptypes.WithDescription("Rank nodes by modification date (oldest first)"),
+			mcptypes.WithString("item_id",
+				mcptypes.Description("Workflowy item ID (None for root)"),
+				mcptypes.DefaultString("None"),
+			),
+			mcptypes.WithNumber("top_n",
+				mcptypes.Description("Number of top results to include (0 for all)"),
+				mcptypes.DefaultNumber(20),
+			),
+			mcptypes.WithBoolean("preserve_tags",
+				mcptypes.Description("Preserve HTML tags in output"),
+				mcptypes.DefaultBool(false),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			itemID := req.GetString("item_id", "None")
+			topN := req.GetInt("top_n", 20)
+
+			root, err := b.buildReportRoot(ctx, itemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
+			}
+
+			descendants := workflowy.CountDescendants(root, 0.0)
+			nodesWithTimestamps := workflowy.CollectNodesWithTimestamps(descendants)
+			ranked := workflowy.RankByModified(nodesWithTimestamps, topN)
+
+			output := &reports.ModifiedReportOutput{
+				Ranked: ranked,
+				TopN:   topN,
+			}
+
+			return mcptypes.NewToolResultJSON(output)
+		},
+	}
+}
+
+func (b ToolBuilder) buildReplaceTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolReplace,
+			mcptypes.WithDescription("Search and replace text in node names using regex"),
+			mcptypes.WithString("pattern",
+				mcptypes.Description("Regular expression pattern to match"),
+				mcptypes.Required(),
+			),
+			mcptypes.WithString("substitution",
+				mcptypes.Description("Replacement string (supports groups)"),
+				mcptypes.Required(),
+			),
+			mcptypes.WithString("parent_id",
+				mcptypes.Description("Limit replacement to subtree under this node ID"),
+				mcptypes.DefaultString("None"),
+			),
+			mcptypes.WithNumber("depth",
+				mcptypes.Description("Maximum depth to traverse (-1 for unlimited)"),
+				mcptypes.DefaultNumber(-1),
+			),
+			mcptypes.WithBoolean("ignore_case",
+				mcptypes.Description("Case-insensitive matching"),
+				mcptypes.DefaultBool(false),
+			),
+			mcptypes.WithBoolean("dry_run",
+				mcptypes.Description("Show what would be replaced without applying"),
+				mcptypes.DefaultBool(true),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			pattern := strings.TrimSpace(req.GetString("pattern", ""))
+			if pattern == "" {
+				return mcptypes.NewToolResultError("pattern is required"), nil
+			}
+
+			substitution := req.GetString("substitution", "")
+			if substitution == "" {
+				return mcptypes.NewToolResultError("substitution is required"), nil
+			}
+
+			if req.GetBool("ignore_case", false) {
+				pattern = "(?i)" + pattern
+			}
+
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("invalid regular expression", err), nil
+			}
+
+			parentID := req.GetString("parent_id", "None")
+			depth := req.GetInt("depth", -1)
+			dryRun := req.GetBool("dry_run", true)
+
+			items, err := b.loadExportTree(ctx)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
+			}
+
+			searchRoot := items
+			if parentID != "None" {
+				rootItem := findItemByID(items, parentID)
+				if rootItem == nil {
+					return mcptypes.NewToolResultErrorf("parent item not found: %s", parentID), nil
+				}
+				searchRoot = []*workflowy.Item{rootItem}
+			}
+
+			opts := ReplaceOptions{
+				Pattern:     re,
+				Replacement: substitution,
+				Interactive: false,
+				DryRun:      dryRun,
+				Depth:       depth,
+			}
+
+			results := make([]ReplaceResult, 0)
+			collectReplacements(searchRoot, opts, 0, &results)
+
+			if len(results) == 0 {
+				return mcptypes.NewToolResultJSON(results)
+			}
+
+			if !opts.DryRun {
+				for i := range results {
+					result := &results[i]
+					updateReq := &workflowy.UpdateNodeRequest{
+						Name: &result.NewName,
+					}
+					if _, err := b.client.UpdateNode(ctx, result.ID, updateReq); err != nil {
+						result.Skipped = true
+						result.SkipReason = fmt.Sprintf("update failed: %v", err)
+						continue
+					}
+					result.Applied = true
+				}
+			}
+
+			return mcptypes.NewToolResultJSON(results)
+		},
+	}
+}
+
+// fetchItems mirrors the CLI logic: depth >=4 or -1 uses export API; otherwise GET API.
+func (b ToolBuilder) fetchItems(ctx context.Context, itemID string, depth int) (interface{}, error) {
+	useMethod := "get"
+	if depth == -1 || depth >= 4 {
+		useMethod = "export"
+	}
+
+	switch useMethod {
+	case "export":
+		tree, err := b.loadExportTree(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if itemID != "None" {
+			found := findItemInTree(tree, itemID, depth)
+			if found == nil {
+				return nil, fmt.Errorf("item %s not found", itemID)
+			}
+			return found, nil
+		}
+
+		if depth >= 0 {
+			limitItemsDepth(tree, depth)
+		}
+		return &workflowy.ListChildrenResponse{Items: tree}, nil
+
+	case "get":
+		if depth < 0 {
+			return nil, fmt.Errorf("depth must be non-negative for get method")
+		}
+
+		if itemID == "None" {
+			resp, err := b.client.ListChildrenRecursiveWithDepth(ctx, itemID, depth)
+			if err != nil {
+				return nil, err
+			}
+			return resp, nil
+		}
+
+		item, err := b.client.GetItem(ctx, itemID)
+		if err != nil {
+			return nil, err
+		}
+
+		if depth > 0 {
+			childrenResp, err := b.client.ListChildrenRecursiveWithDepth(ctx, itemID, depth)
+			if err != nil {
+				return nil, err
+			}
+			item.Children = childrenResp.Items
+		}
+		return item, nil
+
+	default:
+		return nil, fmt.Errorf("unknown method %s", useMethod)
+	}
+}
+
+func (b ToolBuilder) loadExportTree(ctx context.Context) ([]*workflowy.Item, error) {
+	resp, err := b.client.ExportNodesWithCache(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	root := workflowy.BuildTreeFromExport(resp.Nodes)
+	return root.Children, nil
+}
+
+func (b ToolBuilder) buildReportRoot(ctx context.Context, itemID string) (*workflowy.Item, error) {
+	items, err := b.loadExportTree(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if itemID == "None" {
+		return &workflowy.Item{
+			ID:       "root",
+			Name:     "Root",
+			Children: items,
+		}, nil
+	}
+
+	target := findItemByID(items, itemID)
+	if target == nil {
+		return nil, fmt.Errorf("item not found: %s", itemID)
+	}
+	return target, nil
+}
+
+// Helpers adapted from the CLI code paths to keep outputs consistent.
+
+func limitItemsDepth(items []*workflowy.Item, depth int) {
+	for _, item := range items {
+		if depth <= 1 {
+			item.Children = nil
+		} else {
+			limitItemDepth(item, depth-1)
+		}
+	}
+}
+
+func limitItemDepth(item *workflowy.Item, maxDepth int) {
+	if maxDepth == 0 {
+		item.Children = nil
+		return
+	}
+	for _, child := range item.Children {
+		limitItemDepth(child, maxDepth-1)
+	}
+}
+
+func findItemInTree(items []*workflowy.Item, targetID string, maxDepth int) *workflowy.Item {
+	for _, item := range items {
+		if item.ID == targetID {
+			if maxDepth >= 0 {
+				limitItemDepth(item, maxDepth)
+			}
+			return item
+		}
+		if found := findItemInTree(item.Children, targetID, maxDepth); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+func flattenTree(data interface{}) *workflowy.ListChildrenResponse {
+	var items []*workflowy.Item
+
+	switch v := data.(type) {
+	case *workflowy.Item:
+		items = flattenItem(v)
+	case *workflowy.ListChildrenResponse:
+		for _, item := range v.Items {
+			items = append(items, flattenItem(item)...)
+		}
+	}
+
+	return &workflowy.ListChildrenResponse{Items: items}
+}
+
+func flattenItem(item *workflowy.Item) []*workflowy.Item {
+	result := []*workflowy.Item{item}
+
+	for _, child := range item.Children {
+		result = append(result, flattenItem(child)...)
+	}
+
+	item.Children = nil
+	return result
+}
+
+func filterEmptyItem(item *workflowy.Item) *workflowy.Item {
+	if item == nil {
+		return nil
+	}
+	item.Children = filterEmpty(item.Children)
+	return item
+}
+
+func filterEmptyList(list *workflowy.ListChildrenResponse) *workflowy.ListChildrenResponse {
+	if list == nil {
+		return nil
+	}
+	list.Items = filterEmpty(list.Items)
+	return list
+}
+
+func filterEmpty(items []*workflowy.Item) []*workflowy.Item {
+	filtered := make([]*workflowy.Item, 0, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.Name) == "" {
+			continue
+		}
+		if len(item.Children) > 0 {
+			item.Children = filterEmpty(item.Children)
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+// Search helpers (mirrors cmd/workflowy/search.go).
+
+type SearchResult struct {
+	ID              string          `json:"id"`
+	Name            string          `json:"name"`
+	HighlightedName string          `json:"highlighted_name"`
+	URL             string          `json:"url"`
+	MatchPositions  []MatchPosition `json:"match_positions"`
+}
+
+type MatchPosition struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
+}
+
+func searchItems(items []*workflowy.Item, pattern string, useRegexp, ignoreCase bool) []SearchResult {
+	var results []SearchResult
+
+	for _, item := range items {
+		collectSearchResults(item, pattern, useRegexp, ignoreCase, &results)
+	}
+
+	return results
+}
+
+func collectSearchResults(item *workflowy.Item, pattern string, useRegexp, ignoreCase bool, results *[]SearchResult) {
+	name := item.Name
+	matchPositions := findMatches(name, pattern, useRegexp, ignoreCase)
+
+	if len(matchPositions) > 0 {
+		highlightedName := highlightMatches(name, matchPositions)
+		*results = append(*results, SearchResult{
+			ID:              item.ID,
+			Name:            name,
+			HighlightedName: highlightedName,
+			URL:             fmt.Sprintf("https://workflowy.com/#/%s", item.ID),
+			MatchPositions:  matchPositions,
+		})
+	}
+
+	for _, child := range item.Children {
+		collectSearchResults(child, pattern, useRegexp, ignoreCase, results)
+	}
+}
+
+func findMatches(text, pattern string, useRegexp, ignoreCase bool) []MatchPosition {
+	var positions []MatchPosition
+
+	if useRegexp {
+		re, err := compileRegexp(pattern, ignoreCase)
+		if err != nil {
+			return positions
+		}
+
+		matches := re.FindAllStringIndex(text, -1)
+		for _, match := range matches {
+			positions = append(positions, MatchPosition{Start: match[0], End: match[1]})
+		}
+	} else {
+		searchText := text
+		searchPattern := pattern
+
+		if ignoreCase {
+			searchText = strings.ToLower(text)
+			searchPattern = strings.ToLower(pattern)
+		}
+
+		start := 0
+		for {
+			index := strings.Index(searchText[start:], searchPattern)
+			if index == -1 {
+				break
+			}
+			absIndex := start + index
+			positions = append(positions, MatchPosition{
+				Start: absIndex,
+				End:   absIndex + len(pattern),
+			})
+			start = absIndex + len(pattern)
+		}
+	}
+
+	return positions
+}
+
+func compileRegexp(pattern string, ignoreCase bool) (*regexp.Regexp, error) {
+	if ignoreCase {
+		pattern = "(?i)" + pattern
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	return re, nil
+}
+
+func highlightMatches(text string, positions []MatchPosition) string {
+	if len(positions) == 0 {
+		return text
+	}
+
+	var result strings.Builder
+	lastEnd := 0
+
+	for _, pos := range positions {
+		result.WriteString(text[lastEnd:pos.Start])
+		result.WriteString("**")
+		result.WriteString(text[pos.Start:pos.End])
+		result.WriteString("**")
+		lastEnd = pos.End
+	}
+
+	result.WriteString(text[lastEnd:])
+	return result.String()
+}
+
+func findRootItem(items []*workflowy.Item, itemID string) *workflowy.Item {
+	if itemID == "None" {
+		return nil
+	}
+	return findItemByID(items, itemID)
+}
+
+func findItemByID(items []*workflowy.Item, id string) *workflowy.Item {
+	for _, item := range items {
+		if item.ID == id {
+			return item
+		}
+		if found := findItemByID(item.Children, id); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+func validatePosition(position string) error {
+	if position != "" && position != "top" && position != "bottom" {
+		return fmt.Errorf("position must be 'top' or 'bottom'")
+	}
+	return nil
+}
+
+type ReplaceResult struct {
+	ID         string `json:"id"`
+	OldName    string `json:"old_name"`
+	NewName    string `json:"new_name"`
+	URL        string `json:"url"`
+	Applied    bool   `json:"applied"`
+	Skipped    bool   `json:"skipped,omitempty"`
+	SkipReason string `json:"skip_reason,omitempty"`
+}
+
+type ReplaceOptions struct {
+	Pattern     *regexp.Regexp
+	Replacement string
+	Interactive bool
+	DryRun      bool
+	Depth       int
+}
+
+func collectReplacements(items []*workflowy.Item, opts ReplaceOptions, currentDepth int, results *[]ReplaceResult) {
+	if opts.Depth >= 0 && currentDepth > opts.Depth {
+		return
+	}
+
+	for _, item := range items {
+		if opts.Pattern.MatchString(item.Name) {
+			newName := opts.Pattern.ReplaceAllString(item.Name, opts.Replacement)
+			if newName != item.Name {
+				*results = append(*results, ReplaceResult{
+					ID:      item.ID,
+					OldName: item.Name,
+					NewName: newName,
+					URL:     fmt.Sprintf("https://workflowy.com/#/%s", item.ID),
+					Applied: false,
+					Skipped: false,
+				})
+			}
+		}
+
+		if len(item.Children) > 0 {
+			collectReplacements(item.Children, opts, currentDepth+1, results)
+		}
+	}
+}
