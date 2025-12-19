@@ -5,8 +5,7 @@
 - [ ] BUG: strip html tags when creating links in reports, as they are not recognized when pasting to WF
 - [ ] BUG: rename 'markdown' format to 'document' to avoid confusion with 'list'
 - [ ] FEATURE: add last modified to count report
-- [ ] FEATURE: build an MCP server
-  - [ ] CODE: unify markdown for display and for upload
+- [ ] CODE: unify markdown for display and for upload
 - [ ] BUG: list --format=json should merge nodes
 - [ ] FEATURE: list available targets
 
