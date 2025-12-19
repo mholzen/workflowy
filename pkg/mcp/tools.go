@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -441,13 +442,18 @@ func (b ToolBuilder) buildReportCountTool() mcpserver.ServerTool {
 			}
 
 			descendants := workflowy.CountDescendants(root, threshold)
+
 			output := &reports.CountReportOutput{
 				RootItem:    root,
 				Descendants: descendants,
 				Threshold:   threshold,
 			}
-
-			return mcptypes.NewToolResultJSON(output)
+			nodes, err := output.ToNodes()
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot convert to nodes", err), nil
+			}
+			slog.Debug("nodes", "nodes", nodes)
+			return mcptypes.NewToolResultJSON(nodes)
 		},
 	}
 }

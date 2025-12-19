@@ -14,7 +14,7 @@ type simpleHandler struct {
 	writer io.Writer
 }
 
-func setupLogging(level string) {
+func setupLogging(level string, logFile string) {
 	var logLevel slog.Level
 	switch level {
 	case "debug":
@@ -30,9 +30,19 @@ func setupLogging(level string) {
 		os.Exit(1)
 	}
 
+	writer := io.Writer(os.Stderr)
+	if logFile != "" {
+		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot open log file %s: %v\n", logFile, err)
+			os.Exit(1)
+		}
+		writer = f
+	}
+
 	handler := &simpleHandler{
 		level:  logLevel,
-		writer: os.Stderr,
+		writer: writer,
 	}
 	slog.SetDefault(slog.New(handler))
 }

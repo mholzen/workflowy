@@ -47,6 +47,10 @@ Examples:
 				Value: "info",
 				Usage: "Log level: debug, info, warn, error",
 			},
+			&cli.StringFlag{
+				Name:  "log-file",
+				Usage: "Write logs to file instead of stderr",
+			},
 			&cli.BoolFlag{
 				Name:  "mcp-server",
 				Usage: "Run as MCP server (stdio transport)",
@@ -59,7 +63,7 @@ Examples:
 			getAPIKeyFlag(),
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
-			setupLogging(cmd.String("log"))
+			setupLogging(cmd.String("log"), cmd.String("log-file"))
 
 			if cmd.Bool("mcp-server") {
 				serverConfig := mcp.Config{
