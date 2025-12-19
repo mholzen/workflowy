@@ -9,7 +9,9 @@ import (
 
 	mcptypes "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
+	"github.com/mholzen/workflowy/pkg/replace"
 	"github.com/mholzen/workflowy/pkg/reports"
+	"github.com/mholzen/workflowy/pkg/search"
 	"github.com/mholzen/workflowy/pkg/workflowy"
 )
 
@@ -101,9 +103,9 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 			if !includeEmpty {
 				switch v := result.(type) {
 				case *workflowy.Item:
-					result = filterEmptyItem(v)
+					result = workflowy.FilterEmptyItem(v)
 				case *workflowy.ListChildrenResponse:
-					result = filterEmptyList(v)
+					result = workflowy.FilterEmptyList(v)
 				}
 			}
 
@@ -140,9 +142,9 @@ func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot list items", err), nil
 			}
 
-			flattened := flattenTree(data)
+			flattened := workflowy.FlattenTree(data)
 			if !includeEmpty {
-				flattened = filterEmptyList(flattened)
+				flattened = workflowy.FilterEmptyList(flattened)
 			}
 
 			return mcptypes.NewToolResultJSON(flattened)
@@ -187,7 +189,7 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot load tree for search", err), nil
 			}
 
-			rootItem := findRootItem(items, itemID)
+			rootItem := workflowy.FindRootItem(items, itemID)
 			if rootItem == nil && itemID != "None" {
 				return mcptypes.NewToolResultErrorf("item not found: %s", itemID), nil
 			}
@@ -197,7 +199,7 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				searchRoot = []*workflowy.Item{rootItem}
 			}
 
-			results := searchItems(searchRoot, pattern, useRegexp, ignoreCase)
+			results := search.SearchItems(searchRoot, pattern, useRegexp, ignoreCase)
 			return mcptypes.NewToolResultJSON(results)
 		},
 	}
@@ -642,14 +644,14 @@ func (b ToolBuilder) buildReplaceTool() mcpserver.ServerTool {
 
 			searchRoot := items
 			if parentID != "None" {
-				rootItem := findItemByID(items, parentID)
+				rootItem := workflowy.FindItemByID(items, parentID)
 				if rootItem == nil {
 					return mcptypes.NewToolResultErrorf("parent item not found: %s", parentID), nil
 				}
 				searchRoot = []*workflowy.Item{rootItem}
 			}
 
-			opts := ReplaceOptions{
+			opts := replace.Options{
 				Pattern:     re,
 				Replacement: substitution,
 				Interactive: false,
@@ -657,8 +659,8 @@ func (b ToolBuilder) buildReplaceTool() mcpserver.ServerTool {
 				Depth:       depth,
 			}
 
-			results := make([]ReplaceResult, 0)
-			collectReplacements(searchRoot, opts, 0, &results)
+			results := make([]replace.Result, 0)
+			replace.CollectReplacements(searchRoot, opts, 0, &results)
 
 			if len(results) == 0 {
 				return mcptypes.NewToolResultJSON(results)
@@ -699,7 +701,7 @@ func (b ToolBuilder) fetchItems(ctx context.Context, itemID string, depth int) (
 		}
 
 		if itemID != "None" {
-			found := findItemInTree(tree, itemID, depth)
+			found := workflowy.FindItemInTree(tree, itemID, depth)
 			if found == nil {
 				return nil, fmt.Errorf("item %s not found", itemID)
 			}
@@ -707,7 +709,7 @@ func (b ToolBuilder) fetchItems(ctx context.Context, itemID string, depth int) (
 		}
 
 		if depth >= 0 {
-			limitItemsDepth(tree, depth)
+			workflowy.LimitItemsDepth(tree, depth)
 		}
 		return &workflowy.ListChildrenResponse{Items: tree}, nil
 
@@ -766,239 +768,11 @@ func (b ToolBuilder) buildReportRoot(ctx context.Context, itemID string) (*workf
 		}, nil
 	}
 
-	target := findItemByID(items, itemID)
+	target := workflowy.FindItemByID(items, itemID)
 	if target == nil {
 		return nil, fmt.Errorf("item not found: %s", itemID)
 	}
 	return target, nil
-}
-
-// Helpers adapted from the CLI code paths to keep outputs consistent.
-
-func limitItemsDepth(items []*workflowy.Item, depth int) {
-	for _, item := range items {
-		if depth <= 1 {
-			item.Children = nil
-		} else {
-			limitItemDepth(item, depth-1)
-		}
-	}
-}
-
-func limitItemDepth(item *workflowy.Item, maxDepth int) {
-	if maxDepth == 0 {
-		item.Children = nil
-		return
-	}
-	for _, child := range item.Children {
-		limitItemDepth(child, maxDepth-1)
-	}
-}
-
-func findItemInTree(items []*workflowy.Item, targetID string, maxDepth int) *workflowy.Item {
-	for _, item := range items {
-		if item.ID == targetID {
-			if maxDepth >= 0 {
-				limitItemDepth(item, maxDepth)
-			}
-			return item
-		}
-		if found := findItemInTree(item.Children, targetID, maxDepth); found != nil {
-			return found
-		}
-	}
-	return nil
-}
-
-func flattenTree(data interface{}) *workflowy.ListChildrenResponse {
-	var items []*workflowy.Item
-
-	switch v := data.(type) {
-	case *workflowy.Item:
-		items = flattenItem(v)
-	case *workflowy.ListChildrenResponse:
-		for _, item := range v.Items {
-			items = append(items, flattenItem(item)...)
-		}
-	}
-
-	return &workflowy.ListChildrenResponse{Items: items}
-}
-
-func flattenItem(item *workflowy.Item) []*workflowy.Item {
-	result := []*workflowy.Item{item}
-
-	for _, child := range item.Children {
-		result = append(result, flattenItem(child)...)
-	}
-
-	item.Children = nil
-	return result
-}
-
-func filterEmptyItem(item *workflowy.Item) *workflowy.Item {
-	if item == nil {
-		return nil
-	}
-	item.Children = filterEmpty(item.Children)
-	return item
-}
-
-func filterEmptyList(list *workflowy.ListChildrenResponse) *workflowy.ListChildrenResponse {
-	if list == nil {
-		return nil
-	}
-	list.Items = filterEmpty(list.Items)
-	return list
-}
-
-func filterEmpty(items []*workflowy.Item) []*workflowy.Item {
-	filtered := make([]*workflowy.Item, 0, len(items))
-	for _, item := range items {
-		if strings.TrimSpace(item.Name) == "" {
-			continue
-		}
-		if len(item.Children) > 0 {
-			item.Children = filterEmpty(item.Children)
-		}
-		filtered = append(filtered, item)
-	}
-	return filtered
-}
-
-// Search helpers (mirrors cmd/workflowy/search.go).
-
-type SearchResult struct {
-	ID              string          `json:"id"`
-	Name            string          `json:"name"`
-	HighlightedName string          `json:"highlighted_name"`
-	URL             string          `json:"url"`
-	MatchPositions  []MatchPosition `json:"match_positions"`
-}
-
-type MatchPosition struct {
-	Start int `json:"start"`
-	End   int `json:"end"`
-}
-
-func searchItems(items []*workflowy.Item, pattern string, useRegexp, ignoreCase bool) []SearchResult {
-	var results []SearchResult
-
-	for _, item := range items {
-		collectSearchResults(item, pattern, useRegexp, ignoreCase, &results)
-	}
-
-	return results
-}
-
-func collectSearchResults(item *workflowy.Item, pattern string, useRegexp, ignoreCase bool, results *[]SearchResult) {
-	name := item.Name
-	matchPositions := findMatches(name, pattern, useRegexp, ignoreCase)
-
-	if len(matchPositions) > 0 {
-		highlightedName := highlightMatches(name, matchPositions)
-		*results = append(*results, SearchResult{
-			ID:              item.ID,
-			Name:            name,
-			HighlightedName: highlightedName,
-			URL:             fmt.Sprintf("https://workflowy.com/#/%s", item.ID),
-			MatchPositions:  matchPositions,
-		})
-	}
-
-	for _, child := range item.Children {
-		collectSearchResults(child, pattern, useRegexp, ignoreCase, results)
-	}
-}
-
-func findMatches(text, pattern string, useRegexp, ignoreCase bool) []MatchPosition {
-	var positions []MatchPosition
-
-	if useRegexp {
-		re, err := compileRegexp(pattern, ignoreCase)
-		if err != nil {
-			return positions
-		}
-
-		matches := re.FindAllStringIndex(text, -1)
-		for _, match := range matches {
-			positions = append(positions, MatchPosition{Start: match[0], End: match[1]})
-		}
-	} else {
-		searchText := text
-		searchPattern := pattern
-
-		if ignoreCase {
-			searchText = strings.ToLower(text)
-			searchPattern = strings.ToLower(pattern)
-		}
-
-		start := 0
-		for {
-			index := strings.Index(searchText[start:], searchPattern)
-			if index == -1 {
-				break
-			}
-			absIndex := start + index
-			positions = append(positions, MatchPosition{
-				Start: absIndex,
-				End:   absIndex + len(pattern),
-			})
-			start = absIndex + len(pattern)
-		}
-	}
-
-	return positions
-}
-
-func compileRegexp(pattern string, ignoreCase bool) (*regexp.Regexp, error) {
-	if ignoreCase {
-		pattern = "(?i)" + pattern
-	}
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, err
-	}
-	return re, nil
-}
-
-func highlightMatches(text string, positions []MatchPosition) string {
-	if len(positions) == 0 {
-		return text
-	}
-
-	var result strings.Builder
-	lastEnd := 0
-
-	for _, pos := range positions {
-		result.WriteString(text[lastEnd:pos.Start])
-		result.WriteString("**")
-		result.WriteString(text[pos.Start:pos.End])
-		result.WriteString("**")
-		lastEnd = pos.End
-	}
-
-	result.WriteString(text[lastEnd:])
-	return result.String()
-}
-
-func findRootItem(items []*workflowy.Item, itemID string) *workflowy.Item {
-	if itemID == "None" {
-		return nil
-	}
-	return findItemByID(items, itemID)
-}
-
-func findItemByID(items []*workflowy.Item, id string) *workflowy.Item {
-	for _, item := range items {
-		if item.ID == id {
-			return item
-		}
-		if found := findItemByID(item.Children, id); found != nil {
-			return found
-		}
-	}
-	return nil
 }
 
 func validatePosition(position string) error {
@@ -1006,48 +780,4 @@ func validatePosition(position string) error {
 		return fmt.Errorf("position must be 'top' or 'bottom'")
 	}
 	return nil
-}
-
-type ReplaceResult struct {
-	ID         string `json:"id"`
-	OldName    string `json:"old_name"`
-	NewName    string `json:"new_name"`
-	URL        string `json:"url"`
-	Applied    bool   `json:"applied"`
-	Skipped    bool   `json:"skipped,omitempty"`
-	SkipReason string `json:"skip_reason,omitempty"`
-}
-
-type ReplaceOptions struct {
-	Pattern     *regexp.Regexp
-	Replacement string
-	Interactive bool
-	DryRun      bool
-	Depth       int
-}
-
-func collectReplacements(items []*workflowy.Item, opts ReplaceOptions, currentDepth int, results *[]ReplaceResult) {
-	if opts.Depth >= 0 && currentDepth > opts.Depth {
-		return
-	}
-
-	for _, item := range items {
-		if opts.Pattern.MatchString(item.Name) {
-			newName := opts.Pattern.ReplaceAllString(item.Name, opts.Replacement)
-			if newName != item.Name {
-				*results = append(*results, ReplaceResult{
-					ID:      item.ID,
-					OldName: item.Name,
-					NewName: newName,
-					URL:     fmt.Sprintf("https://workflowy.com/#/%s", item.ID),
-					Applied: false,
-					Skipped: false,
-				})
-			}
-		}
-
-		if len(item.Children) > 0 {
-			collectReplacements(item.Children, opts, currentDepth+1, results)
-		}
-	}
 }

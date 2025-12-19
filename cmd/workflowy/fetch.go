@@ -58,7 +58,7 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, client workflowy.Clien
 		root := workflowy.BuildTreeFromExport(response.Nodes)
 
 		if itemID != "None" {
-			found := findItemInTree(root.Children, itemID, depth)
+			found := workflowy.FindItemInTree(root.Children, itemID, depth)
 			if found == nil {
 				return nil, fmt.Errorf("item %s not found", itemID)
 			}
@@ -66,7 +66,7 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, client workflowy.Clien
 		} else {
 			if depth >= 0 {
 				slog.Debug("limiting depth for export results", "depth", depth, "item_count", len(root.Children))
-				limitItemsDepth(root.Children, depth)
+				workflowy.LimitItemsDepth(root.Children, depth)
 			}
 			result = &workflowy.ListChildrenResponse{Items: root.Children}
 		}
@@ -127,7 +127,7 @@ func fetchFromBackup(backupFile string, itemID string, depth int) (interface{}, 
 	}
 
 	if itemID != "None" {
-		found := findItemInTree(items, itemID, depth)
+		found := workflowy.FindItemInTree(items, itemID, depth)
 		if found == nil {
 			return nil, fmt.Errorf("item %s not found in backup", itemID)
 		}
@@ -135,68 +135,11 @@ func fetchFromBackup(backupFile string, itemID string, depth int) (interface{}, 
 	}
 
 	if depth >= 0 {
-		limitItemsDepth(items, depth)
+		workflowy.LimitItemsDepth(items, depth)
 	}
 	return &workflowy.ListChildrenResponse{Items: items}, nil
 }
 
-func limitItemsDepth(items []*workflowy.Item, depth int) {
-	for _, item := range items {
-		if depth <= 1 {
-			item.Children = nil
-		} else {
-			limitItemDepth(item, depth-1)
-		}
-	}
-}
-
-func findItemInTree(items []*workflowy.Item, targetID string, maxDepth int) *workflowy.Item {
-	for _, item := range items {
-		if item.ID == targetID {
-			if maxDepth >= 0 {
-				limitItemDepth(item, maxDepth)
-			}
-			return item
-		}
-		if found := findItemInTree(item.Children, targetID, maxDepth); found != nil {
-			return found
-		}
-	}
-	return nil
-}
-
-func limitItemDepth(item *workflowy.Item, maxDepth int) {
-	if maxDepth == 0 {
-		item.Children = nil
-		return
-	}
-	for _, child := range item.Children {
-		limitItemDepth(child, maxDepth-1)
-	}
-}
-
 func flattenTree(data interface{}) *workflowy.ListChildrenResponse {
-	var items []*workflowy.Item
-
-	switch v := data.(type) {
-	case *workflowy.Item:
-		items = flattenItem(v)
-	case *workflowy.ListChildrenResponse:
-		for _, item := range v.Items {
-			items = append(items, flattenItem(item)...)
-		}
-	}
-
-	return &workflowy.ListChildrenResponse{Items: items}
-}
-
-func flattenItem(item *workflowy.Item) []*workflowy.Item {
-	result := []*workflowy.Item{item}
-
-	for _, child := range item.Children {
-		result = append(result, flattenItem(child)...)
-	}
-
-	item.Children = nil
-	return result
+	return workflowy.FlattenTree(data)
 }

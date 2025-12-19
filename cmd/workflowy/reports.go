@@ -155,15 +155,7 @@ func loadAndCountDescendantsWithBackupProvider(ctx context.Context, cmd *cli.Com
 }
 
 func findItemByID(items []*workflowy.Item, id string) *workflowy.Item {
-	for _, item := range items {
-		if item.ID == id {
-			return item
-		}
-		if found := findItemByID(item.Children, id); found != nil {
-			return found
-		}
-	}
-	return nil
+	return workflowy.FindItemByID(items, id)
 }
 
 func stripHTMLTags(text string) string {
