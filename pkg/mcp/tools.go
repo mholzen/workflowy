@@ -67,9 +67,26 @@ func (b ToolBuilder) BuildTools(toolNames []string) ([]mcpserver.ServerTool, err
 		if !ok {
 			return nil, fmt.Errorf("unknown tool: %s", name)
 		}
-		tools = append(tools, factory())
+		tool := factory()
+		tool.Handler = withLogging(tool.Tool.Name, tool.Handler)
+		tools = append(tools, tool)
 	}
 	return tools, nil
+}
+
+func withLogging(toolName string, handler mcpserver.ToolHandlerFunc) mcpserver.ToolHandlerFunc {
+	return func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+		slog.Debug("tool invocation", "tool", toolName, "arguments", req.Params.Arguments)
+		result, err := handler(ctx, req)
+		if err != nil {
+			slog.Debug("tool error", "tool", toolName, "error", err)
+		} else if result != nil && result.IsError {
+			slog.Debug("tool result error", "tool", toolName, "content", result.Content)
+		} else {
+			slog.Debug("tool response", "tool", toolName, "content", fmt.Sprintf("%+v", result.Content))
+		}
+		return result, err
+	}
 }
 
 func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
