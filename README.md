@@ -59,6 +59,9 @@ to understand where the majority of your nodes are located.
     - [Configuration Flags](#configuration-flags)
     - [Performance Comparison](#performance-comparison)
     - [Rate Limiting](#rate-limiting)
+- [MCP Server](#mcp-server)
+  - [Configuring with Claude Desktop](#configuring-with-claude-desktop)
+  - [Available Tools](#available-tools)
 - [Examples](#examples)
 
 
@@ -372,6 +375,7 @@ workflowy report count --upload --parent-id xxx-yyy-zzz --position top
 
 - `--format <list|json|markdown>`: Output format: list, json, or markdown (default: "list")
 - `--log <level>`: Log level: debug, info, warn, error (default: info)
+- `--log-file <path>`: Write logs to a file instead of stderr (useful for MCP server mode)
 
 ### Command-Specific Options
 
@@ -518,6 +522,82 @@ The Workflowy API may enforce rate limits. If you encounter rate limit errors:
 - Space out API requests
 - Check Workflowy's API documentation for current limits
 
+## MCP Server
+
+The Workflowy CLI includes an MCP (Model Context Protocol) server that enables AI assistants like Claude to interact with your Workflowy data.
+
+### Configuring with Claude Desktop
+
+Add the following to your Claude Desktop configuration file:
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "workflowy": {
+      "command": "workflowy",
+      "args": ["mcp", "--expose=all", "--log-file=/tmp/workflowy-mcp.log"]
+    }
+  }
+}
+```
+
+For read-only access (safer):
+```json
+{
+  "mcpServers": {
+    "workflowy": {
+      "command": "workflowy",
+      "args": ["mcp", "--log-file=/tmp/workflowy-mcp.log"]
+    }
+  }
+}
+```
+
+After updating the configuration, restart Claude Desktop.
+
+### Available Tools
+
+The MCP server exposes Workflowy operations as tools that Claude can use:
+
+**Read Tools** (default, `--expose=read`):
+- `workflowy_get` - Get a node and its descendants
+- `workflowy_list` - List descendants as a flat list
+- `workflowy_search` - Search nodes by text or regex
+- `workflowy_targets` - List available shortcuts and system targets
+- `workflowy_report_count` - Generate descendant count report
+- `workflowy_report_children` - Rank nodes by children count
+- `workflowy_report_created` - Rank nodes by creation date
+- `workflowy_report_modified` - Rank nodes by modification date
+
+**Write Tools** (`--expose=write` or `--expose=all`):
+- `workflowy_create` - Create a new node
+- `workflowy_update` - Update an existing node
+- `workflowy_delete` - Delete a node
+- `workflowy_complete` - Mark a node as complete
+- `workflowy_uncomplete` - Mark a node as uncomplete
+- `workflowy_replace` - Search and replace text in node names
+
+**Examples:**
+```bash
+# Start with read-only tools (safe default)
+workflowy mcp
+
+# Enable all tools including write operations
+workflowy mcp --expose=all
+
+# Enable specific tool groups
+workflowy mcp --expose=read,write
+
+# Enable only specific tools
+workflowy mcp --expose=get,list,search
+
+# With logging to file (recommended for debugging)
+workflowy mcp --expose=all --log-file=/tmp/workflowy-mcp.log
+```
+
 ## Examples
 
 ### Generate and upload a comprehensive report
@@ -590,7 +670,10 @@ go test ./...
 .
 ├── cmd/workflowy/       # Main CLI application
 ├── pkg/
-│   ├── workflowy/       # Core Workflowy API client
+│   ├── workflowy/       # Core Workflowy API client and tree utilities
+│   ├── mcp/             # MCP server implementation
+│   ├── search/          # Search functionality
+│   ├── replace/         # Search and replace functionality
 │   ├── reports/         # Report generation and upload
 │   └── formatter/       # Output formatting
 └── README.md

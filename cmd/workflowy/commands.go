@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/mholzen/workflowy/pkg/mcp"
 	"github.com/mholzen/workflowy/pkg/reports"
 	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
@@ -27,6 +28,7 @@ func getCommands() []*cli.Command {
 		getReportCommand(),
 		getSearchCommand(),
 		getReplaceCommand(),
+		getMcpCommand(),
 		getVersionCommand(),
 	}
 }
@@ -726,6 +728,42 @@ Examples:
 
 			return nil
 		}),
+	}
+}
+
+func getMcpCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "mcp",
+		Usage: "Run as MCP server (stdio transport)",
+		Description: `Start the Workflowy MCP server for integration with AI assistants like Claude.
+
+The server communicates via stdio using the Model Context Protocol (MCP).
+
+Tool groups:
+  read   Get, List, Search, Targets, and Report tools (default)
+  write  Create, Update, Delete, Complete, Uncomplete, Replace tools
+  all    All available tools
+
+Examples:
+  workflowy mcp                      # Read-only tools (safe)
+  workflowy mcp --expose=all         # All tools including write operations
+  workflowy mcp --expose=read,write  # Explicit groups
+  workflowy mcp --expose=get,list    # Specific tools only`,
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "expose",
+				Value: "read",
+				Usage: "Tools to expose: read, write, all, or comma-separated tool names",
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			serverConfig := mcp.Config{
+				APIKeyFile: cmd.String("api-key-file"),
+				Expose:     cmd.String("expose"),
+				Version:    version,
+			}
+			return mcp.RunServer(ctx, serverConfig)
+		},
 	}
 }
 
