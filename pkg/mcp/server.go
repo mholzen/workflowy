@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	mcptypes "github.com/mark3labs/mcp-go/mcp"
@@ -42,11 +44,25 @@ func RunServer(ctx context.Context, cfg Config) error {
 		return err
 	}
 
+	hooks := &mcpserver.Hooks{}
+	hooks.AddBeforeAny(func(ctx context.Context, id any, method mcptypes.MCPMethod, message any) {
+		msgJSON, _ := json.Marshal(message)
+		slog.Debug("mcp request", "id", id, "method", method, "message", string(msgJSON))
+	})
+	hooks.AddOnSuccess(func(ctx context.Context, id any, method mcptypes.MCPMethod, message any, result any) {
+		resultJSON, _ := json.Marshal(result)
+		slog.Debug("mcp success", "id", id, "method", method, "result", string(resultJSON))
+	})
+	hooks.AddOnError(func(ctx context.Context, id any, method mcptypes.MCPMethod, message any, err error) {
+		slog.Debug("mcp error", "id", id, "method", method, "error", err)
+	})
+
 	server := mcpserver.NewMCPServer(
 		"workflowy",
 		cfg.Version,
 		mcpserver.WithToolCapabilities(true),
 		mcpserver.WithLogging(),
+		mcpserver.WithHooks(hooks),
 	)
 
 	for _, tool := range serverTools {
