@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - Fix bug with MCP commands that return more that one result
+
+### Fixed
+- For MCP commands that have many results, return objects instead of arrays
+- Use Hooks for logging instead of custom handler wrapper
+
+
 ## [0.5.0] - Add MCP server capability
 
 - Add support for an MCP server, with the ability to expose some or all existing
