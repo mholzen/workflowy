@@ -44,6 +44,25 @@ func WithAPIKeyFromFile(filename string) (client.Option, error) {
 	}, nil
 }
 
+// ResolveAPIKey resolves the API key with precedence:
+// 1. Explicit file path (if different from default)
+// 2. WORKFLOWY_API_KEY environment variable
+// 3. Default file path
+func ResolveAPIKey(apiKeyFile, defaultAPIKeyFile string) (client.Option, error) {
+	if apiKeyFile != defaultAPIKeyFile {
+		slog.Debug("using API key from explicit file", "file", apiKeyFile)
+		return WithAPIKeyFromFile(apiKeyFile)
+	}
+
+	if envKey := os.Getenv("WORKFLOWY_API_KEY"); envKey != "" {
+		slog.Debug("using API key from WORKFLOWY_API_KEY environment variable")
+		return WithAPIKey(strings.TrimSpace(envKey)), nil
+	}
+
+	slog.Debug("using API key from default file", "file", defaultAPIKeyFile)
+	return WithAPIKeyFromFile(defaultAPIKeyFile)
+}
+
 // WorkflowyClient wraps the generic Client with Workflowy-specific methods
 type WorkflowyClient struct {
 	*client.Client

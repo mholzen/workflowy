@@ -14,9 +14,10 @@ import (
 
 // Config controls MCP server startup.
 type Config struct {
-	APIKeyFile string
-	Expose     string
-	Version    string
+	APIKeyFile        string
+	DefaultAPIKeyFile string
+	Expose            string
+	Version           string
 }
 
 // RunServer starts the MCP stdio server with the requested tool set.
@@ -31,7 +32,7 @@ func RunServer(ctx context.Context, cfg Config) error {
 		return err
 	}
 
-	option, err := workflowy.WithAPIKeyFromFile(cfg.APIKeyFile)
+	option, err := workflowy.ResolveAPIKey(cfg.APIKeyFile, cfg.DefaultAPIKeyFile)
 	if err != nil {
 		return fmt.Errorf("cannot load API key: %w", err)
 	}

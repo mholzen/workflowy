@@ -106,13 +106,24 @@ go build ./cmd/workflowy
 ### Get Your API Key
 
 1. Visit https://workflowy.com/api-key/
-2. Save your API key to `~/.workflowy/api.key`
+2. Configure your API key using one of these methods:
 
+**Option A: Environment variable (recommended for CI/scripts)**
+```bash
+export WORKFLOWY_API_KEY="your-api-key-here"
+```
+
+**Option B: Key file (recommended for personal use)**
 ```bash
 mkdir -p ~/.workflowy
 echo "your-api-key-here" > ~/.workflowy/api.key
 chmod 600 ~/.workflowy/api.key
 ```
+
+**Precedence order:**
+1. `--api-key-file` flag (if explicitly provided)
+2. `WORKFLOWY_API_KEY` environment variable
+3. Default file (`~/.workflowy/api.key`)
 
 ## Usage
 
@@ -462,19 +473,31 @@ workflowy get --method=backup --backup-file=/path/to/backup.json
 
 #### Configuration Flags
 
-##### `--api-key-file`
-Specifies the location of your API key file.
+##### API Key Configuration
 
-**Default:** `~/.workflowy/api.key`
+The CLI supports multiple ways to provide your API key:
 
-**Setup:**
+| Method | Precedence | Best For |
+|--------|------------|----------|
+| `--api-key-file` flag | 1 (highest) | One-off commands with different key |
+| `WORKFLOWY_API_KEY` env var | 2 | CI/CD, scripts, containers |
+| Default file | 3 (lowest) | Personal workstation use |
+
+**Environment variable:**
+```bash
+export WORKFLOWY_API_KEY="your-api-key-here"
+workflowy list
+```
+
+**Default file location:** `~/.workflowy/api.key`
+
 ```bash
 mkdir -p ~/.workflowy
 echo "your-api-key-here" > ~/.workflowy/api.key
 chmod 600 ~/.workflowy/api.key
 ```
 
-**Usage:**
+**Explicit file path:**
 ```bash
 workflowy get --api-key-file=/path/to/custom-key.file
 ```
@@ -551,6 +574,21 @@ For read-only access (safer):
     "workflowy": {
       "command": "workflowy",
       "args": ["mcp", "--log-file=/tmp/workflowy-mcp.log"]
+    }
+  }
+}
+```
+
+**Using environment variable for API key:**
+```json
+{
+  "mcpServers": {
+    "workflowy": {
+      "command": "workflowy",
+      "args": ["mcp", "--expose=all", "--log-file=/tmp/workflowy-mcp.log"],
+      "env": {
+        "WORKFLOWY_API_KEY": "your-api-key-here"
+      }
     }
   }
 }

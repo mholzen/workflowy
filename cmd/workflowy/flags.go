@@ -214,15 +214,20 @@ func getReplaceFlags() []cli.Flag {
 	return flags
 }
 
-func getAPIKeyFlag() *cli.StringFlag {
+var defaultAPIKeyFile string
+
+func init() {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("cannot get home directory: %v", err)
 	}
-	defaultAPIKeyFile := filepath.Join(homeDir, ".workflowy", "api.key")
+	defaultAPIKeyFile = filepath.Join(homeDir, ".workflowy", "api.key")
+}
+
+func getAPIKeyFlag() *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:  "api-key-file",
 		Value: defaultAPIKeyFile,
-		Usage: "Path to API key file",
+		Usage: "Path to API key file (overrides WORKFLOWY_API_KEY env var)",
 	}
 }

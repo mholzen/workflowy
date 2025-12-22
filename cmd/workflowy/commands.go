@@ -750,6 +750,7 @@ Examples:
   workflowy mcp --expose=read,write  # Explicit groups
   workflowy mcp --expose=get,list    # Specific tools only`,
 		Flags: []cli.Flag{
+			getAPIKeyFlag(),
 			&cli.StringFlag{
 				Name:  "expose",
 				Value: "read",
@@ -758,9 +759,10 @@ Examples:
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			serverConfig := mcp.Config{
-				APIKeyFile: cmd.String("api-key-file"),
-				Expose:     cmd.String("expose"),
-				Version:    version,
+				APIKeyFile:        cmd.String("api-key-file"),
+				DefaultAPIKeyFile: defaultAPIKeyFile,
+				Expose:            cmd.String("expose"),
+				Version:           version,
 			}
 			return mcp.RunServer(ctx, serverConfig)
 		},
@@ -781,7 +783,7 @@ func getVersionCommand() *cli.Command {
 }
 
 func createClient(apiKeyFile string) (*workflowy.WorkflowyClient, error) {
-	option, err := workflowy.WithAPIKeyFromFile(apiKeyFile)
+	option, err := workflowy.ResolveAPIKey(apiKeyFile, defaultAPIKeyFile)
 	if err != nil {
 		return nil, err
 	}
