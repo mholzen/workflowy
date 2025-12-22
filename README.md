@@ -1,4 +1,4 @@
-# Workflowy CLI
+# Workflowy CLI and MCP Server
 
 ## Quick Start
 
