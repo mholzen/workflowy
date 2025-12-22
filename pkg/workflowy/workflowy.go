@@ -44,11 +44,26 @@ func WithAPIKeyFromFile(filename string) (client.Option, error) {
 	}, nil
 }
 
+// ExpandTilde expands a leading ~ to the user's home directory
+func ExpandTilde(path string) string {
+	if !strings.HasPrefix(path, "~") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	return filepath.Join(home, path[1:])
+}
+
 // ResolveAPIKey resolves the API key with precedence:
 // 1. Explicit file path (if different from default)
 // 2. WORKFLOWY_API_KEY environment variable
 // 3. Default file path
 func ResolveAPIKey(apiKeyFile, defaultAPIKeyFile string) (client.Option, error) {
+	apiKeyFile = ExpandTilde(apiKeyFile)
+	defaultAPIKeyFile = ExpandTilde(defaultAPIKeyFile)
+
 	if apiKeyFile != defaultAPIKeyFile {
 		slog.Debug("using API key from explicit file", "file", apiKeyFile)
 		return WithAPIKeyFromFile(apiKeyFile)

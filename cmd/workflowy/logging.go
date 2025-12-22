@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+
+	"github.com/mholzen/workflowy/pkg/workflowy"
 )
 
 type simpleHandler struct {
@@ -32,6 +34,7 @@ func setupLogging(level string, logFile string) {
 
 	writer := io.Writer(os.Stderr)
 	if logFile != "" {
+		logFile = workflowy.ExpandTilde(logFile)
 		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: cannot open log file %s: %v\n", logFile, err)
