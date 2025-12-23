@@ -1,5 +1,9 @@
 # Workflowy CLI and MCP Server
 
+<a href="https://glama.ai/mcp/servers/@mholzen/workflowy">
+  <img width="380" height=“200" src="https://glama.ai/mcp/servers/@mholzen/workflowy/badge" />
+</a>
+
 ## Quick Start
 
 1. [Get an API key](#get-your-api-key) or [enable backup to Dropbox](#3-backup-file---methodbackup)
