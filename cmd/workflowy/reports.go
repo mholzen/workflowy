@@ -21,7 +21,7 @@ func uploadReport(ctx context.Context, cmd *cli.Command, client workflowy.Client
 	}
 
 	opts := reports.UploadOptions{
-		ParentID: cmd.String("parent-id"),
+		ParentID: getParentID(cmd),
 		Position: cmd.String("position"),
 	}
 
@@ -136,7 +136,7 @@ func loadAndCountDescendantsWithBackupProvider(ctx context.Context, cmd *cli.Com
 	}
 
 	var rootItem *workflowy.Item
-	itemID := cmd.String("item-id")
+	itemID := getItemID(cmd)
 	if itemID == "None" && len(items) > 0 {
 		rootItem = &workflowy.Item{
 			ID:       "root",
@@ -220,7 +220,7 @@ func countReportAction(deps ReportDeps) func(ctx context.Context, cmd *cli.Comma
 		}
 
 		var rootItem *workflowy.Item
-		itemID := cmd.String("item-id")
+		itemID := getItemID(cmd)
 		if itemID == "None" && len(items) > 0 {
 			rootItem = &workflowy.Item{
 				ID:       "root",

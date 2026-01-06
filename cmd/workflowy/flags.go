@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
 )
 
@@ -129,7 +130,7 @@ func getAndValidateFetchParams(cmd *cli.Command) (FetchParameters, error) {
 	if cmd.Bool("all") {
 		depth = -1
 	}
-	itemID := cmd.StringArg("item_id")
+	itemID := getItemIDArg(cmd)
 	return FetchParameters{format: format, depth: depth, itemID: itemID}, nil
 }
 
@@ -230,4 +231,16 @@ func getAPIKeyFlag() *cli.StringFlag {
 		Value: defaultAPIKeyFile,
 		Usage: "Path to API key file (overrides WORKFLOWY_API_KEY env var)",
 	}
+}
+
+func getParentID(cmd *cli.Command) string {
+	return workflowy.SanitizeNodeID(cmd.String("parent-id"))
+}
+
+func getItemID(cmd *cli.Command) string {
+	return workflowy.SanitizeNodeID(cmd.String("item-id"))
+}
+
+func getItemIDArg(cmd *cli.Command) string {
+	return workflowy.SanitizeNodeID(cmd.StringArg("item_id"))
 }

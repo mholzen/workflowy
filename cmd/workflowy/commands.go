@@ -177,7 +177,7 @@ func getCreateCommand() *cli.Command {
 			}
 
 			req := &workflowy.CreateNodeRequest{
-				ParentID: cmd.String("parent-id"),
+				ParentID: getParentID(cmd),
 				Name:     name,
 			}
 
@@ -228,7 +228,7 @@ func getUpdateCommand() *cli.Command {
 				return err
 			}
 
-			itemID := cmd.StringArg("item_id")
+			itemID := getItemIDArg(cmd)
 			if itemID == "" {
 				return fmt.Errorf("item_id is required")
 			}
@@ -295,7 +295,7 @@ func getDeleteCommand() *cli.Command {
 				return err
 			}
 
-			itemID := cmd.StringArg("item_id")
+			itemID := getItemIDArg(cmd)
 			if itemID == "" {
 				return fmt.Errorf("item_id is required")
 			}
@@ -365,7 +365,7 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 				return err
 			}
 
-			itemID := cmd.StringArg("item_id")
+			itemID := getItemIDArg(cmd)
 			if itemID == "" {
 				return fmt.Errorf("item_id is required")
 			}
@@ -537,7 +537,7 @@ func getSearchCommand() *cli.Command {
 				return err
 			}
 
-			itemID := cmd.String("item-id")
+			itemID := getItemID(cmd)
 			rootItem := findRootItem(items, itemID)
 			if rootItem == nil && itemID != "None" {
 				return fmt.Errorf("item not found: %s", itemID)
@@ -631,7 +631,7 @@ Examples:
 				return err
 			}
 
-			parentID := cmd.String("parent-id")
+			parentID := getParentID(cmd)
 			searchRoot := items
 			if parentID != "None" {
 				rootItem := findItemByID(items, parentID)

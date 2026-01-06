@@ -44,6 +44,20 @@ func WithAPIKeyFromFile(filename string) (client.Option, error) {
 	}, nil
 }
 
+// SanitizeNodeID strips any character that is not hexadecimal or a dash from a node ID
+func SanitizeNodeID(id string) string {
+	if id == "" || id == "None" {
+		return id
+	}
+	var result strings.Builder
+	for _, r := range id {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F') || r == '-' {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
+}
+
 // ExpandTilde expands a leading ~ to the user's home directory
 func ExpandTilde(path string) string {
 	if !strings.HasPrefix(path, "~") {
