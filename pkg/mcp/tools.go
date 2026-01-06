@@ -91,9 +91,14 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			itemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("item_id", "None")
 			depth := req.GetInt("depth", 2)
 			includeEmpty := req.GetBool("include_empty_names", false)
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+			}
 
 			result, err := b.fetchItems(ctx, itemID, depth)
 			if err != nil {
@@ -133,9 +138,14 @@ func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			itemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("item_id", "None")
 			depth := req.GetInt("depth", 2)
 			includeEmpty := req.GetBool("include_empty_names", false)
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+			}
 
 			data, err := b.fetchItems(ctx, itemID, depth)
 			if err != nil {
@@ -180,9 +190,14 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultError("pattern is required"), nil
 			}
 
-			itemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("item_id", "None")
 			useRegexp := req.GetBool("regexp", false)
 			ignoreCase := req.GetBool("ignore_case", false)
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+			}
 
 			items, err := b.loadExportTree(ctx)
 			if err != nil {
@@ -258,8 +273,13 @@ func (b ToolBuilder) buildCreateTool() mcpserver.ServerTool {
 			layoutMode := strings.TrimSpace(req.GetString("layout_mode", ""))
 			note := strings.TrimSpace(req.GetString("note", ""))
 
+			parentID, err := workflowy.ResolveNodeID(ctx, b.client, req.GetString("parent_id", "None"))
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve parent ID", err), nil
+			}
+
 			request := &workflowy.CreateNodeRequest{
-				ParentID: req.GetString("parent_id", "None"),
+				ParentID: parentID,
 				Name:     name,
 			}
 
@@ -303,9 +323,14 @@ func (b ToolBuilder) buildUpdateTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			itemID := strings.TrimSpace(req.GetString("item_id", ""))
-			if itemID == "" {
+			rawItemID := strings.TrimSpace(req.GetString("item_id", ""))
+			if rawItemID == "" {
 				return mcptypes.NewToolResultError("item_id is required"), nil
+			}
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
 			}
 
 			name := strings.TrimSpace(req.GetString("name", ""))
@@ -349,9 +374,14 @@ func (b ToolBuilder) buildDeleteTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			itemID := strings.TrimSpace(req.GetString("item_id", ""))
-			if itemID == "" {
+			rawItemID := strings.TrimSpace(req.GetString("item_id", ""))
+			if rawItemID == "" {
 				return mcptypes.NewToolResultError("item_id is required"), nil
+			}
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
 			}
 
 			response, err := b.client.DeleteNode(ctx, itemID)
@@ -375,9 +405,14 @@ func (b ToolBuilder) buildCompleteTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			itemID := strings.TrimSpace(req.GetString("item_id", ""))
-			if itemID == "" {
+			rawItemID := strings.TrimSpace(req.GetString("item_id", ""))
+			if rawItemID == "" {
 				return mcptypes.NewToolResultError("item_id is required"), nil
+			}
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
 			}
 
 			response, err := b.client.CompleteNode(ctx, itemID)
@@ -401,9 +436,14 @@ func (b ToolBuilder) buildUncompleteTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			itemID := strings.TrimSpace(req.GetString("item_id", ""))
-			if itemID == "" {
+			rawItemID := strings.TrimSpace(req.GetString("item_id", ""))
+			if rawItemID == "" {
 				return mcptypes.NewToolResultError("item_id is required"), nil
+			}
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
 			}
 
 			response, err := b.client.UncompleteNode(ctx, itemID)
@@ -435,8 +475,13 @@ func (b ToolBuilder) buildReportCountTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			itemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("item_id", "None")
 			threshold := req.GetFloat("threshold", 0.01)
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+			}
 
 			root, err := b.buildReportRoot(ctx, itemID)
 			if err != nil {
@@ -479,8 +524,13 @@ func (b ToolBuilder) buildReportChildrenTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			itemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("item_id", "None")
 			topN := req.GetInt("top_n", 20)
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+			}
 
 			root, err := b.buildReportRoot(ctx, itemID)
 			if err != nil {
@@ -520,8 +570,13 @@ func (b ToolBuilder) buildReportCreatedTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			itemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("item_id", "None")
 			topN := req.GetInt("top_n", 20)
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+			}
 
 			root, err := b.buildReportRoot(ctx, itemID)
 			if err != nil {
@@ -561,8 +616,13 @@ func (b ToolBuilder) buildReportModifiedTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			itemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("item_id", "None")
 			topN := req.GetInt("top_n", 20)
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+			}
 
 			root, err := b.buildReportRoot(ctx, itemID)
 			if err != nil {
@@ -633,9 +693,14 @@ func (b ToolBuilder) buildReplaceTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("invalid regular expression", err), nil
 			}
 
-			parentID := req.GetString("parent_id", "None")
+			rawParentID := req.GetString("parent_id", "None")
 			depth := req.GetInt("depth", -1)
 			dryRun := req.GetBool("dry_run", true)
+
+			parentID, err := workflowy.ResolveNodeID(ctx, b.client, rawParentID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve parent ID", err), nil
+			}
 
 			items, err := b.loadExportTree(ctx)
 			if err != nil {

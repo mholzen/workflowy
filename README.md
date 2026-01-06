@@ -53,6 +53,7 @@ to understand where the majority of your nodes are located.
 - [Usage](#usage)
   - [Basic Commands](#basic-commands)
     - [List Targets](#list-targets)
+    - [Short IDs](#short-ids)
     - [Search For Items](#search-for-items)
     - [Search and Replace](#search-and-replace)
   - [Usage Reports](#usage-reports)
@@ -250,6 +251,27 @@ workflowy create --parent-id=inbox "New task"
 # Get contents of a shortcut using its key
 workflowy get home
 ```
+
+#### Short IDs
+
+For convenience, you can use the last 12 characters of a node ID instead of the full UUID:
+
+```bash
+# Full UUID
+workflowy get a1b2c3d4-e5f6-7890-abcd-ef1234567890
+
+# Short ID (last 12 characters)
+workflowy get ef1234567890
+```
+
+Short IDs work with all commands and flags that accept node IDs (`--parent-id`, `--item-id`, positional arguments), as well as MCP tools.
+
+**Note:** If multiple nodes share the same last 12 characters (extremely rare), an error will be returned listing all matches.
+
+**ID Resolution Order:**
+1. Target keys (e.g., `inbox`) are recognized first
+2. 12-character hex strings are treated as short IDs
+3. Everything else is treated as a full UUID
 
 #### Search For Items
 

@@ -58,6 +58,87 @@ func SanitizeNodeID(id string) string {
 	return result.String()
 }
 
+// IsShortID returns true if the ID is exactly 12 hexadecimal characters
+func IsShortID(id string) bool {
+	if len(id) != 12 {
+		return false
+	}
+	for _, r := range id {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+// IsTargetKey checks if the given ID matches a known target key
+func IsTargetKey(ctx context.Context, client Client, id string) (bool, error) {
+	targets, err := client.ListTargets(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, target := range targets.Targets {
+		if target.Key == id {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ResolveShortID resolves a short ID to its full UUID by searching all nodes
+func ResolveShortID(ctx context.Context, client Client, shortID string) (string, error) {
+	slog.Info("resolving short ID, loading export tree", "short_id", shortID)
+
+	resp, err := client.ExportNodesWithCache(ctx, false)
+	if err != nil {
+		return "", fmt.Errorf("cannot load export tree: %w", err)
+	}
+
+	var matches []string
+	for _, node := range resp.Nodes {
+		if strings.HasSuffix(node.ID, shortID) {
+			matches = append(matches, node.ID)
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("no node found with short ID: %s", shortID)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("multiple nodes match short ID %s: %v", shortID, matches)
+	}
+}
+
+// ResolveNodeID resolves target keys, short IDs, and sanitizes full IDs.
+// If client is nil, only sanitization is performed.
+func ResolveNodeID(ctx context.Context, client Client, id string) (string, error) {
+	if id == "" || id == "None" {
+		return id, nil
+	}
+
+	if client == nil {
+		return SanitizeNodeID(id), nil
+	}
+
+	isTarget, err := IsTargetKey(ctx, client, id)
+	if err != nil {
+		return "", fmt.Errorf("cannot check target: %w", err)
+	}
+	if isTarget {
+		return id, nil
+	}
+
+	sanitized := SanitizeNodeID(id)
+
+	if IsShortID(sanitized) {
+		return ResolveShortID(ctx, client, sanitized)
+	}
+
+	return sanitized, nil
+}
+
 // ExpandTilde expands a leading ~ to the user's home directory
 func ExpandTilde(path string) string {
 	if !strings.HasPrefix(path, "~") {

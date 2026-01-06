@@ -20,8 +20,13 @@ func uploadReport(ctx context.Context, cmd *cli.Command, client workflowy.Client
 		return fmt.Errorf("cannot upload a report without an API client")
 	}
 
+	parentID, err := workflowy.ResolveNodeID(ctx, client, getParentID(cmd))
+	if err != nil {
+		return fmt.Errorf("cannot resolve parent ID: %w", err)
+	}
+
 	opts := reports.UploadOptions{
-		ParentID: getParentID(cmd),
+		ParentID: parentID,
 		Position: cmd.String("position"),
 	}
 
@@ -135,8 +140,12 @@ func loadAndCountDescendantsWithBackupProvider(ctx context.Context, cmd *cli.Com
 		return nil, err
 	}
 
+	itemID, err := workflowy.ResolveNodeID(ctx, client, getItemID(cmd))
+	if err != nil {
+		return nil, fmt.Errorf("cannot resolve item ID: %w", err)
+	}
+
 	var rootItem *workflowy.Item
-	itemID := getItemID(cmd)
 	if itemID == "None" && len(items) > 0 {
 		rootItem = &workflowy.Item{
 			ID:       "root",
@@ -219,8 +228,12 @@ func countReportAction(deps ReportDeps) func(ctx context.Context, cmd *cli.Comma
 			return err
 		}
 
+		itemID, err := workflowy.ResolveNodeID(ctx, client, getItemID(cmd))
+		if err != nil {
+			return fmt.Errorf("cannot resolve item ID: %w", err)
+		}
+
 		var rootItem *workflowy.Item
-		itemID := getItemID(cmd)
 		if itemID == "None" && len(items) > 0 {
 			rootItem = &workflowy.Item{
 				ID:       "root",

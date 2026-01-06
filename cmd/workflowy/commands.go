@@ -45,7 +45,12 @@ func getGetCommand() *cli.Command {
 				return err
 			}
 
-			result, err := fetchItems(cmd, ctx, client, params.itemID, params.depth)
+			itemID, err := workflowy.ResolveNodeID(ctx, client, params.itemID)
+			if err != nil {
+				return fmt.Errorf("cannot resolve item ID: %w", err)
+			}
+
+			result, err := fetchItems(cmd, ctx, client, itemID, params.depth)
 			if err != nil {
 				return err
 			}
@@ -68,7 +73,12 @@ func getListCommand() *cli.Command {
 				return err
 			}
 
-			treeResult, err := fetchItems(cmd, ctx, client, params.itemID, params.depth)
+			itemID, err := workflowy.ResolveNodeID(ctx, client, params.itemID)
+			if err != nil {
+				return fmt.Errorf("cannot resolve item ID: %w", err)
+			}
+
+			treeResult, err := fetchItems(cmd, ctx, client, itemID, params.depth)
 			if err != nil {
 				return err
 			}
@@ -176,8 +186,13 @@ func getCreateCommand() *cli.Command {
 				return fmt.Errorf("name cannot be empty")
 			}
 
+			parentID, err := workflowy.ResolveNodeID(ctx, client, getParentID(cmd))
+			if err != nil {
+				return fmt.Errorf("cannot resolve parent ID: %w", err)
+			}
+
 			req := &workflowy.CreateNodeRequest{
-				ParentID: getParentID(cmd),
+				ParentID: parentID,
 				Name:     name,
 			}
 
@@ -228,9 +243,14 @@ func getUpdateCommand() *cli.Command {
 				return err
 			}
 
-			itemID := getItemIDArg(cmd)
-			if itemID == "" {
+			rawItemID := getItemIDArg(cmd)
+			if rawItemID == "" {
 				return fmt.Errorf("item_id is required")
+			}
+
+			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
+			if err != nil {
+				return fmt.Errorf("cannot resolve item ID: %w", err)
 			}
 
 			content := cmd.StringArg("nameArgument")
@@ -295,9 +315,14 @@ func getDeleteCommand() *cli.Command {
 				return err
 			}
 
-			itemID := getItemIDArg(cmd)
-			if itemID == "" {
+			rawItemID := getItemIDArg(cmd)
+			if rawItemID == "" {
 				return fmt.Errorf("item_id is required")
+			}
+
+			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
+			if err != nil {
+				return fmt.Errorf("cannot resolve item ID: %w", err)
 			}
 
 			slog.Debug("deleting node", "item_id", itemID)
@@ -365,15 +390,19 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 				return err
 			}
 
-			itemID := getItemIDArg(cmd)
-			if itemID == "" {
+			rawItemID := getItemIDArg(cmd)
+			if rawItemID == "" {
 				return fmt.Errorf("item_id is required")
+			}
+
+			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
+			if err != nil {
+				return fmt.Errorf("cannot resolve item ID: %w", err)
 			}
 
 			slog.Debug(action+" node", "item_id", itemID)
 
 			var response *workflowy.UpdateNodeResponse
-			var err error
 
 			if commandName == "complete" {
 				response, err = client.CompleteNode(ctx, itemID)
@@ -537,7 +566,10 @@ func getSearchCommand() *cli.Command {
 				return err
 			}
 
-			itemID := getItemID(cmd)
+			itemID, err := workflowy.ResolveNodeID(ctx, client, getItemID(cmd))
+			if err != nil {
+				return fmt.Errorf("cannot resolve item ID: %w", err)
+			}
 			rootItem := findRootItem(items, itemID)
 			if rootItem == nil && itemID != "None" {
 				return fmt.Errorf("item not found: %s", itemID)
@@ -631,7 +663,10 @@ Examples:
 				return err
 			}
 
-			parentID := getParentID(cmd)
+			parentID, err := workflowy.ResolveNodeID(ctx, client, getParentID(cmd))
+			if err != nil {
+				return fmt.Errorf("cannot resolve parent ID: %w", err)
+			}
 			searchRoot := items
 			if parentID != "None" {
 				rootItem := findItemByID(items, parentID)

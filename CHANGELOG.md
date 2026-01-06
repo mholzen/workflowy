@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.2] - Short IDs and configuration improvements
+
+### Added
+- Short ID support: use last 12 characters of a node ID instead of full UUID
+- `WORKFLOWY_API_KEY` environment variable support with precedence: flag > env var > default file
+- Tilde (`~`) expansion for `--api-key-file` and `--log-file` paths
+
+### Fixed
+- Node IDs are now sanitized to strip non-hexadecimal characters
+
 ## [0.5.1] - Fix bug with MCP commands that return more that one result
 
 ### Fixed
