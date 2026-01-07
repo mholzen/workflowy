@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Short ID support: use last 12 characters of a node ID instead of full UUID
+- Workflowy internal link support: paste URLs from "Copy Internal Link" directly as node IDs
 - `WORKFLOWY_API_KEY` environment variable support with precedence: flag > env var > default file
 - Tilde (`~`) expansion for `--api-key-file` and `--log-file` paths
 

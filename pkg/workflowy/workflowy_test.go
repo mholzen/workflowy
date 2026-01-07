@@ -478,3 +478,64 @@ func TestWorkflowyClient_ListTargets(t *testing.T) {
 func stringPtr(s string) *string {
 	return &s
 }
+
+func TestSanitizeNodeID(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "None value",
+			input:    "None",
+			expected: "None",
+		},
+		{
+			name:     "full UUID",
+			input:    "3495d784-5db2-408f-8c4a-7ae1be810d4f",
+			expected: "3495d784-5db2-408f-8c4a-7ae1be810d4f",
+		},
+		{
+			name:     "short ID",
+			input:    "7ae1be810d4f",
+			expected: "7ae1be810d4f",
+		},
+		{
+			name:     "workflowy internal link URL",
+			input:    "https://workflowy.com/#/7ae1be810d4f",
+			expected: "7ae1be810d4f",
+		},
+		{
+			name:     "workflowy internal link URL with full UUID",
+			input:    "https://workflowy.com/#/3495d784-5db2-408f-8c4a-7ae1be810d4f",
+			expected: "3495d784-5db2-408f-8c4a-7ae1be810d4f",
+		},
+		{
+			name:     "strips non-hex characters",
+			input:    "abc123xyz",
+			expected: "abc123",
+		},
+		{
+			name:     "uppercase hex characters preserved",
+			input:    "ABC123DEF",
+			expected: "ABC123DEF",
+		},
+		{
+			name:     "preserves dashes",
+			input:    "abc-def-123",
+			expected: "abc-def-123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SanitizeNodeID(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}

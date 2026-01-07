@@ -44,11 +44,13 @@ func WithAPIKeyFromFile(filename string) (client.Option, error) {
 	}, nil
 }
 
-// SanitizeNodeID strips any character that is not hexadecimal or a dash from a node ID
+// SanitizeNodeID strips the Workflowy URL prefix if present, then removes any
+// character that is not hexadecimal or a dash from a node ID
 func SanitizeNodeID(id string) string {
 	if id == "" || id == "None" {
 		return id
 	}
+	id = strings.TrimPrefix(id, "https://workflowy.com/#/")
 	var result strings.Builder
 	for _, r := range id {
 		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F') || r == '-' {
