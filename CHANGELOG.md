@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Node IDs are now sanitized to strip non-hexadecimal characters
 
-## [0.5.1] - Fix bug with MCP commands that return more that one result
+## [0.5.1] - Fix bug with MCP commands that return more than one result
 
 ### Fixed
 - For MCP commands that have many results, return objects instead of arrays
@@ -22,7 +22,7 @@ All notable changes to this project will be documented in this file.
 ## [0.5.0] - Add MCP server capability
 
 - Add support for an MCP server, with the ability to expose some or all existing
-  commands, and the the ability to send logs to a file for troubleshooting.
+  commands, and the ability to send logs to a file for troubleshooting.
 
 
 ## [0.4.1] - Strip HTML tags when printing reports
