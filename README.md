@@ -49,12 +49,14 @@ workflowy report count | pbcopy   # paste directly into Workflowy!
 Use `pbcopy` on macOS, `clip` on Windows, `wl-copy` on Linux, or `xclip` for X11 systems.
 
 
-## Use with Claude Desktop (MCP Server)
+## Use with Claude Desktop or Claude Code
 
-Add to your Claude Desktop configuration:
+Add to your Claude Desktop configuration
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+or `~/.claude.json` for Claude Code:
 
 ```json
 {
