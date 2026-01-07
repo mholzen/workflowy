@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.2] - Short IDs and configuration improvements
+## [0.6.0] - Short IDs and configuration improvements
 
 ### Added
 - Short ID support: use last 12 characters of a node ID instead of full UUID
