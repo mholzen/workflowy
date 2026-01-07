@@ -101,27 +101,41 @@ Restart Claude Desktop and start asking Claude to work with your Workflowy!
 
 ```bash
 # Find all TODOs (case-insensitive)
-workflowy search -i "todo"
+workflowy search -i "foobar"
 
 # Regex search for dates
-workflowy search -E "\d{4}-\d{2}-\d{2}"
+workflowy search -E "<time.*>"
 
-# Search within a specific subtree
-workflowy search "bug" --item-id project-xyz-123
+# Search within a specific subtree (using Internal Link)
+workflowy search "bug" --item-id https://workflowy.com/#/1bdae4aecf00
 ```
 
 ### Bulk Search and Replace
 
 ```bash
 # Preview changes first (dry run)
-workflowy replace --dry-run "TODO" "DONE"
+workflowy replace --dry-run "foo" "bar"
 
 # Interactive confirmation
-workflowy replace --interactive "TODO" "DONE"
+workflowy replace --interactive "foo" "bar"
 
 # Use regex capture groups
 workflowy replace "TASK-([0-9]+)" 'ISSUE-$1'
 ```
+
+### Some Common CRUD Operations
+
+```bash
+# Add a task to your inbox
+workflowy create "Buy groceries" --parent-id=inbox
+
+# Change the name of an item
+workflowy update xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx --name "Project Plan v2"
+
+# Mark a node as complete, using a short ID
+workflowy complete https://workflowy.com/#/xxxxxxxxxxxx
+```
+
 
 ### Usage Reports
 
@@ -143,7 +157,7 @@ Choose the best method for your use case:
 | Method | Speed | Freshness | Offline | Best For |
 |--------|-------|-----------|---------|----------|
 | `--method=get` | Medium | Real-time | No | Specific items |
-| `--method=export` | Fast* | Real-time | No | Full tree access |
+| `--method=export` | Fast* | 1 min worst case (due to rate limiting) | No | Full tree access |
 | `--method=backup` | Fastest | Stale | **Yes** | Bulk operations |
 
 *Cached after first fetch
