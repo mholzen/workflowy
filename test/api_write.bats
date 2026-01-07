@@ -6,9 +6,6 @@
 
 load test_helper
 
-# Temp file to store node IDs created in setup_file (bats runs tests in subshells)
-SEARCH_TEST_NODES_FILE=""
-
 setup_file() {
     export WORKFLOWY_BIN="${WORKFLOWY_BIN:-./workflowy}"
     export API_KEY_FILE="${API_KEY_FILE:-$HOME/.workflowy/api.key}"
@@ -24,8 +21,8 @@ setup_file() {
         return
     fi
 
-    SEARCH_TEST_NODES_FILE=$(mktemp)
-    export SEARCH_TEST_NODES_FILE
+    # Use BATS_FILE_TMPDIR which persists across tests in the same file
+    export SEARCH_TEST_NODES_FILE="$BATS_FILE_TMPDIR/search_test_nodes"
 
     local output node_id
 
@@ -57,21 +54,28 @@ setup_file() {
     node_id=$(echo "$output" | awk '{print $1}')
     echo "REPLACE_CASEI=$node_id" >> "$SEARCH_TEST_NODES_FILE"
 
+    # Delete the export cache to avoid rate limiting issues from previous test runs
+    rm -f "$HOME/.workflowy/export-cache.json"
+
+    # Force refresh to get the newly created nodes in the cache
     "$WORKFLOWY_BIN" search --force-refresh "batsearch_static" > /dev/null 2>&1 || true
 }
 
 teardown_file() {
-    if [[ -n "$SEARCH_TEST_NODES_FILE" && -f "$SEARCH_TEST_NODES_FILE" ]]; then
+    # BATS_FILE_TMPDIR is automatically cleaned up by bats
+    if [[ -f "$BATS_FILE_TMPDIR/search_test_nodes" ]]; then
         while IFS='=' read -r key node_id; do
             "$WORKFLOWY_BIN" delete "$node_id" 2>/dev/null || true
-        done < "$SEARCH_TEST_NODES_FILE"
-        rm -f "$SEARCH_TEST_NODES_FILE"
+        done < "$BATS_FILE_TMPDIR/search_test_nodes"
     fi
 }
 
 get_test_node_id() {
     local key="$1"
-    grep "^${key}=" "$SEARCH_TEST_NODES_FILE" | cut -d'=' -f2
+    local nodes_file="$BATS_FILE_TMPDIR/search_test_nodes"
+    if [[ -f "$nodes_file" ]]; then
+        grep "^${key}=" "$nodes_file" | cut -d'=' -f2
+    fi
 }
 
 setup() {
@@ -224,7 +228,7 @@ teardown() {
 # Search Command Tests (use pre-created nodes from setup_file)
 
 @test "search finds created node" {
-    run run_workflowy search "batsearch_static" --item-id="$TEST_PARENT_ID"
+    run run_workflowy search "batsearch_static" --item-id="$TEST_PARENT_ID" --force-refresh
     [ "$status" -eq 0 ]
     [[ "$output" =~ "batsearch_static" ]]
 }
