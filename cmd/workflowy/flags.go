@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
 )
 
@@ -234,13 +233,13 @@ func getAPIKeyFlag() *cli.StringFlag {
 }
 
 func getParentID(cmd *cli.Command) string {
-	return workflowy.SanitizeNodeID(cmd.String("parent-id"))
+	return cmd.String("parent-id")
 }
 
 func getItemID(cmd *cli.Command) string {
-	return workflowy.SanitizeNodeID(cmd.String("item-id"))
+	return cmd.String("item-id")
 }
 
 func getItemIDArg(cmd *cli.Command) string {
-	return workflowy.SanitizeNodeID(cmd.StringArg("item_id"))
+	return cmd.StringArg("item_id")
 }
