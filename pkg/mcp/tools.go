@@ -786,7 +786,7 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 	return mcpserver.ServerTool{
 		Tool: mcptypes.NewTool(
 			ToolTransform,
-			mcptypes.WithDescription("Transform node names and/or notes using built-in or shell transformations. Built-in: "+strings.Join(transform.ListBuiltins(), ", ")),
+			mcptypes.WithDescription("Transform node names and/or notes using built-in transformations, shell commands, or split by separator. Built-in: "+strings.Join(transform.ListBuiltins(), ", ")),
 			mcptypes.WithString("item_id",
 				mcptypes.Description("Node ID to transform (includes descendants)"),
 				mcptypes.Required(),
@@ -796,6 +796,9 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 			),
 			mcptypes.WithString("exec",
 				mcptypes.Description("Shell command template (use {} for input text). Alternative to transform_name."),
+			),
+			mcptypes.WithString("separator",
+				mcptypes.Description("Split text by separator and create child nodes for each part. Use \\n for newline, \\t for tab."),
 			),
 			mcptypes.WithNumber("depth",
 				mcptypes.Description("Maximum depth to traverse (-1 for unlimited)"),
@@ -820,14 +823,6 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultError("item_id is required"), nil
 			}
 
-			t, err := transform.ResolveTransformer(
-				strings.TrimSpace(req.GetString("transform_name", "")),
-				strings.TrimSpace(req.GetString("exec", "")),
-			)
-			if err != nil {
-				return mcptypes.NewToolResultError(err.Error()), nil
-			}
-
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
@@ -845,6 +840,19 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 					return mcptypes.NewToolResultErrorf("item not found: %s", itemID), nil
 				}
 				searchRoot = []*workflowy.Item{rootItem}
+			}
+
+			separator := req.GetString("separator", "")
+			if separator != "" {
+				return b.handleSplitTransform(ctx, req, searchRoot, separator)
+			}
+
+			t, err := transform.ResolveTransformer(
+				strings.TrimSpace(req.GetString("transform_name", "")),
+				strings.TrimSpace(req.GetString("exec", "")),
+			)
+			if err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
 			opts := transform.Options{
@@ -865,6 +873,22 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 			return mcptypes.NewToolResultJSON(map[string]any{"results": results})
 		},
 	}
+}
+
+func (b ToolBuilder) handleSplitTransform(ctx context.Context, req mcptypes.CallToolRequest, searchRoot []*workflowy.Item, separator string) (*mcptypes.CallToolResult, error) {
+	separator = transform.UnescapeSeparator(separator)
+	fields := transform.DetermineFields(req.GetBool("name", false), req.GetBool("note", false))
+	dryRun := req.GetBool("dry_run", true)
+	depth := req.GetInt("depth", -1)
+
+	var results []transform.SplitResult
+	transform.CollectSplits(searchRoot, separator, fields, true, 0, depth, &results)
+
+	if !dryRun {
+		transform.ApplySplitResults(ctx, b.client, results)
+	}
+
+	return mcptypes.NewToolResultJSON(map[string]any{"results": results})
 }
 
 // fetchItems mirrors the CLI logic: depth >=4 or -1 uses export API; otherwise GET API.

@@ -269,6 +269,13 @@ func (r SplitResult) String() string {
 	return fmt.Sprintf("%s: \"%s\" %s %d children", r.ParentID, r.Original, status, len(r.Parts))
 }
 
+func UnescapeSeparator(s string) string {
+	s = strings.ReplaceAll(s, "\\n", "\n")
+	s = strings.ReplaceAll(s, "\\t", "\t")
+	s = strings.ReplaceAll(s, "\\r", "\r")
+	return s
+}
+
 func Split(text, separator string, skipEmpty bool) []string {
 	parts := strings.Split(text, separator)
 	if !skipEmpty {

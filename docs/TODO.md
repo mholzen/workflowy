@@ -2,7 +2,6 @@
 
 ## SHOULD DO
 
-- FEATURE: when a short id is resolved, log the full ID with log level INFO
 - FEATURE: Add --name and --note flags to search and replace commands to allow
   searching/replacing in notes (currently only operates on name)
 - FEATURE: add a more general purpose Dockerfile for easy installation from agents
@@ -15,6 +14,11 @@
 
 ## SHOULD CONSIDER
 
+- CODE: Extract shared parameter structures for CLI and MCP feature parity
+  - Motivation: CLI features (like split transform's --separator flag) can be added
+    without corresponding MCP tool parameters, causing feature drift
+  - Solution: Create shared config structs in `pkg` layer that both CLI flags and
+    MCP tool parameters populate, ensuring both interfaces expose the same capabilities
 - 'list' could return hierarchical list (unless --flat), simply identical to
   'get' without top item (default depth for list should probably be 1)
 - document bookmarklet

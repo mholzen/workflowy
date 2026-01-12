@@ -156,7 +156,7 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 }
 
 func runSplitTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client, searchRoot []*workflowy.Item, separator, format string) error {
-	separator = unescapeSeparator(separator)
+	separator = transform.UnescapeSeparator(separator)
 
 	fields := transform.DetermineFields(cmd.Bool("name"), cmd.Bool("note"))
 	dryRun := cmd.Bool("dry-run")
@@ -179,13 +179,6 @@ func runSplitTransform(ctx context.Context, cmd *cli.Command, client workflowy.C
 	}
 
 	return printSplitResults(results, format, dryRun)
-}
-
-func unescapeSeparator(s string) string {
-	s = strings.ReplaceAll(s, "\\n", "\n")
-	s = strings.ReplaceAll(s, "\\t", "\t")
-	s = strings.ReplaceAll(s, "\\r", "\r")
-	return s
 }
 
 func printSplitResults(results []transform.SplitResult, format string, dryRun bool) error {
