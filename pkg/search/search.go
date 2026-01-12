@@ -1,3 +1,5 @@
+// TODO: Add --name and --note flags to search command to allow searching in notes
+// (currently only searches in item.Name)
 package search
 
 import (

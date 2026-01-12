@@ -1,3 +1,5 @@
+// TODO: Add --name and --note flags to replace command to allow replacing in notes
+// (currently only replaces in item.Name)
 package replace
 
 import (
