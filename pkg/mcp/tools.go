@@ -21,6 +21,7 @@ const (
 	ToolList           = "workflowy_list"
 	ToolSearch         = "workflowy_search"
 	ToolTargets        = "workflowy_targets"
+	ToolID             = "workflowy_id"
 	ToolCreate         = "workflowy_create"
 	ToolUpdate         = "workflowy_update"
 	ToolDelete         = "workflowy_delete"
@@ -51,6 +52,7 @@ func (b ToolBuilder) BuildTools(toolNames []string) ([]mcpserver.ServerTool, err
 		ToolList:           b.buildListTool,
 		ToolSearch:         b.buildSearchTool,
 		ToolTargets:        b.buildTargetsTool,
+		ToolID:             b.buildIDTool,
 		ToolCreate:         b.buildCreateTool,
 		ToolUpdate:         b.buildUpdateTool,
 		ToolDelete:         b.buildDeleteTool,
@@ -235,6 +237,32 @@ func (b ToolBuilder) buildTargetsTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot list targets", err), nil
 			}
 			return mcptypes.NewToolResultJSON(map[string]any{"targets": response.Targets})
+		},
+	}
+}
+
+func (b ToolBuilder) buildIDTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolID,
+			mcptypes.WithDescription("Resolve a short ID or target key to full UUID"),
+			mcptypes.WithString("id",
+				mcptypes.Description("Short ID (12 hex chars) or target key to resolve"),
+				mcptypes.Required(),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			rawID := strings.TrimSpace(req.GetString("id", ""))
+			if rawID == "" {
+				return mcptypes.NewToolResultError("id is required"), nil
+			}
+
+			fullID, err := workflowy.ResolveNodeID(ctx, b.client, rawID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
+			}
+
+			return mcptypes.NewToolResultJSON(map[string]string{"id": fullID})
 		},
 	}
 }

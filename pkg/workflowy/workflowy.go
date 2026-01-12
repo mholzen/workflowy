@@ -107,6 +107,7 @@ func ResolveShortID(ctx context.Context, client Client, shortID string) (string,
 	case 0:
 		return "", fmt.Errorf("no node found with short ID: %s", shortID)
 	case 1:
+		slog.Info("resolved short ID", "short_id", shortID, "full_id", matches[0])
 		return matches[0], nil
 	default:
 		return "", fmt.Errorf("multiple nodes match short ID %s: %v", shortID, matches)

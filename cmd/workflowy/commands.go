@@ -29,6 +29,7 @@ func getCommands() []*cli.Command {
 		getSearchCommand(),
 		getReplaceCommand(),
 		getTransformCommand(),
+		getIDCommand(),
 		getMcpCommand(),
 		getVersionCommand(),
 	}
@@ -802,6 +803,36 @@ Examples:
 			}
 			return mcp.RunServer(ctx, serverConfig)
 		},
+	}
+}
+
+func getIDCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "id",
+		Usage: "Resolve a short ID or target key to full UUID",
+		Arguments: []cli.Argument{
+			&cli.StringArg{
+				Name:      "id",
+				UsageText: "<short-id or target-key>",
+			},
+		},
+		Flags: []cli.Flag{
+			getAPIKeyFlag(),
+		},
+		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+			rawID := cmd.StringArg("id")
+			if rawID == "" {
+				return fmt.Errorf("id is required")
+			}
+
+			fullID, err := workflowy.ResolveNodeID(ctx, client, rawID)
+			if err != nil {
+				return err
+			}
+
+			fmt.Println(fullID)
+			return nil
+		}),
 	}
 }
 
