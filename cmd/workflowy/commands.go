@@ -28,6 +28,7 @@ func getCommands() []*cli.Command {
 		getReportCommand(),
 		getSearchCommand(),
 		getReplaceCommand(),
+		getTransformCommand(),
 		getMcpCommand(),
 		getVersionCommand(),
 	}
@@ -776,7 +777,7 @@ The server communicates via stdio using the Model Context Protocol (MCP).
 
 Tool groups:
   read   Get, List, Search, Targets, and Report tools (default)
-  write  Create, Update, Delete, Complete, Uncomplete, Replace tools
+  write  Create, Update, Delete, Complete, Uncomplete, Replace, Transform tools
   all    All available tools
 
 Examples:

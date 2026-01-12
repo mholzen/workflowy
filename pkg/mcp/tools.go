@@ -12,6 +12,7 @@ import (
 	"github.com/mholzen/workflowy/pkg/replace"
 	"github.com/mholzen/workflowy/pkg/reports"
 	"github.com/mholzen/workflowy/pkg/search"
+	"github.com/mholzen/workflowy/pkg/transform"
 	"github.com/mholzen/workflowy/pkg/workflowy"
 )
 
@@ -30,6 +31,7 @@ const (
 	ToolReportCreated  = "workflowy_report_created"
 	ToolReportModified = "workflowy_report_modified"
 	ToolReplace        = "workflowy_replace"
+	ToolTransform      = "workflowy_transform"
 )
 
 // ToolBuilder wires Workflowy operations into MCP tool handlers.
@@ -59,6 +61,7 @@ func (b ToolBuilder) BuildTools(toolNames []string) ([]mcpserver.ServerTool, err
 		ToolReportCreated:  b.buildReportCreatedTool,
 		ToolReportModified: b.buildReportModifiedTool,
 		ToolReplace:        b.buildReplaceTool,
+		ToolTransform:      b.buildTransformTool,
 	}
 
 	var tools []mcpserver.ServerTool
@@ -744,6 +747,91 @@ func (b ToolBuilder) buildReplaceTool() mcpserver.ServerTool {
 					}
 					result.Applied = true
 				}
+			}
+
+			return mcptypes.NewToolResultJSON(map[string]any{"results": results})
+		},
+	}
+}
+
+func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolTransform,
+			mcptypes.WithDescription("Transform node names and/or notes using built-in or shell transformations. Built-in: "+strings.Join(transform.ListBuiltins(), ", ")),
+			mcptypes.WithString("item_id",
+				mcptypes.Description("Node ID to transform (includes descendants)"),
+				mcptypes.Required(),
+			),
+			mcptypes.WithString("transform_name",
+				mcptypes.Description("Built-in transform name: "+strings.Join(transform.ListBuiltins(), ", ")),
+			),
+			mcptypes.WithString("exec",
+				mcptypes.Description("Shell command template (use {} for input text). Alternative to transform_name."),
+			),
+			mcptypes.WithNumber("depth",
+				mcptypes.Description("Maximum depth to traverse (-1 for unlimited)"),
+				mcptypes.DefaultNumber(-1),
+			),
+			mcptypes.WithBoolean("name",
+				mcptypes.Description("Transform node names (default true if neither name nor note specified)"),
+				mcptypes.DefaultBool(false),
+			),
+			mcptypes.WithBoolean("note",
+				mcptypes.Description("Transform node notes"),
+				mcptypes.DefaultBool(false),
+			),
+			mcptypes.WithBoolean("dry_run",
+				mcptypes.Description("Show what would be transformed without applying"),
+				mcptypes.DefaultBool(true),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			rawItemID := strings.TrimSpace(req.GetString("item_id", ""))
+			if rawItemID == "" {
+				return mcptypes.NewToolResultError("item_id is required"), nil
+			}
+
+			t, err := transform.ResolveTransformer(
+				strings.TrimSpace(req.GetString("transform_name", "")),
+				strings.TrimSpace(req.GetString("exec", "")),
+			)
+			if err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+			}
+
+			items, err := b.loadExportTree(ctx)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
+			}
+
+			searchRoot := items
+			if itemID != "None" {
+				rootItem := workflowy.FindItemByID(items, itemID)
+				if rootItem == nil {
+					return mcptypes.NewToolResultErrorf("item not found: %s", itemID), nil
+				}
+				searchRoot = []*workflowy.Item{rootItem}
+			}
+
+			opts := transform.Options{
+				Transformer: t,
+				Fields:      transform.DetermineFields(req.GetBool("name", false), req.GetBool("note", false)),
+				DryRun:      req.GetBool("dry_run", true),
+				Interactive: false,
+				Depth:       req.GetInt("depth", -1),
+			}
+
+			results := make([]transform.Result, 0)
+			transform.CollectTransformations(searchRoot, opts, 0, &results)
+
+			if !opts.DryRun {
+				transform.ApplyResults(ctx, b.client, results)
 			}
 
 			return mcptypes.NewToolResultJSON(map[string]any{"results": results})

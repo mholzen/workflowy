@@ -146,6 +146,7 @@ var (
 		ToolReportCreated,
 		ToolReportModified,
 		ToolReplace,
+		ToolTransform,
 	}
 
 	readTools = []string{
@@ -166,6 +167,7 @@ var (
 		ToolComplete,
 		ToolUncomplete,
 		ToolReplace,
+		ToolTransform,
 	}
 
 	groupMap = map[string][]string{
@@ -189,6 +191,7 @@ var (
 		"report_created":  ToolReportCreated,
 		"report_modified": ToolReportModified,
 		"replace":         ToolReplace,
+		"transform":       ToolTransform,
 	}
 
 	aliasMapFull = func() map[string]string {

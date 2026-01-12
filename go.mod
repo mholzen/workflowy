@@ -6,6 +6,7 @@ require (
 	github.com/mark3labs/mcp-go v0.43.2
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli/v3 v3.6.1
+	golang.org/x/text v0.32.0
 )
 
 require (
