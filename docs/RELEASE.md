@@ -22,9 +22,24 @@ This document describes how to create a new release of the Workflowy CLI.
 
 ## Release Steps
 
-### 1. Update Version Documentation
+### 1. Update Version References
 
-Update any version references in documentation if needed:
+Update version in `server.json` (MCP registry manifest):
+```bash
+# Update both "version" and the Docker tag in "identifier"
+# Example: for releasing v0.7.0
+{
+  "version": "0.7.0",
+  "packages": [
+    {
+      "identifier": "ghcr.io/mholzen/workflowy:0.7.0",
+      ...
+    }
+  ]
+}
+```
+
+Update any other version references if needed:
 - `README.md`
 - Any other docs mentioning version
 
@@ -112,6 +127,27 @@ This will:
    # Verify version
    workflowy version
    ```
+
+### 7. Publish Docker Image (MCP Registry)
+
+Build and push the Docker image to GitHub Container Registry for the MCP registry:
+
+```bash
+# Login to ghcr.io (requires PAT with write:packages scope)
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u mholzen --password-stdin
+
+# Build the image
+docker build -t ghcr.io/mholzen/workflowy:0.7.0 .
+
+# Push to registry
+docker push ghcr.io/mholzen/workflowy:0.7.0
+
+# Optionally tag as latest
+docker tag ghcr.io/mholzen/workflowy:0.7.0 ghcr.io/mholzen/workflowy:latest
+docker push ghcr.io/mholzen/workflowy:latest
+```
+
+**Note:** The `GITHUB_TOKEN` needs `write:packages` scope. Create one at https://github.com/settings/tokens if needed.
 
 ## What Gets Released
 

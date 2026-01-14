@@ -5,8 +5,8 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /workflowy ./cmd/workflowy
 
-FROM alpine:3.21
+FROM node:24-alpine
+RUN npm install -g mcp-proxy@5.12.0
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /workflowy /usr/local/bin/workflowy
-LABEL io.modelcontextprotocol.server.name="io.github.mholzen/workflowy"
-ENTRYPOINT ["workflowy", "mcp"]
+ENTRYPOINT ["mcp-proxy", "workflowy", "--", "mcp"]

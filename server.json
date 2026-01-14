@@ -1,0 +1,27 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.mholzen/workflowy",
+  "description": "Create, update, complete nodes, search & replace with regex and dry run, usage reports, transforms",
+  "repository": {
+    "url": "https://github.com/mholzen/workflowy",
+    "source": "github"
+  },
+  "version": "0.6.1",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/mholzen/workflowy:0.6.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "WORKFLOWY_API_KEY",
+          "description": "Your Workflowy API key (get it from https://workflowy.com/api-key/)",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
