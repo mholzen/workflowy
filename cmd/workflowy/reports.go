@@ -140,7 +140,7 @@ func loadAndCountDescendantsWithBackupProvider(ctx context.Context, cmd *cli.Com
 		return nil, err
 	}
 
-	itemID, err := workflowy.ResolveNodeID(ctx, client, getItemID(cmd))
+	itemID, err := workflowy.ResolveNodeID(ctx, client, getID(cmd))
 	if err != nil {
 		return nil, fmt.Errorf("cannot resolve item ID: %w", err)
 	}
@@ -228,7 +228,7 @@ func countReportAction(deps ReportDeps) func(ctx context.Context, cmd *cli.Comma
 			return err
 		}
 
-		itemID, err := workflowy.ResolveNodeID(ctx, client, getItemID(cmd))
+		itemID, err := workflowy.ResolveNodeID(ctx, client, getID(cmd))
 		if err != nil {
 			return fmt.Errorf("cannot resolve item ID: %w", err)
 		}

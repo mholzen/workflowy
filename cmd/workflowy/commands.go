@@ -38,7 +38,8 @@ func getCommands() []*cli.Command {
 func getGetCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "get",
-		Usage:     "Get item with optional recursive children (root if omitted)",
+		Usage:     "Get node and descendants",
+		UsageText: "workflowy get [<id>] [options]",
 		Arguments: getFetchArguments(),
 		Flags:     getFetchFlags(),
 		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
@@ -49,7 +50,7 @@ func getGetCommand() *cli.Command {
 
 			itemID, err := workflowy.ResolveNodeID(ctx, client, params.itemID)
 			if err != nil {
-				return fmt.Errorf("cannot resolve item ID: %w", err)
+				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
 
 			result, err := fetchItems(cmd, ctx, client, itemID, params.depth)
@@ -66,7 +67,8 @@ func getGetCommand() *cli.Command {
 func getListCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "list",
-		Usage:     "List descendants of an item as flat list (root if omitted)",
+		Usage:     "List descendants as flat list",
+		UsageText: "workflowy list [<id>] [options]",
 		Arguments: getFetchArguments(),
 		Flags:     getFetchFlags(),
 		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
@@ -77,7 +79,7 @@ func getListCommand() *cli.Command {
 
 			itemID, err := workflowy.ResolveNodeID(ctx, client, params.itemID)
 			if err != nil {
-				return fmt.Errorf("cannot resolve item ID: %w", err)
+				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
 
 			treeResult, err := fetchItems(cmd, ctx, client, itemID, params.depth)
@@ -95,8 +97,9 @@ func getListCommand() *cli.Command {
 
 func getCreateCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "create",
-		Usage: "Create a new node",
+		Name:      "create",
+		Usage:     "Create a new node",
+		UsageText: "workflowy create [options] <name>",
 		Arguments: []cli.Argument{
 			&cli.StringArg{
 				Name:      "name",
@@ -107,7 +110,7 @@ func getCreateCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:  "parent-id",
 				Value: "None",
-				Usage: "Parent node UUID, target key, or \"None\" for top-level",
+				Usage: "Parent ID: UUID or target key (default: root)",
 			},
 			&cli.StringFlag{
 				Name:  "position",
@@ -226,12 +229,13 @@ func getCreateCommand() *cli.Command {
 
 func getUpdateCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "update",
-		Usage: "Update an existing node",
+		Name:      "update",
+		Usage:     "Update an existing node",
+		UsageText: "workflowy update <id> [<name>] [options]",
 		Arguments: []cli.Argument{
 			&cli.StringArg{
-				Name:      "item_id",
-				UsageText: "<item_id>",
+				Name:      "id",
+				UsageText: "<id>",
 			},
 			&cli.StringArg{
 				Name:      "nameArgument",
@@ -245,14 +249,14 @@ func getUpdateCommand() *cli.Command {
 				return err
 			}
 
-			rawItemID := getItemIDArg(cmd)
+			rawItemID := cmd.StringArg("id")
 			if rawItemID == "" {
-				return fmt.Errorf("item_id is required")
+				return fmt.Errorf("id is required")
 			}
 
 			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
 			if err != nil {
-				return fmt.Errorf("cannot resolve item ID: %w", err)
+				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
 
 			content := cmd.StringArg("nameArgument")
@@ -302,12 +306,13 @@ func getUpdateCommand() *cli.Command {
 
 func getDeleteCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "delete",
-		Usage: "Permanently delete a node",
+		Name:      "delete",
+		Usage:     "Permanently delete a node",
+		UsageText: "workflowy delete <id> [options]",
 		Arguments: []cli.Argument{
 			&cli.StringArg{
-				Name:      "item_id",
-				UsageText: "<item_id>",
+				Name:      "id",
+				UsageText: "<id>",
 			},
 		},
 		Flags: getMethodFlags(),
@@ -317,14 +322,14 @@ func getDeleteCommand() *cli.Command {
 				return err
 			}
 
-			rawItemID := getItemIDArg(cmd)
+			rawItemID := cmd.StringArg("id")
 			if rawItemID == "" {
-				return fmt.Errorf("item_id is required")
+				return fmt.Errorf("id is required")
 			}
 
 			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
 			if err != nil {
-				return fmt.Errorf("cannot resolve item ID: %w", err)
+				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
 
 			slog.Debug("deleting node", "item_id", itemID)
@@ -354,9 +359,10 @@ func getUncompleteCommand() *cli.Command {
 
 func getTargetsCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "targets",
-		Usage: "List all available targets (shortcuts and system targets)",
-		Flags: getMethodFlags(),
+		Name:      "targets",
+		Usage:     "List all available targets (shortcuts and system targets)",
+		UsageText: "workflowy targets [options]",
+		Flags:     getMethodFlags(),
 		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
@@ -377,12 +383,13 @@ func getTargetsCommand() *cli.Command {
 
 func getCompletionCommand(commandName, usage, action string) *cli.Command {
 	return &cli.Command{
-		Name:  commandName,
-		Usage: usage,
+		Name:      commandName,
+		Usage:     usage,
+		UsageText: "workflowy " + commandName + " <id> [options]",
 		Arguments: []cli.Argument{
 			&cli.StringArg{
-				Name:      "item_id",
-				UsageText: "<item_id>",
+				Name:      "id",
+				UsageText: "<id>",
 			},
 		},
 		Flags: getMethodFlags(),
@@ -392,14 +399,14 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 				return err
 			}
 
-			rawItemID := getItemIDArg(cmd)
+			rawItemID := cmd.StringArg("id")
 			if rawItemID == "" {
-				return fmt.Errorf("item_id is required")
+				return fmt.Errorf("id is required")
 			}
 
 			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
 			if err != nil {
-				return fmt.Errorf("cannot resolve item ID: %w", err)
+				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
 
 			slog.Debug(action+" node", "item_id", itemID)
@@ -428,8 +435,9 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 
 func getReportCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "report",
-		Usage: "Generate reports from Workflowy data",
+		Name:      "report",
+		Usage:     "Generate reports from Workflowy data",
+		UsageText: "workflowy report <subcommand> [options]",
 		Commands: []*cli.Command{
 			getCountReportCommand(),
 			getChildrenReportCommand(),
@@ -445,8 +453,9 @@ func getCountReportCommand() *cli.Command {
 
 func getCountReportCommandWithDeps(deps ReportDeps, clientProvider ClientProvider) *cli.Command {
 	return &cli.Command{
-		Name:  "count",
-		Usage: "Generate descendant count report",
+		Name:      "count",
+		Usage:     "Generate descendant count report",
+		UsageText: "workflowy report count [options]",
 		Flags: getReportFlags(
 			&cli.Float64Flag{
 				Name:  "threshold",
@@ -460,9 +469,10 @@ func getCountReportCommandWithDeps(deps ReportDeps, clientProvider ClientProvide
 
 func getChildrenReportCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "children",
-		Usage: "Rank nodes by immediate children count",
-		Flags: getRankingReportFlags(),
+		Name:      "children",
+		Usage:     "Rank nodes by immediate children count",
+		UsageText: "workflowy report children [options]",
+		Flags:     getRankingReportFlags(),
 		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			descendants, err := loadAndCountDescendants(ctx, cmd, client)
 			if err != nil {
@@ -486,9 +496,10 @@ func getChildrenReportCommand() *cli.Command {
 
 func getCreatedReportCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "created",
-		Usage: "Rank nodes by creation date (oldest first)",
-		Flags: getRankingReportFlags(),
+		Name:      "created",
+		Usage:     "Rank nodes by creation date (oldest first)",
+		UsageText: "workflowy report created [options]",
+		Flags:     getRankingReportFlags(),
 		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			descendants, err := loadAndCountDescendants(ctx, cmd, client)
 			if err != nil {
@@ -512,9 +523,10 @@ func getCreatedReportCommand() *cli.Command {
 
 func getModifiedReportCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "modified",
-		Usage: "Rank nodes by modification date (oldest first)",
-		Flags: getRankingReportFlags(),
+		Name:      "modified",
+		Usage:     "Rank nodes by modification date (oldest first)",
+		UsageText: "workflowy report modified [options]",
+		Flags:     getRankingReportFlags(),
 		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			descendants, err := loadAndCountDescendants(ctx, cmd, client)
 			if err != nil {
@@ -538,8 +550,9 @@ func getModifiedReportCommand() *cli.Command {
 
 func getSearchCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "search",
-		Usage: "Search for items by name",
+		Name:      "search",
+		Usage:     "Search for nodes by name",
+		UsageText: "workflowy search <pattern> [options]",
 		Arguments: []cli.Argument{
 			&cli.StringArg{
 				Name:      "pattern",
@@ -568,9 +581,9 @@ func getSearchCommand() *cli.Command {
 				return err
 			}
 
-			itemID, err := workflowy.ResolveNodeID(ctx, client, getItemID(cmd))
+			itemID, err := workflowy.ResolveNodeID(ctx, client, getID(cmd))
 			if err != nil {
-				return fmt.Errorf("cannot resolve item ID: %w", err)
+				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
 			rootItem := findRootItem(items, itemID)
 			if rootItem == nil && itemID != "None" {
@@ -597,8 +610,9 @@ func getSearchCommand() *cli.Command {
 
 func getReplaceCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "replace",
-		Usage: "Search and replace text in node names using regular expressions",
+		Name:      "replace",
+		Usage:     "Search and replace text in node names using regular expressions",
+		UsageText: "workflowy replace <pattern> <substitution> [options]",
 		Description: `Search for a pattern and replace matches in node names.
 
 The pattern is a regular expression. The substitution string supports group
@@ -626,7 +640,7 @@ Examples:
   workflowy replace --interactive "pattern" "replacement"
 
   # Limit to a specific subtree
-  workflowy replace --parent-id=abc123 --depth=3 "pattern" "replacement"`,
+  workflowy replace --parent-id=1a2b3c --depth=3 "pattern" "replacement"`,
 		Arguments: []cli.Argument{
 			&cli.StringArg{
 				Name:      "pattern",
@@ -770,8 +784,9 @@ Examples:
 
 func getMcpCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "mcp",
-		Usage: "Run as MCP server (stdio transport)",
+		Name:      "mcp",
+		Usage:     "Run as MCP server (stdio transport)",
+		UsageText: "workflowy mcp [options]",
 		Description: `Start the Workflowy MCP server for integration with AI assistants like Claude.
 
 The server communicates via stdio using the Model Context Protocol (MCP).
@@ -808,12 +823,13 @@ Examples:
 
 func getIDCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "id",
-		Usage: "Resolve a short ID or target key to full UUID",
+		Name:      "id",
+		Usage:     "Resolve a short ID or target key to full UUID",
+		UsageText: "workflowy id <id>",
 		Arguments: []cli.Argument{
 			&cli.StringArg{
 				Name:      "id",
-				UsageText: "<short-id or target-key>",
+				UsageText: "<id>",
 			},
 		},
 		Flags: []cli.Flag{
@@ -838,8 +854,9 @@ func getIDCommand() *cli.Command {
 
 func getVersionCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "version",
-		Usage: "Show version information",
+		Name:      "version",
+		Usage:     "Show version information",
+		UsageText: "workflowy version",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			fmt.Printf("workflowy version %s\n", version)
 			fmt.Printf("commit: %s\n", commit)

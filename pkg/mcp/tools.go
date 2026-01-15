@@ -81,9 +81,9 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 	return mcpserver.ServerTool{
 		Tool: mcptypes.NewTool(
 			ToolGet,
-			mcptypes.WithDescription("Get a node and optional descendants"),
-			mcptypes.WithString("item_id",
-				mcptypes.Description("Workflowy item ID (None for root)"),
+			mcptypes.WithDescription("Get node and descendants"),
+			mcptypes.WithString("id",
+				mcptypes.Description("ID (default: root)"),
 				mcptypes.DefaultString("None"),
 			),
 			mcptypes.WithNumber("depth",
@@ -96,13 +96,13 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("id", "None")
 			depth := req.GetInt("depth", 2)
 			includeEmpty := req.GetBool("include_empty_names", false)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
-				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
 			result, err := b.fetchItems(ctx, itemID, depth)
@@ -128,9 +128,9 @@ func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
 	return mcpserver.ServerTool{
 		Tool: mcptypes.NewTool(
 			ToolList,
-			mcptypes.WithDescription("List descendants of a node as a flat list"),
-			mcptypes.WithString("item_id",
-				mcptypes.Description("Workflowy item ID (None for root)"),
+			mcptypes.WithDescription("List descendants as flat list"),
+			mcptypes.WithString("id",
+				mcptypes.Description("ID (default: root)"),
 				mcptypes.DefaultString("None"),
 			),
 			mcptypes.WithNumber("depth",
@@ -143,13 +143,13 @@ func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("id", "None")
 			depth := req.GetInt("depth", 2)
 			includeEmpty := req.GetBool("include_empty_names", false)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
-				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
 			data, err := b.fetchItems(ctx, itemID, depth)
@@ -176,8 +176,8 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				mcptypes.Description("Search text or regular expression"),
 				mcptypes.Required(),
 			),
-			mcptypes.WithString("item_id",
-				mcptypes.Description("Limit search to this subtree (None for root)"),
+			mcptypes.WithString("id",
+				mcptypes.Description("ID to search within (default: root)"),
 				mcptypes.DefaultString("None"),
 			),
 			mcptypes.WithBoolean("regexp",
@@ -195,13 +195,13 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultError("pattern is required"), nil
 			}
 
-			rawItemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("id", "None")
 			useRegexp := req.GetBool("regexp", false)
 			ignoreCase := req.GetBool("ignore_case", false)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
-				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
 			items, err := b.loadExportTree(ctx)
@@ -247,7 +247,7 @@ func (b ToolBuilder) buildIDTool() mcpserver.ServerTool {
 			ToolID,
 			mcptypes.WithDescription("Resolve a short ID or target key to full UUID"),
 			mcptypes.WithString("id",
-				mcptypes.Description("Short ID (12 hex chars) or target key to resolve"),
+				mcptypes.Description("ID to resolve to full UUID"),
 				mcptypes.Required(),
 			),
 		),
@@ -277,7 +277,7 @@ func (b ToolBuilder) buildCreateTool() mcpserver.ServerTool {
 				mcptypes.Required(),
 			),
 			mcptypes.WithString("parent_id",
-				mcptypes.Description(`Parent node ID or "None" for top-level`),
+				mcptypes.Description("Parent ID: UUID or target key (default: root)"),
 				mcptypes.DefaultString("None"),
 			),
 			mcptypes.WithString("position",
@@ -339,8 +339,8 @@ func (b ToolBuilder) buildUpdateTool() mcpserver.ServerTool {
 		Tool: mcptypes.NewTool(
 			ToolUpdate,
 			mcptypes.WithDescription("Update an existing node"),
-			mcptypes.WithString("item_id",
-				mcptypes.Description("Node ID to update"),
+			mcptypes.WithString("id",
+				mcptypes.Description("ID to update"),
 				mcptypes.Required(),
 			),
 			mcptypes.WithString("name",
@@ -354,14 +354,14 @@ func (b ToolBuilder) buildUpdateTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := strings.TrimSpace(req.GetString("item_id", ""))
+			rawItemID := strings.TrimSpace(req.GetString("id", ""))
 			if rawItemID == "" {
-				return mcptypes.NewToolResultError("item_id is required"), nil
+				return mcptypes.NewToolResultError("id is required"), nil
 			}
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
-				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
 			name := strings.TrimSpace(req.GetString("name", ""))
@@ -399,20 +399,20 @@ func (b ToolBuilder) buildDeleteTool() mcpserver.ServerTool {
 		Tool: mcptypes.NewTool(
 			ToolDelete,
 			mcptypes.WithDescription("Delete a node"),
-			mcptypes.WithString("item_id",
-				mcptypes.Description("Node ID to delete"),
+			mcptypes.WithString("id",
+				mcptypes.Description("ID to delete"),
 				mcptypes.Required(),
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := strings.TrimSpace(req.GetString("item_id", ""))
+			rawItemID := strings.TrimSpace(req.GetString("id", ""))
 			if rawItemID == "" {
-				return mcptypes.NewToolResultError("item_id is required"), nil
+				return mcptypes.NewToolResultError("id is required"), nil
 			}
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
-				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
 			response, err := b.client.DeleteNode(ctx, itemID)
@@ -430,20 +430,20 @@ func (b ToolBuilder) buildCompleteTool() mcpserver.ServerTool {
 		Tool: mcptypes.NewTool(
 			ToolComplete,
 			mcptypes.WithDescription("Mark a node as complete"),
-			mcptypes.WithString("item_id",
-				mcptypes.Description("Node ID to complete"),
+			mcptypes.WithString("id",
+				mcptypes.Description("ID to complete"),
 				mcptypes.Required(),
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := strings.TrimSpace(req.GetString("item_id", ""))
+			rawItemID := strings.TrimSpace(req.GetString("id", ""))
 			if rawItemID == "" {
-				return mcptypes.NewToolResultError("item_id is required"), nil
+				return mcptypes.NewToolResultError("id is required"), nil
 			}
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
-				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
 			response, err := b.client.CompleteNode(ctx, itemID)
@@ -461,20 +461,20 @@ func (b ToolBuilder) buildUncompleteTool() mcpserver.ServerTool {
 		Tool: mcptypes.NewTool(
 			ToolUncomplete,
 			mcptypes.WithDescription("Mark a node as uncomplete"),
-			mcptypes.WithString("item_id",
-				mcptypes.Description("Node ID to uncomplete"),
+			mcptypes.WithString("id",
+				mcptypes.Description("ID to uncomplete"),
 				mcptypes.Required(),
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := strings.TrimSpace(req.GetString("item_id", ""))
+			rawItemID := strings.TrimSpace(req.GetString("id", ""))
 			if rawItemID == "" {
-				return mcptypes.NewToolResultError("item_id is required"), nil
+				return mcptypes.NewToolResultError("id is required"), nil
 			}
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
-				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
 			response, err := b.client.UncompleteNode(ctx, itemID)
@@ -492,8 +492,8 @@ func (b ToolBuilder) buildReportCountTool() mcpserver.ServerTool {
 		Tool: mcptypes.NewTool(
 			ToolReportCount,
 			mcptypes.WithDescription("Generate descendant count report"),
-			mcptypes.WithString("item_id",
-				mcptypes.Description("Workflowy item ID (None for root)"),
+			mcptypes.WithString("id",
+				mcptypes.Description("ID (default: root)"),
 				mcptypes.DefaultString("None"),
 			),
 			mcptypes.WithNumber("threshold",
@@ -506,12 +506,12 @@ func (b ToolBuilder) buildReportCountTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("id", "None")
 			threshold := req.GetFloat("threshold", 0.01)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
-				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
 			root, err := b.buildReportRoot(ctx, itemID)
@@ -541,8 +541,8 @@ func (b ToolBuilder) buildReportChildrenTool() mcpserver.ServerTool {
 		Tool: mcptypes.NewTool(
 			ToolReportChildren,
 			mcptypes.WithDescription("Rank nodes by immediate children count"),
-			mcptypes.WithString("item_id",
-				mcptypes.Description("Workflowy item ID (None for root)"),
+			mcptypes.WithString("id",
+				mcptypes.Description("ID (default: root)"),
 				mcptypes.DefaultString("None"),
 			),
 			mcptypes.WithNumber("top_n",
@@ -555,12 +555,12 @@ func (b ToolBuilder) buildReportChildrenTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("id", "None")
 			topN := req.GetInt("top_n", 20)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
-				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
 			root, err := b.buildReportRoot(ctx, itemID)
@@ -587,8 +587,8 @@ func (b ToolBuilder) buildReportCreatedTool() mcpserver.ServerTool {
 		Tool: mcptypes.NewTool(
 			ToolReportCreated,
 			mcptypes.WithDescription("Rank nodes by creation date (oldest first)"),
-			mcptypes.WithString("item_id",
-				mcptypes.Description("Workflowy item ID (None for root)"),
+			mcptypes.WithString("id",
+				mcptypes.Description("ID (default: root)"),
 				mcptypes.DefaultString("None"),
 			),
 			mcptypes.WithNumber("top_n",
@@ -601,12 +601,12 @@ func (b ToolBuilder) buildReportCreatedTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("id", "None")
 			topN := req.GetInt("top_n", 20)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
-				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
 			root, err := b.buildReportRoot(ctx, itemID)
@@ -633,8 +633,8 @@ func (b ToolBuilder) buildReportModifiedTool() mcpserver.ServerTool {
 		Tool: mcptypes.NewTool(
 			ToolReportModified,
 			mcptypes.WithDescription("Rank nodes by modification date (oldest first)"),
-			mcptypes.WithString("item_id",
-				mcptypes.Description("Workflowy item ID (None for root)"),
+			mcptypes.WithString("id",
+				mcptypes.Description("ID (default: root)"),
 				mcptypes.DefaultString("None"),
 			),
 			mcptypes.WithNumber("top_n",
@@ -647,12 +647,12 @@ func (b ToolBuilder) buildReportModifiedTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := req.GetString("item_id", "None")
+			rawItemID := req.GetString("id", "None")
 			topN := req.GetInt("top_n", 20)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
-				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
 			root, err := b.buildReportRoot(ctx, itemID)
@@ -688,7 +688,7 @@ func (b ToolBuilder) buildReplaceTool() mcpserver.ServerTool {
 				mcptypes.Required(),
 			),
 			mcptypes.WithString("parent_id",
-				mcptypes.Description("Limit replacement to subtree under this node ID"),
+				mcptypes.Description("Parent ID to limit replacement scope: UUID or target key (default: root)"),
 				mcptypes.DefaultString("None"),
 			),
 			mcptypes.WithNumber("depth",
@@ -787,8 +787,8 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 		Tool: mcptypes.NewTool(
 			ToolTransform,
 			mcptypes.WithDescription("Transform node names and/or notes using built-in transformations, shell commands, or split by separator. Built-in: "+strings.Join(transform.ListBuiltins(), ", ")),
-			mcptypes.WithString("item_id",
-				mcptypes.Description("Node ID to transform (includes descendants)"),
+			mcptypes.WithString("id",
+				mcptypes.Description("ID to transform (includes descendants)"),
 				mcptypes.Required(),
 			),
 			mcptypes.WithString("transform_name",
@@ -818,14 +818,14 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := strings.TrimSpace(req.GetString("item_id", ""))
+			rawItemID := strings.TrimSpace(req.GetString("id", ""))
 			if rawItemID == "" {
-				return mcptypes.NewToolResultError("item_id is required"), nil
+				return mcptypes.NewToolResultError("id is required"), nil
 			}
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
-				return mcptypes.NewToolResultErrorFromErr("cannot resolve item ID", err), nil
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
 			items, err := b.loadExportTree(ctx)

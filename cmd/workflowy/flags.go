@@ -75,14 +75,14 @@ func getReportFlags(commandFlags ...cli.Flag) []cli.Flag {
 	flags = append(flags, getMethodFlags()...)
 	flags = append(flags, commandFlags...)
 
-	flags = append(flags, getItemIdFlag("Item ID to start from (default: root)"))
+	flags = append(flags, getIdFlag("ID to start from (default: root)"))
 
 	flags = append(flags,
 		&cli.BoolFlag{
 			Name:  "upload",
 			Usage: "Upload report to Workflowy instead of printing",
 		},
-		getParentIdFlag("Parent node ID for uploaded report (default: root)"),
+		getParentIdFlag("Parent ID for uploaded report: UUID or target key (default: root)"),
 		&cli.StringFlag{
 			Name:  "position",
 			Usage: "Position in parent: top or bottom",
@@ -99,7 +99,7 @@ func getReportFlags(commandFlags ...cli.Flag) []cli.Flag {
 func getRankingReportFlags() []cli.Flag {
 	reportFlags := getReportFlags()
 	reportFlags = append(reportFlags,
-		getItemIdFlag("Item ID to start from (default: root)"),
+		getIdFlag("ID to start from (default: root)"),
 		&cli.IntFlag{
 			Name:  "top-n",
 			Value: 20,
@@ -112,9 +112,9 @@ func getRankingReportFlags() []cli.Flag {
 func getFetchArguments() []cli.Argument {
 	return []cli.Argument{
 		&cli.StringArg{
-			Name:      "item_id",
+			Name:      "id",
 			Value:     "None",
-			UsageText: "Workflowy item ID (default: root)",
+			UsageText: "<id> (default: root)",
 		},
 	}
 }
@@ -129,7 +129,7 @@ func getAndValidateFetchParams(cmd *cli.Command) (FetchParameters, error) {
 	if cmd.Bool("all") {
 		depth = -1
 	}
-	itemID := getItemIDArg(cmd)
+	itemID := cmd.StringArg("id")
 	return FetchParameters{format: format, depth: depth, itemID: itemID}, nil
 }
 
@@ -171,9 +171,9 @@ func getParentIdFlag(usage string) cli.Flag {
 	}
 }
 
-func getItemIdFlag(usage string) cli.Flag {
+func getIdFlag(usage string) cli.Flag {
 	return &cli.StringFlag{
-		Name:  "item-id",
+		Name:  "id",
 		Value: "None",
 		Usage: usage,
 	}
@@ -192,14 +192,14 @@ func getSearchFlags() []cli.Flag {
 	return []cli.Flag{
 		getIgnoreCaseFlag(),
 		getRegexpFlag(),
-		getItemIdFlag("Search within specific subtree (default: root)"),
+		getIdFlag("ID to search within (default: root)"),
 	}
 }
 
 func getReplaceFlags() []cli.Flag {
 	flags := []cli.Flag{
 		getIgnoreCaseFlag(),
-		getParentIdFlag("Limit replacement to subtree under this node ID"),
+		getParentIdFlag("Parent ID to limit replacement scope: UUID or target key (default: root)"),
 		getDepthFlag(-1, "Maximum depth to traverse (-1 for unlimited)"),
 		&cli.BoolFlag{
 			Name:  "interactive",
@@ -236,10 +236,7 @@ func getParentID(cmd *cli.Command) string {
 	return cmd.String("parent-id")
 }
 
-func getItemID(cmd *cli.Command) string {
-	return cmd.String("item-id")
+func getID(cmd *cli.Command) string {
+	return cmd.String("id")
 }
 
-func getItemIDArg(cmd *cli.Command) string {
-	return cmd.StringArg("item_id")
-}

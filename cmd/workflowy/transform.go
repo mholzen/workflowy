@@ -14,8 +14,9 @@ import (
 
 func getTransformCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "transform",
-		Usage: "Transform node names and/or notes using built-in or shell transformations",
+		Name:      "transform",
+		Usage:     "Transform node names and/or notes using built-in or shell transformations",
+		UsageText: "workflowy transform <id> [<transform-name>] [options]",
 		Description: `Apply transformations to node names and/or notes.
 
 Built-in transforms: ` + strings.Join(transform.ListBuiltins(), ", ") + `
@@ -24,20 +25,20 @@ By default, transforms are applied to names. Use --note to transform notes,
 or both --name and --note to transform both fields.
 
 The split transform (--separator) splits text into child nodes:
-  workflowy transform abc123 --separator=","     # Split by comma
-  workflowy transform abc123 --separator="\n"    # Split by newline
+  workflowy transform 1a2b3c --separator=","     # Split by comma
+  workflowy transform 1a2b3c --separator="\n"    # Split by newline
 
 Examples:
-  workflowy transform abc123 lowercase
-  workflowy transform abc123 uppercase --note
-  workflowy transform abc123 trim --name --note
-  workflowy transform abc123 -x 'echo {} | sed "s/foo/bar/"'
-  workflowy transform abc123 uppercase --dry-run --depth 2
-  workflowy transform abc123 --separator=", " --dry-run`,
+  workflowy transform 1a2b3c lowercase
+  workflowy transform 1a2b3c uppercase --note
+  workflowy transform 1a2b3c trim --name --note
+  workflowy transform 1a2b3c -x 'echo {} | sed "s/foo/bar/"'
+  workflowy transform 1a2b3c uppercase --dry-run --depth 2
+  workflowy transform 1a2b3c --separator=", " --dry-run`,
 		Arguments: []cli.Argument{
 			&cli.StringArg{
-				Name:      "item_id",
-				UsageText: "<node-id>",
+				Name:      "id",
+				UsageText: "<id>",
 			},
 			&cli.StringArg{
 				Name:      "transform_name",
@@ -90,14 +91,14 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 		return err
 	}
 
-	rawItemID := cmd.StringArg("item_id")
+	rawItemID := cmd.StringArg("id")
 	if rawItemID == "" {
-		return fmt.Errorf("node-id is required")
+		return fmt.Errorf("id is required")
 	}
 
 	itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
 	if err != nil {
-		return fmt.Errorf("cannot resolve item ID: %w", err)
+		return fmt.Errorf("cannot resolve ID: %w", err)
 	}
 
 	items, err := loadTree(ctx, cmd, client)
