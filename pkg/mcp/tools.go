@@ -817,6 +817,10 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 				mcptypes.Description("Show what would be transformed without applying"),
 				mcptypes.DefaultBool(true),
 			),
+			mcptypes.WithBoolean("as_child",
+				mcptypes.Description("Insert result as child of source node instead of replacing"),
+				mcptypes.DefaultBool(false),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := strings.TrimSpace(req.GetString("id", ""))
@@ -866,19 +870,21 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
+			asChild := req.GetBool("as_child", false)
 			opts := transform.Options{
 				Transformer: t,
 				Fields:      transform.DetermineFields(req.GetBool("name", false), req.GetBool("note", false)),
 				DryRun:      req.GetBool("dry_run", true),
 				Interactive: false,
 				Depth:       req.GetInt("depth", -1),
+				AsChild:     asChild,
 			}
 
 			results := make([]transform.Result, 0)
 			transform.CollectTransformations(searchRoot, opts, 0, &results)
 
 			if !opts.DryRun {
-				transform.ApplyResults(ctx, b.client, results)
+				transform.ApplyResultsWithOptions(ctx, b.client, results, asChild)
 			}
 
 			return mcptypes.NewToolResultJSON(map[string]any{"results": results})

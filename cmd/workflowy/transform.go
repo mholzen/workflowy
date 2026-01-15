@@ -31,6 +31,7 @@ Examples:
   workflowy transform 1a2b3c split                 # Split by "," (default)
   workflowy transform 1a2b3c split -s "\n"         # Split by newline
   workflowy transform 1a2b3c -x 'echo {} | tr a-z A-Z'
+  workflowy transform 1a2b3c uppercase --as-child  # Insert as child, keep original
   workflowy transform 1a2b3c uppercase --dry-run --depth 2`,
 		Arguments: []cli.Argument{
 			&cli.StringArg{
@@ -79,6 +80,10 @@ func getTransformFlags() []cli.Flag {
 		&cli.BoolFlag{
 			Name:  "note",
 			Usage: "Transform node notes",
+		},
+		&cli.BoolFlag{
+			Name:  "as-child",
+			Usage: "Insert result as child of source node instead of replacing",
 		},
 	)
 }
@@ -142,6 +147,7 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 		DryRun:      cmd.Bool("dry-run"),
 		Interactive: cmd.Bool("interactive"),
 		Depth:       int(cmd.Int("depth")),
+		AsChild:     cmd.Bool("as-child"),
 	}
 
 	var results []transform.Result
@@ -158,9 +164,9 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 
 	if !opts.DryRun {
 		if opts.Interactive {
-			applyResultsInteractively(ctx, client, results)
+			applyResultsInteractively(ctx, client, results, opts.AsChild)
 		} else {
-			transform.ApplyResults(ctx, client, results)
+			transform.ApplyResultsWithOptions(ctx, client, results, opts.AsChild)
 		}
 	}
 
@@ -226,8 +232,13 @@ func printSplitResults(results []transform.SplitResult, format string, dryRun bo
 	return nil
 }
 
-func applyResultsInteractively(ctx context.Context, client workflowy.Client, results []transform.Result) {
+func applyResultsInteractively(ctx context.Context, client workflowy.Client, results []transform.Result, asChild bool) {
 	reader := bufio.NewReader(os.Stdin)
+
+	action := "Transform"
+	if asChild {
+		action = "Create child from"
+	}
 
 	for i := range results {
 		result := &results[i]
@@ -235,8 +246,8 @@ func applyResultsInteractively(ctx context.Context, client workflowy.Client, res
 			continue
 		}
 
-		fmt.Printf("Transform %s (%s): \"%s\" → \"%s\"? [y/N/q] ",
-			result.ID, result.Field, result.Original, result.New)
+		fmt.Printf("%s %s (%s): \"%s\" → \"%s\"? [y/N/q] ",
+			action, result.ID, result.Field, result.Original, result.New)
 		response, err := reader.ReadString('\n')
 		if err != nil {
 			result.Skipped = true
@@ -261,13 +272,34 @@ func applyResultsInteractively(ctx context.Context, client workflowy.Client, res
 			continue
 		}
 
-		req := transform.BuildUpdateRequest(result)
-		if _, err := client.UpdateNode(ctx, result.ID, req); err != nil {
-			result.Skipped = true
-			result.SkipReason = fmt.Sprintf("update failed: %v", err)
-			continue
+		if asChild {
+			position := "top"
+			req := &workflowy.CreateNodeRequest{
+				ParentID: result.ID,
+				Position: &position,
+			}
+			if result.Field == "name" {
+				req.Name = result.New
+			} else if result.Field == "note" {
+				req.Note = &result.New
+			}
+			resp, err := client.CreateNode(ctx, req)
+			if err != nil {
+				result.Skipped = true
+				result.SkipReason = fmt.Sprintf("create child failed: %v", err)
+				continue
+			}
+			result.CreatedID = resp.ItemID
+			result.Applied = true
+		} else {
+			req := transform.BuildUpdateRequest(result)
+			if _, err := client.UpdateNode(ctx, result.ID, req); err != nil {
+				result.Skipped = true
+				result.SkipReason = fmt.Sprintf("update failed: %v", err)
+				continue
+			}
+			result.Applied = true
 		}
-		result.Applied = true
 	}
 }
 

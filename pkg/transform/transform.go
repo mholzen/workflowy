@@ -48,6 +48,7 @@ type Options struct {
 	DryRun      bool
 	Interactive bool
 	Depth       int
+	AsChild     bool
 }
 
 type Result struct {
@@ -61,6 +62,7 @@ type Result struct {
 	Skipped     bool            `json:"skipped,omitempty"`
 	SkipReason  string          `json:"skip_reason,omitempty"`
 	Error       error           `json:"error,omitempty"`
+	CreatedID   string          `json:"created_id,omitempty"`
 }
 
 func (r Result) String() string {
@@ -71,7 +73,11 @@ func (r Result) String() string {
 	if !r.Applied {
 		status = "→ (dry-run)"
 	}
-	return r.ID + " (" + r.Field + "): \"" + r.Original + "\" " + status + " \"" + r.New + "\""
+	result := r.ID + " (" + r.Field + "): \"" + r.Original + "\" " + status + " \"" + r.New + "\""
+	if r.CreatedID != "" {
+		result += " [child: " + r.CreatedID + "]"
+	}
+	return result
 }
 
 func CollectTransformations(items []*workflowy.Item, opts Options, depth int, results *[]Result) {
@@ -231,19 +237,44 @@ type Applier interface {
 }
 
 func ApplyResults(ctx context.Context, client Applier, results []Result) {
+	ApplyResultsWithOptions(ctx, client, results, false)
+}
+
+func ApplyResultsWithOptions(ctx context.Context, client Applier, results []Result, asChild bool) {
 	for i := range results {
 		result := &results[i]
 		if result.Skipped {
 			continue
 		}
 
-		req := BuildUpdateRequest(result)
-		if _, err := client.UpdateNode(ctx, result.ID, req); err != nil {
-			result.Skipped = true
-			result.SkipReason = fmt.Sprintf("update failed: %v", err)
-			continue
+		if asChild {
+			position := "top"
+			req := &workflowy.CreateNodeRequest{
+				ParentID: result.ID,
+				Position: &position,
+			}
+			if result.Field == "name" {
+				req.Name = result.New
+			} else if result.Field == "note" {
+				req.Note = &result.New
+			}
+			resp, err := client.CreateNode(ctx, req)
+			if err != nil {
+				result.Skipped = true
+				result.SkipReason = fmt.Sprintf("create child failed: %v", err)
+				continue
+			}
+			result.CreatedID = resp.ItemID
+			result.Applied = true
+		} else {
+			req := BuildUpdateRequest(result)
+			if _, err := client.UpdateNode(ctx, result.ID, req); err != nil {
+				result.Skipped = true
+				result.SkipReason = fmt.Sprintf("update failed: %v", err)
+				continue
+			}
+			result.Applied = true
 		}
-		result.Applied = true
 	}
 }
 
