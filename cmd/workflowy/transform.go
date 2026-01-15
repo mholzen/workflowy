@@ -19,22 +19,19 @@ func getTransformCommand() *cli.Command {
 		UsageText: "workflowy transform <id> [<transform-name>] [options]",
 		Description: `Apply transformations to node names and/or notes.
 
-Built-in transforms: ` + strings.Join(transform.ListBuiltins(), ", ") + `
+Built-in transforms: ` + strings.Join(transform.ListBuiltins(), ", ") + `, split
 
 By default, transforms are applied to names. Use --note to transform notes,
 or both --name and --note to transform both fields.
-
-The split transform (--separator) splits text into child nodes:
-  workflowy transform 1a2b3c --separator=","     # Split by comma
-  workflowy transform 1a2b3c --separator="\n"    # Split by newline
 
 Examples:
   workflowy transform 1a2b3c lowercase
   workflowy transform 1a2b3c uppercase --note
   workflowy transform 1a2b3c trim --name --note
-  workflowy transform 1a2b3c -x 'echo {} | sed "s/foo/bar/"'
-  workflowy transform 1a2b3c uppercase --dry-run --depth 2
-  workflowy transform 1a2b3c --separator=", " --dry-run`,
+  workflowy transform 1a2b3c split                 # Split by "," (default)
+  workflowy transform 1a2b3c split -s "\n"         # Split by newline
+  workflowy transform 1a2b3c -x 'echo {} | tr a-z A-Z'
+  workflowy transform 1a2b3c uppercase --dry-run --depth 2`,
 		Arguments: []cli.Argument{
 			&cli.StringArg{
 				Name:      "id",
@@ -72,7 +69,8 @@ func getTransformFlags() []cli.Flag {
 		&cli.StringFlag{
 			Name:    "separator",
 			Aliases: []string{"s"},
-			Usage:   "Split text by separator and create child nodes for each part",
+			Value:   ",",
+			Usage:   "Separator for split transform (default: \",\")",
 		},
 		&cli.BoolFlag{
 			Name:  "name",
@@ -115,12 +113,25 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 		searchRoot = []*workflowy.Item{rootItem}
 	}
 
-	separator := cmd.String("separator")
-	if separator != "" {
+	transformName := cmd.StringArg("transform_name")
+	execCmd := cmd.String("exec")
+
+	// Handle split transform
+	if transformName == "split" {
+		separator := cmd.String("separator")
 		return runSplitTransform(ctx, cmd, client, searchRoot, separator, format)
 	}
 
-	t, err := transform.ResolveTransformer(cmd.StringArg("transform_name"), cmd.String("exec"))
+	// Handle exec (no transform_name required)
+	if execCmd != "" {
+		if transformName != "" {
+			return fmt.Errorf("cannot use both transform name and --exec")
+		}
+	} else if transformName == "" {
+		return fmt.Errorf("transform name required (use a built-in, 'split', or --exec)")
+	}
+
+	t, err := transform.ResolveTransformer(transformName, execCmd)
 	if err != nil {
 		return err
 	}

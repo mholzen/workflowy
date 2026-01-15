@@ -786,19 +786,20 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 	return mcpserver.ServerTool{
 		Tool: mcptypes.NewTool(
 			ToolTransform,
-			mcptypes.WithDescription("Transform node names and/or notes using built-in transformations, shell commands, or split by separator. Built-in: "+strings.Join(transform.ListBuiltins(), ", ")),
+			mcptypes.WithDescription("Transform node names and/or notes. Built-in: "+strings.Join(transform.ListBuiltins(), ", ")+", split"),
 			mcptypes.WithString("id",
 				mcptypes.Description("ID to transform (includes descendants)"),
 				mcptypes.Required(),
 			),
 			mcptypes.WithString("transform_name",
-				mcptypes.Description("Built-in transform name: "+strings.Join(transform.ListBuiltins(), ", ")),
+				mcptypes.Description("Transform name: "+strings.Join(transform.ListBuiltins(), ", ")+", or 'split'"),
 			),
 			mcptypes.WithString("exec",
-				mcptypes.Description("Shell command template (use {} for input text). Alternative to transform_name."),
+				mcptypes.Description("Shell command template (use {} for input text). Use instead of transform_name."),
 			),
 			mcptypes.WithString("separator",
-				mcptypes.Description("Split text by separator and create child nodes for each part. Use \\n for newline, \\t for tab."),
+				mcptypes.Description("Separator for split transform. Use \\n for newline, \\t for tab."),
+				mcptypes.DefaultString(","),
 			),
 			mcptypes.WithNumber("depth",
 				mcptypes.Description("Maximum depth to traverse (-1 for unlimited)"),
@@ -842,15 +843,25 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 				searchRoot = []*workflowy.Item{rootItem}
 			}
 
-			separator := req.GetString("separator", "")
-			if separator != "" {
+			transformName := strings.TrimSpace(req.GetString("transform_name", ""))
+			execCmd := strings.TrimSpace(req.GetString("exec", ""))
+
+			// Handle split transform
+			if transformName == "split" {
+				separator := req.GetString("separator", ",")
 				return b.handleSplitTransform(ctx, req, searchRoot, separator)
 			}
 
-			t, err := transform.ResolveTransformer(
-				strings.TrimSpace(req.GetString("transform_name", "")),
-				strings.TrimSpace(req.GetString("exec", "")),
-			)
+			// Handle exec (no transform_name required)
+			if execCmd != "" {
+				if transformName != "" {
+					return mcptypes.NewToolResultError("cannot use both transform_name and exec"), nil
+				}
+			} else if transformName == "" {
+				return mcptypes.NewToolResultError("transform_name required (use a built-in, 'split', or exec)"), nil
+			}
+
+			t, err := transform.ResolveTransformer(transformName, execCmd)
 			if err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
