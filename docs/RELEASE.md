@@ -22,17 +22,25 @@ This document describes how to create a new release of the Workflowy CLI.
 
 ## Release Steps
 
+### 0. Choose the version number
+
+Update CHANGELOG.md and pick a version number
+
+```bash
+export VERSION=0.7.0
+```
+
 ### 1. Update Version References
 
 Update version in `server.json` (MCP registry manifest):
 ```bash
 # Update both "version" and the Docker tag in "identifier"
-# Example: for releasing v0.7.0
+# Example: for releasing v$VERSION
 {
-  "version": "0.7.0",
+  "version": "$VERSION",
   "packages": [
     {
-      "identifier": "ghcr.io/mholzen/workflowy:0.7.0",
+      "identifier": "ghcr.io/mholzen/workflowy:$VERSION",
       ...
     }
   ]
@@ -70,13 +78,13 @@ cat dist/homebrew/Formula/workflowy.rb
 Create a semantic version tag:
 ```bash
 # Create annotated tag
-git tag -a v0.2.0 -m "Release v0.2.0 - Description of changes"
+git tag -a "v${VERSION}" -m "Release v${VERSION} - Description of changes"
 
 # Push the tag
-git push origin v0.2.0
+git push origin "v${VERSION}"
 ```
 
-**Note:** The tag must start with `v` (e.g., `v0.2.0`, `v1.0.0`)
+**Note:** The tag must start with `v` (e.g., `v${VERSION}`)
 
 ### 4. Set GitHub Token
 
@@ -128,26 +136,30 @@ This will:
    workflowy version
    ```
 
-### 7. Publish Docker Image (MCP Registry)
+### 7. Publish Docker Image and MCP Registry
 
-Build and push the Docker image to GitHub Container Registry for the MCP registry:
+Build and push the Docker image to GitHub Container Registry, then publish to the MCP registry.
+
+**Important:** The MCP registry requires `linux/amd64` platform. Use `docker buildx` to build multi-platform images:
 
 ```bash
 # Login to ghcr.io (requires PAT with write:packages scope)
-echo "$GITHUB_TOKEN" | docker login ghcr.io -u mholzen --password-stdin
+echo "$GITHUB_CONTAINER_REGISTRY_TOKEN" | docker login ghcr.io -u mholzen --password-stdin
 
-# Build the image
-docker build -t ghcr.io/mholzen/workflowy:0.7.0 .
+# Build and push multi-platform image (required for MCP registry)
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t "ghcr.io/mholzen/workflowy:${VERSION}" \
+  -t "ghcr.io/mholzen/workflowy:latest" \
+  --push .
 
-# Push to registry
-docker push ghcr.io/mholzen/workflowy:0.7.0
-
-# Optionally tag as latest
-docker tag ghcr.io/mholzen/workflowy:0.7.0 ghcr.io/mholzen/workflowy:latest
-docker push ghcr.io/mholzen/workflowy:latest
+# Publish updated server.json to MCP registry
+# (must be done AFTER Docker image is pushed - registry validates image exists)
+mcp-publisher publish
 ```
 
 **Note:** The `GITHUB_TOKEN` needs `write:packages` scope. Create one at https://github.com/settings/tokens if needed.
+
+**Troubleshooting:** If you get "no child with platform linux/amd64" error from `mcp-publisher publish`, ensure you used `docker buildx` with `--platform linux/amd64` instead of plain `docker build`.
 
 ## What Gets Released
 
@@ -160,7 +172,7 @@ All binaries include version information:
 ```bash
 workflowy version
 # Output:
-# workflowy version 0.2.0
+# workflowy version ${VERSION}
 # commit: abc123...
 # built: 2025-11-23T12:34:56Z
 ```
@@ -183,14 +195,14 @@ export GITHUB_TOKEN=your_token
 ### Error: "tag already exists"
 ```bash
 # Delete local tag
-git tag -d v0.2.0
+git tag -d "v${VERSION}"
 
 # Delete remote tag (be careful!)
-git push origin :refs/tags/v0.2.0
+git push origin ":refs/tags/v${VERSION}"
 
 # Create new tag
-git tag -a v0.2.0 -m "Release v0.2.0"
-git push origin v0.2.0
+git tag -a "v${VERSION}" -m "Release v${VERSION}"
+git push origin "v${VERSION}"
 ```
 
 ### Release Failed Midway
@@ -204,8 +216,8 @@ If the release fails, you may need to:
 
 We follow [Semantic Versioning](https://semver.org/):
 - **MAJOR** version (1.0.0): Incompatible API changes
-- **MINOR** version (0.2.0): New functionality, backwards compatible
-- **PATCH** version (0.1.1): Backwards compatible bug fixes
+- **MINOR** version (0.x.0): New functionality, backwards compatible
+- **PATCH** version (0.x.1): Backwards compatible bug fixes
 
 ## Changelog
 
@@ -269,8 +281,8 @@ just test
 just release-test
 
 # 2. Create and push tag
-git tag -a v0.2.0 -m "Release v0.2.0"
-git push origin v0.2.0
+git tag -a "v${VERSION}" -m "Release v${VERSION}"
+git push origin "v${VERSION}"
 
 # That's it! GitHub Actions automatically:
 # - Runs tests

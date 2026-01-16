@@ -28,6 +28,52 @@ release-test:
 release:
 	goreleaser release --clean
 
+# Extract version from CHANGELOG.md (topmost ## [x.x.x] entry)
+changelog-version:
+	@grep -m1 '^## \[' CHANGELOG.md | sed 's/## \[\([^]]*\)\].*/\1/'
+
+# Extract description from CHANGELOG.md (text after version)
+changelog-description:
+	@grep -m1 '^## \[' CHANGELOG.md | sed 's/## \[[^]]*\] - //'
+
+# Verify VERSION matches CHANGELOG.md
+verify-version VERSION:
+	#!/bin/bash
+	changelog_version=$(just changelog-version)
+	if [ "{{VERSION}}" != "$changelog_version" ]; then
+		echo "ERROR: VERSION {{VERSION}} does not match CHANGELOG.md version $changelog_version"
+		exit 1
+	fi
+	echo "Version {{VERSION}} matches CHANGELOG.md"
+
+# Update server.json with new version
+update-server-json VERSION:
+	#!/bin/bash
+	just verify-version {{VERSION}}
+	sed -i '' 's/"version": "[^"]*"/"version": "{{VERSION}}"/' server.json
+	sed -i '' 's|ghcr.io/mholzen/workflowy:[^"]*|ghcr.io/mholzen/workflowy:{{VERSION}}|' server.json
+	echo "Updated server.json to version {{VERSION}}"
+
+# Create git tag with description from CHANGELOG.md
+create-tag VERSION:
+	#!/bin/bash
+	just verify-version {{VERSION}}
+	description=$(just changelog-description)
+	git tag -a "v{{VERSION}}" -m "Release v{{VERSION}} - $description"
+	echo "Created tag v{{VERSION}} with message: Release v{{VERSION}} - $description"
+
+# Push tag to remote
+push-tag VERSION:
+	git push origin "v{{VERSION}}"
+
+# Full release prep: verify, update server.json, create and push tag
+release-prep VERSION:
+	just verify-version {{VERSION}}
+	just update-server-json {{VERSION}}
+	just create-tag {{VERSION}}
+	@echo ""
+	@echo "Ready to push. Run: just push-tag {{VERSION}}"
+
 get item_id:
 	go run cmd/workflowy/main.go {{item_id}}
 
