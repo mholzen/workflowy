@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - Transform, Move and Id commands
+
+### Added
+- `move` command to relocate nodes to a new parent with position control
+- `transform` command with built-in transforms: lowercase, uppercase, capitalize, title, trim, no-punctuation, no-whitespace
+- `split` transform to split node content by separator into child nodes
+- `--as-child` flag for transform to insert results as children instead of replacing
+- `id` command to resolve short IDs and target keys to full UUIDs
+- MCP tools: `workflowy_transform`, `workflowy_move`, `workflowy_id`
+
+### Changed
+- Consistent terminology across CLI and MCP: unified `id` parameter naming and `node` references
+- Split transform requires explicit `split` name with default separator `,`
+- Minimal Dockerfile for stdio interface (MCP registry compatible)
+
 ## [0.6.0] - Short IDs and configuration improvements
 
 ### Added
