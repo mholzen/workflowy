@@ -24,6 +24,7 @@ const (
 	ToolID             = "workflowy_id"
 	ToolCreate         = "workflowy_create"
 	ToolUpdate         = "workflowy_update"
+	ToolMove           = "workflowy_move"
 	ToolDelete         = "workflowy_delete"
 	ToolComplete       = "workflowy_complete"
 	ToolUncomplete     = "workflowy_uncomplete"
@@ -55,6 +56,7 @@ func (b ToolBuilder) BuildTools(toolNames []string) ([]mcpserver.ServerTool, err
 		ToolID:             b.buildIDTool,
 		ToolCreate:         b.buildCreateTool,
 		ToolUpdate:         b.buildUpdateTool,
+		ToolMove:           b.buildMoveTool,
 		ToolDelete:         b.buildDeleteTool,
 		ToolComplete:       b.buildCompleteTool,
 		ToolUncomplete:     b.buildUncompleteTool,
@@ -296,11 +298,6 @@ func (b ToolBuilder) buildCreateTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultError("name is required"), nil
 			}
 
-			position := strings.TrimSpace(req.GetString("position", ""))
-			if err := validatePosition(position); err != nil {
-				return mcptypes.NewToolResultError(err.Error()), nil
-			}
-
 			layoutMode := strings.TrimSpace(req.GetString("layout_mode", ""))
 			note := strings.TrimSpace(req.GetString("note", ""))
 
@@ -313,9 +310,8 @@ func (b ToolBuilder) buildCreateTool() mcpserver.ServerTool {
 				ParentID: parentID,
 				Name:     name,
 			}
-
-			if position != "" {
-				request.Position = &position
+			if err := request.SetPosition(strings.TrimSpace(req.GetString("position", ""))); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 			if layoutMode != "" {
 				request.LayoutMode = &layoutMode
@@ -387,6 +383,61 @@ func (b ToolBuilder) buildUpdateTool() mcpserver.ServerTool {
 			response, err := b.client.UpdateNode(ctx, itemID, request)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot update node", err), nil
+			}
+
+			return mcptypes.NewToolResultJSON(response)
+		},
+	}
+}
+
+func (b ToolBuilder) buildMoveTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolMove,
+			mcptypes.WithDescription("Move a node to a new parent"),
+			mcptypes.WithString("id",
+				mcptypes.Description("ID to move"),
+				mcptypes.Required(),
+			),
+			mcptypes.WithString("parent_id",
+				mcptypes.Description("Destination parent: UUID, target key (home, inbox), or 'None' for top-level"),
+				mcptypes.Required(),
+			),
+			mcptypes.WithString("position",
+				mcptypes.Description("Position in new parent: top or bottom (default: top)"),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			rawItemID := strings.TrimSpace(req.GetString("id", ""))
+			if rawItemID == "" {
+				return mcptypes.NewToolResultError("id is required"), nil
+			}
+
+			rawParentID := strings.TrimSpace(req.GetString("parent_id", ""))
+			if rawParentID == "" {
+				return mcptypes.NewToolResultError("parent_id is required"), nil
+			}
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
+			}
+
+			parentID, err := workflowy.ResolveNodeID(ctx, b.client, rawParentID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve parent ID", err), nil
+			}
+
+			request := &workflowy.MoveNodeRequest{
+				ParentID: parentID,
+			}
+			if err := request.SetPosition(strings.TrimSpace(req.GetString("position", ""))); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
+
+			response, err := b.client.MoveNode(ctx, itemID, request)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot move node", err), nil
 			}
 
 			return mcptypes.NewToolResultJSON(response)
@@ -995,11 +1046,4 @@ func (b ToolBuilder) buildReportRoot(ctx context.Context, itemID string) (*workf
 		return nil, fmt.Errorf("item not found: %s", itemID)
 	}
 	return target, nil
-}
-
-func validatePosition(position string) error {
-	if position != "" && position != "top" && position != "bottom" {
-		return fmt.Errorf("position must be 'top' or 'bottom'")
-	}
-	return nil
 }

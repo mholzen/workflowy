@@ -215,6 +215,18 @@ type CreateNodeRequest struct {
 	Position   *string `json:"position,omitempty"`
 }
 
+// SetPosition sets the position after validating it.
+// Empty string is ignored (no position set).
+func (r *CreateNodeRequest) SetPosition(position string) error {
+	if err := ValidatePosition(position); err != nil {
+		return err
+	}
+	if position != "" {
+		r.Position = &position
+	}
+	return nil
+}
+
 // CreateNodeResponse represents the response from nodes-create API
 type CreateNodeResponse struct {
 	ItemID string `json:"item_id"`
@@ -229,6 +241,37 @@ type UpdateNodeRequest struct {
 
 // UpdateNodeResponse represents the response from nodes-update API
 type UpdateNodeResponse struct {
+	Status string `json:"status"`
+}
+
+// ValidatePosition validates that position is either empty, "top", or "bottom".
+func ValidatePosition(position string) error {
+	if position != "" && position != "top" && position != "bottom" {
+		return fmt.Errorf("position must be 'top' or 'bottom'")
+	}
+	return nil
+}
+
+// MoveNodeRequest represents the request body for nodes-move API
+type MoveNodeRequest struct {
+	ParentID string  `json:"parent_id"`
+	Position *string `json:"position,omitempty"`
+}
+
+// SetPosition sets the position after validating it.
+// Empty string is ignored (no position set).
+func (r *MoveNodeRequest) SetPosition(position string) error {
+	if err := ValidatePosition(position); err != nil {
+		return err
+	}
+	if position != "" {
+		r.Position = &position
+	}
+	return nil
+}
+
+// MoveNodeResponse represents the response from nodes-move API
+type MoveNodeResponse struct {
 	Status string `json:"status"`
 }
 
@@ -348,6 +391,17 @@ func (wc *WorkflowyClient) UpdateNode(ctx context.Context, itemID string, req *U
 		return nil, err
 	}
 
+	return &resp, nil
+}
+
+// MoveNode moves a node to a new parent in Workflowy
+func (wc *WorkflowyClient) MoveNode(ctx context.Context, itemID string, req *MoveNodeRequest) (*MoveNodeResponse, error) {
+	var resp MoveNodeResponse
+	path := fmt.Sprintf("/nodes/%s/move", itemID)
+	err := wc.Do(ctx, "POST", path, req, &resp)
+	if err != nil {
+		return nil, err
+	}
 	return &resp, nil
 }
 

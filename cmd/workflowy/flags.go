@@ -140,13 +140,6 @@ func validateFormat(format string) error {
 	return nil
 }
 
-func validatePosition(position string) error {
-	if position != "" && position != "top" && position != "bottom" {
-		return fmt.Errorf("position must be 'top' or 'bottom'")
-	}
-	return nil
-}
-
 func getIgnoreCaseFlag() cli.Flag {
 	return &cli.BoolFlag{
 		Name:    "ignore-case",

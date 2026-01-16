@@ -89,6 +89,10 @@ func (m *MockClient) UpdateNode(ctx context.Context, itemID string, req *workflo
 	return nil, nil
 }
 
+func (m *MockClient) MoveNode(ctx context.Context, itemID string, req *workflowy.MoveNodeRequest) (*workflowy.MoveNodeResponse, error) {
+	return nil, nil
+}
+
 func (m *MockClient) CompleteNode(ctx context.Context, itemID string) (*workflowy.UpdateNodeResponse, error) {
 	return nil, nil
 }

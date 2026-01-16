@@ -9,6 +9,7 @@ type Client interface {
 	ListChildrenRecursiveWithDepth(ctx context.Context, itemID string, depth int) (*ListChildrenResponse, error)
 	CreateNode(ctx context.Context, req *CreateNodeRequest) (*CreateNodeResponse, error)
 	UpdateNode(ctx context.Context, itemID string, req *UpdateNodeRequest) (*UpdateNodeResponse, error)
+	MoveNode(ctx context.Context, itemID string, req *MoveNodeRequest) (*MoveNodeResponse, error)
 	CompleteNode(ctx context.Context, itemID string) (*UpdateNodeResponse, error)
 	UncompleteNode(ctx context.Context, itemID string) (*UpdateNodeResponse, error)
 	DeleteNode(ctx context.Context, itemID string) (*UpdateNodeResponse, error)

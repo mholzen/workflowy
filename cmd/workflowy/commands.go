@@ -21,6 +21,7 @@ func getCommands() []*cli.Command {
 		getListCommand(),
 		getCreateCommand(),
 		getUpdateCommand(),
+		getMoveCommand(),
 		getDeleteCommand(),
 		getCompleteCommand(),
 		getUncompleteCommand(),
@@ -131,11 +132,6 @@ func getCreateCommand() *cli.Command {
 				return err
 			}
 
-			position := cmd.String("position")
-			if err := validatePosition(position); err != nil {
-				return err
-			}
-
 			nameArg := cmd.StringArg("name")
 			nameFlag := cmd.String("name")
 			readStdin := cmd.Bool("read-stdin")
@@ -200,9 +196,8 @@ func getCreateCommand() *cli.Command {
 				ParentID: parentID,
 				Name:     name,
 			}
-
-			if position != "" {
-				req.Position = &position
+			if err := req.SetPosition(cmd.String("position")); err != nil {
+				return err
 			}
 			if layoutMode := cmd.String("layout-mode"); layoutMode != "" {
 				req.LayoutMode = &layoutMode
@@ -298,6 +293,77 @@ func getUpdateCommand() *cli.Command {
 				printJSON(response)
 			} else {
 				fmt.Printf("%s updated\n", itemID)
+			}
+			return nil
+		}),
+	}
+}
+
+func getMoveCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "move",
+		Usage:     "Move a node to a new parent",
+		UsageText: "workflowy move <id> <parent-id> [options]",
+		Arguments: []cli.Argument{
+			&cli.StringArg{
+				Name:      "id",
+				UsageText: "<id>",
+			},
+			&cli.StringArg{
+				Name:      "parent_id",
+				UsageText: "<parent-id>",
+			},
+		},
+		Flags: []cli.Flag{
+			getAPIKeyFlag(),
+			&cli.StringFlag{
+				Name:  "position",
+				Usage: "Position in new parent: top or bottom (default: top)",
+			},
+		},
+		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+			format := cmd.String("format")
+			if err := validateFormat(format); err != nil {
+				return err
+			}
+
+			rawItemID := cmd.StringArg("id")
+			if rawItemID == "" {
+				return fmt.Errorf("id is required")
+			}
+
+			rawParentID := cmd.StringArg("parent_id")
+			if rawParentID == "" {
+				return fmt.Errorf("parent-id is required")
+			}
+
+			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
+			if err != nil {
+				return fmt.Errorf("cannot resolve ID: %w", err)
+			}
+
+			parentID, err := workflowy.ResolveNodeID(ctx, client, rawParentID)
+			if err != nil {
+				return fmt.Errorf("cannot resolve parent ID: %w", err)
+			}
+
+			req := &workflowy.MoveNodeRequest{
+				ParentID: parentID,
+			}
+			if err := req.SetPosition(cmd.String("position")); err != nil {
+				return err
+			}
+
+			slog.Debug("moving node", "item_id", itemID, "parent_id", parentID)
+			response, err := client.MoveNode(ctx, itemID, req)
+			if err != nil {
+				return fmt.Errorf("cannot move node: %w", err)
+			}
+
+			if format == "json" {
+				printJSON(response)
+			} else {
+				fmt.Printf("%s moved to %s\n", itemID, parentID)
 			}
 			return nil
 		}),
