@@ -94,6 +94,12 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 		return err
 	}
 
+	// Initialize write guard for access control
+	guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
+	if err != nil {
+		return err
+	}
+
 	rawItemID := cmd.StringArg("id")
 	if rawItemID == "" {
 		return fmt.Errorf("id is required")
@@ -102,6 +108,11 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 	itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
 	if err != nil {
 		return fmt.Errorf("cannot resolve ID: %w", err)
+	}
+
+	// Validate target is within write-root scope
+	if err := guard.ValidateTarget(itemID, "transform"); err != nil {
+		return err
 	}
 
 	items, err := loadTree(ctx, cmd, client)

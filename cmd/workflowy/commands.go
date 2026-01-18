@@ -132,6 +132,12 @@ func getCreateCommand() *cli.Command {
 				return err
 			}
 
+			// Initialize write guard for access control
+			guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
+			if err != nil {
+				return err
+			}
+
 			nameArg := cmd.StringArg("name")
 			nameFlag := cmd.String("name")
 			readStdin := cmd.Bool("read-stdin")
@@ -159,7 +165,6 @@ func getCreateCommand() *cli.Command {
 			}
 
 			var name string
-			var err error
 
 			if nameArg != "" {
 				name = nameArg
@@ -187,9 +192,17 @@ func getCreateCommand() *cli.Command {
 				return fmt.Errorf("name cannot be empty")
 			}
 
-			parentID, err := workflowy.ResolveNodeID(ctx, client, getParentID(cmd))
+			// Default parent to write-root-id if not specified and restrictions are in effect
+			rawParentID := guard.DefaultParent(getParentID(cmd))
+
+			parentID, err := workflowy.ResolveNodeID(ctx, client, rawParentID)
 			if err != nil {
 				return fmt.Errorf("cannot resolve parent ID: %w", err)
+			}
+
+			// Validate parent is within write-root scope
+			if err := guard.ValidateParent(parentID, "create"); err != nil {
+				return err
 			}
 
 			req := &workflowy.CreateNodeRequest{
@@ -244,6 +257,12 @@ func getUpdateCommand() *cli.Command {
 				return err
 			}
 
+			// Initialize write guard for access control
+			guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
+			if err != nil {
+				return err
+			}
+
 			rawItemID := cmd.StringArg("id")
 			if rawItemID == "" {
 				return fmt.Errorf("id is required")
@@ -252,6 +271,11 @@ func getUpdateCommand() *cli.Command {
 			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
+			}
+
+			// Validate target is within write-root scope
+			if err := guard.ValidateTarget(itemID, "update"); err != nil {
+				return err
 			}
 
 			content := cmd.StringArg("nameArgument")
@@ -327,6 +351,12 @@ func getMoveCommand() *cli.Command {
 				return err
 			}
 
+			// Initialize write guard for access control
+			guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
+			if err != nil {
+				return err
+			}
+
 			rawItemID := cmd.StringArg("id")
 			if rawItemID == "" {
 				return fmt.Errorf("id is required")
@@ -345,6 +375,14 @@ func getMoveCommand() *cli.Command {
 			parentID, err := workflowy.ResolveNodeID(ctx, client, rawParentID)
 			if err != nil {
 				return fmt.Errorf("cannot resolve parent ID: %w", err)
+			}
+
+			// Validate both target and destination are within write-root scope
+			if err := guard.ValidateTarget(itemID, "move"); err != nil {
+				return err
+			}
+			if err := guard.ValidateParent(parentID, "move destination"); err != nil {
+				return err
 			}
 
 			req := &workflowy.MoveNodeRequest{
@@ -388,6 +426,12 @@ func getDeleteCommand() *cli.Command {
 				return err
 			}
 
+			// Initialize write guard for access control
+			guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
+			if err != nil {
+				return err
+			}
+
 			rawItemID := cmd.StringArg("id")
 			if rawItemID == "" {
 				return fmt.Errorf("id is required")
@@ -396,6 +440,11 @@ func getDeleteCommand() *cli.Command {
 			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
+			}
+
+			// Validate target is within write-root scope
+			if err := guard.ValidateTarget(itemID, "delete"); err != nil {
+				return err
 			}
 
 			slog.Debug("deleting node", "item_id", itemID)
@@ -465,6 +514,12 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 				return err
 			}
 
+			// Initialize write guard for access control
+			guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
+			if err != nil {
+				return err
+			}
+
 			rawItemID := cmd.StringArg("id")
 			if rawItemID == "" {
 				return fmt.Errorf("id is required")
@@ -473,6 +528,11 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
+			}
+
+			// Validate target is within write-root scope
+			if err := guard.ValidateTarget(itemID, commandName); err != nil {
+				return err
 			}
 
 			slog.Debug(action+" node", "item_id", itemID)
@@ -724,6 +784,12 @@ Examples:
 				return err
 			}
 
+			// Initialize write guard for access control
+			guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
+			if err != nil {
+				return err
+			}
+
 			pattern := cmd.StringArg("pattern")
 			if pattern == "" {
 				return fmt.Errorf("pattern is required")
@@ -749,6 +815,12 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("cannot resolve parent ID: %w", err)
 			}
+
+			// Validate parent is within write-root scope
+			if err := guard.ValidateParent(parentID, "replace"); err != nil {
+				return err
+			}
+
 			searchRoot := items
 			if parentID != "None" {
 				rootItem := findItemByID(items, parentID)
@@ -874,6 +946,7 @@ Examples:
 				Value: "read",
 				Usage: "Tools to expose: read, write, all, or comma-separated tool names",
 			},
+			getWriteRootIdFlag(),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			serverConfig := mcp.Config{
@@ -881,6 +954,7 @@ Examples:
 				DefaultAPIKeyFile: defaultAPIKeyFile,
 				Expose:            cmd.String("expose"),
 				Version:           version,
+				WriteRootID:       cmd.String("write-root-id"),
 			}
 			return mcp.RunServer(ctx, serverConfig)
 		},

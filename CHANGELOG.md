@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.1] - Write Restrictions
+
+### Added
+- `--write-root-id` global flag to restrict write operations to a specific subtree
+- MCP `--write-root-id` flag for sandboxed AI access
+- MCP tool descriptions dynamically show write restrictions when active
+- `workflowy_targets` returns `write_root` info when restrictions are set
+
+### Changed
+- Create command defaults to write-root-id as parent when no parent specified and restrictions are active
+
 ## [0.7.0] - Transform, Move and Id commands
 
 ### Added

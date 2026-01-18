@@ -18,6 +18,7 @@ type Config struct {
 	DefaultAPIKeyFile string
 	Expose            string
 	Version           string
+	WriteRootID       string
 }
 
 // RunServer starts the MCP stdio server with the requested tool set.
@@ -39,7 +40,18 @@ func RunServer(ctx context.Context, cfg Config) error {
 
 	client := workflowy.NewWorkflowyClient(option)
 
-	builder := NewToolBuilder(client)
+	// Resolve write-root-id if provided (supports short IDs, target keys)
+	writeRootID := cfg.WriteRootID
+	if workflowy.IsWriteRestricted(writeRootID) {
+		resolvedID, err := workflowy.ResolveNodeIDToUUID(ctx, client, writeRootID)
+		if err != nil {
+			return fmt.Errorf("cannot resolve write-root-id: %w", err)
+		}
+		writeRootID = resolvedID
+		slog.Info("write restrictions enabled", "write_root_id", writeRootID)
+	}
+
+	builder := NewToolBuilder(client, writeRootID)
 	serverTools, err := builder.BuildTools(toolsToEnable)
 	if err != nil {
 		return err
@@ -139,6 +151,7 @@ var (
 		ToolID,
 		ToolCreate,
 		ToolUpdate,
+		ToolMove,
 		ToolDelete,
 		ToolComplete,
 		ToolUncomplete,
@@ -165,6 +178,7 @@ var (
 	writeTools = []string{
 		ToolCreate,
 		ToolUpdate,
+		ToolMove,
 		ToolDelete,
 		ToolComplete,
 		ToolUncomplete,
@@ -186,6 +200,7 @@ var (
 		"id":              ToolID,
 		"create":          ToolCreate,
 		"update":          ToolUpdate,
+		"move":            ToolMove,
 		"delete":          ToolDelete,
 		"complete":        ToolComplete,
 		"uncomplete":      ToolUncomplete,

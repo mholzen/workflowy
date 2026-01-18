@@ -13,22 +13,20 @@ Complete command-line reference for the Workflowy CLI tool.
 - [Global Options](#global-options)
 - [Full and Short IDs](#full-and-short-ids)
 - [Available Commands](#available-commands)
-  - [search](#search)
-  - [replace](#replace)
-  - [report](#report)
-    - [report count](#report-count)
-    - [report children](#report-children)
-    - [report created](#report-created)
-    - [report modified](#report-modified)
-  - [list](#list)
-  - [get](#get)
-  - [create](#create)
-  - [update](#update)
-  - [delete](#delete)
-  - [complete](#complete)
-  - [uncomplete](#uncomplete)
-  - [targets](#targets)
-  - [mcp](#mcp)
+  - [get](#workflowy-get)
+  - [list](#workflowy-list)
+  - [create](#workflowy-create)
+  - [update](#workflowy-update)
+  - [delete](#workflowy-delete)
+  - [move](#workflowy-move)
+  - [complete](#workflowy-complete)
+  - [uncomplete](#workflowy-uncomplete)
+  - [transform](#workflowy-transform)
+  - [search](#workflowy-search)
+  - [replace](#workflowy-replace)
+  - [targets](#workflowy-targets)
+  - [report](#report-commands)
+  - [mcp](#mcp-server)
 - [Data Access Methods](#data-access-methods)
 - [Example Usage](#example-usage)
   - [Search Examples](#search-examples)
@@ -79,6 +77,28 @@ These options apply to all commands:
 | `--api-key-file <path>` | API key file location | `~/.workflowy/api.key` |
 | `--backup-file <path>` | Backup file path (for `--method=backup`) | auto-detected |
 | `--force-refresh` | Bypass cache (for `--method=export`) | `false` |
+| `--write-root-id <id>` | Restrict write operations to this node and descendants | - |
+
+### Write Restrictions
+
+Use `--write-root-id` to restrict all write operations (create, update, delete, move, complete, uncomplete, replace, transform) to a specific subtree:
+
+```bash
+# All writes restricted to inbox and its descendants
+workflowy --write-root-id=inbox create "New task"
+
+# Create defaults to write-root as parent when no parent specified
+workflowy --write-root-id=inbox create "Task"  # Created under inbox
+
+# Attempting to modify nodes outside the scope fails
+workflowy --write-root-id=inbox update some-other-id --name "New name"
+# Error: update denied: some-other-id is not within write-root abc-123
+```
+
+This is useful for:
+- Sandboxing AI assistants to a specific area
+- Preventing accidental modifications outside a project
+- Scripted operations that should only affect one subtree
 
 
 ## Full and Short IDs
@@ -280,6 +300,81 @@ Mark a node as incomplete.
 ```bash
 workflowy uncomplete <item-id>
 ```
+
+---
+
+### workflowy move
+
+Move a node to a new parent.
+
+```bash
+# Move to a specific parent
+workflowy move <item-id> <parent-id>
+
+# Move to top of parent
+workflowy move <item-id> <parent-id> --position top
+
+# Move to inbox
+workflowy move <item-id> inbox
+```
+
+**Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--position <top\|bottom>` | Position in new parent | `top` |
+
+---
+
+### workflowy transform
+
+Transform node names and/or notes using built-in or shell transformations.
+
+```bash
+# Built-in transforms
+workflowy transform <item-id> lowercase
+workflowy transform <item-id> uppercase
+workflowy transform <item-id> capitalize
+workflowy transform <item-id> title
+workflowy transform <item-id> trim
+
+# Transform notes instead of names
+workflowy transform <item-id> uppercase --note
+
+# Transform both name and note
+workflowy transform <item-id> lowercase --name --note
+
+# Split by separator (creates child nodes)
+workflowy transform <item-id> split                 # Split by comma (default)
+workflowy transform <item-id> split -s "\n"         # Split by newline
+
+# Shell command transform
+workflowy transform <item-id> -x 'echo {} | tr a-z A-Z'
+
+# Insert as child instead of replacing
+workflowy transform <item-id> uppercase --as-child
+
+# Preview changes
+workflowy transform <item-id> lowercase --dry-run
+
+# Interactive mode
+workflowy transform <item-id> uppercase --interactive
+```
+
+**Built-in transforms:** `lowercase`, `uppercase`, `capitalize`, `title`, `trim`, `no-punctuation`, `no-whitespace`, `split`
+
+**Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--name` | Transform node names | `true` (if neither specified) |
+| `--note` | Transform node notes | `false` |
+| `--depth <n>` | Traversal depth (-1 unlimited) | `-1` |
+| `--dry-run` | Preview without applying | `false` |
+| `--interactive` | Confirm each transformation | `false` |
+| `-x, --exec <cmd>` | Shell command (use `{}` for input) | - |
+| `-s, --separator <sep>` | Separator for split | `,` |
+| `--as-child` | Insert result as child node | `false` |
 
 ---
 

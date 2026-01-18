@@ -15,15 +15,18 @@ Connect AI assistants like Claude, ChatGPT, and other MCP-compatible clients to 
   - [workflowy_targets](#workflowy_targets)
   - [workflowy_create](#workflowy_create)
   - [workflowy_update](#workflowy_update)
+  - [workflowy_move](#workflowy_move)
   - [workflowy_delete](#workflowy_delete)
   - [workflowy_complete](#workflowy_complete)
   - [workflowy_uncomplete](#workflowy_uncomplete)
   - [workflowy_replace](#workflowy_replace)
+  - [workflowy_transform](#workflowy_transform)
   - [workflowy_report_count](#workflowy_report_count)
   - [workflowy_report_children](#workflowy_report_children)
   - [workflowy_report_created](#workflowy_report_created)
   - [workflowy_report_modified](#workflowy_report_modified)
 - [Exposure Modes](#exposure-modes)
+- [Sandboxed Access](#sandboxed-access)
 - [Example Conversations](#example-conversations)
   - [Finding Information](#finding-information)
   - [Creating Content](#creating-content)
@@ -172,9 +175,13 @@ Search nodes by text or regex pattern.
 
 #### workflowy_targets
 
-List available shortcuts and system targets.
+List available shortcuts and system targets. Also returns write restriction info if `--write-root-id` is set.
 
 **Parameters:** None
+
+**Returns:**
+- `targets`: Array of available shortcuts and system targets
+- `write_root`: (optional) Object with `id` and `name` of the write-restricted area
 
 **Example prompt:** "What shortcuts do I have in Workflowy?"
 
@@ -279,6 +286,23 @@ Update an existing node.
 
 ---
 
+#### workflowy_move
+
+Move a node to a new parent.
+
+**Parameters:**
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `id` | string | Node ID to move | required |
+| `parent_id` | string | Destination parent ID or target | required |
+| `position` | string | `top` or `bottom` | `top` |
+
+**Example prompts:**
+- "Move that task to my inbox"
+- "Move this item to the top of my Projects folder"
+
+---
+
 #### workflowy_delete
 
 Delete a node and its children.
@@ -286,7 +310,7 @@ Delete a node and its children.
 **Parameters:**
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
-| `item_id` | string | Node ID to delete | required |
+| `id` | string | Node ID to delete | required |
 
 **Example prompt:** "Delete that completed task"
 
@@ -338,6 +362,30 @@ Bulk find-and-replace text in node names.
 
 ---
 
+#### workflowy_transform
+
+Transform node names and/or notes using built-in or shell transformations.
+
+**Parameters:**
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `id` | string | Node ID to transform | required |
+| `transform_name` | string | Built-in: lowercase, uppercase, capitalize, title, trim, no-punctuation, no-whitespace, split | - |
+| `exec` | string | Shell command (use `{}` for input) | - |
+| `separator` | string | Separator for split transform | `,` |
+| `depth` | number | Traversal depth (-1 unlimited) | `-1` |
+| `name` | boolean | Transform node names | `true` |
+| `note` | boolean | Transform node notes | `false` |
+| `dry_run` | boolean | Preview without applying | `true` |
+| `as_child` | boolean | Insert result as child | `false` |
+
+**Example prompts:**
+- "Convert this node to uppercase"
+- "Split this comma-separated list into child nodes"
+- "Trim whitespace from all items in this folder"
+
+---
+
 ## Exposure Modes
 
 Control which tools are available:
@@ -361,6 +409,61 @@ workflowy mcp --expose=all
 # Specific tools only
 workflowy mcp --expose=get,list,search,create
 ```
+
+---
+
+## Sandboxed Access
+
+Use `--write-root-id` to restrict all write operations to a specific subtree. This is ideal for giving AI assistants access to only a portion of your Workflowy.
+
+### Configuration
+
+```json
+{
+  "mcpServers": {
+    "workflowy": {
+      "command": "workflowy",
+      "args": ["mcp", "--expose=all", "--write-root-id=inbox"]
+    }
+  }
+}
+```
+
+### Behavior
+
+When `--write-root-id` is set:
+
+1. **Tool descriptions** include the restriction, so the AI knows the boundaries
+2. **Create operations** default to the write-root as parent (no need to specify parent_id)
+3. **All write operations** (update, delete, move, complete, etc.) are restricted to descendants
+4. **workflowy_targets** returns `write_root` info with the ID and name of the restricted area
+
+### Example
+
+```bash
+# Start MCP server with sandbox
+workflowy mcp --expose=all --write-root-id=inbox
+```
+
+The AI assistant will see tool descriptions like:
+> "Create a new node (writes restricted to abc-123 and descendants)"
+
+And `workflowy_targets` will return:
+```json
+{
+  "targets": [...],
+  "write_root": {
+    "id": "abc-123-full-uuid",
+    "name": "Inbox"
+  }
+}
+```
+
+### Use Cases
+
+- **AI Sandbox**: Give Claude write access to only an "AI Workspace" folder
+- **Project Isolation**: Restrict a script to only modify one project
+- **Safe Experimentation**: Test write operations without risking other data
 
 ---
 

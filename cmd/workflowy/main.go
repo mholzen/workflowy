@@ -51,6 +51,7 @@ Examples:
 				Usage: "Write logs to file instead of stderr",
 			},
 			getAPIKeyFlag(),
+			getWriteRootIdFlag(),
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			setupLogging(cmd.String("log"), cmd.String("log-file"))

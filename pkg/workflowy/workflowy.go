@@ -142,6 +142,32 @@ func ResolveNodeID(ctx context.Context, client Client, id string) (string, error
 	return sanitized, nil
 }
 
+// ResolveNodeIDToUUID resolves any node identifier to a full UUID.
+// Unlike ResolveNodeID, this always returns a UUID even for target keys like "inbox".
+func ResolveNodeIDToUUID(ctx context.Context, client Client, id string) (string, error) {
+	if id == "" || id == "None" {
+		return id, nil
+	}
+
+	if client == nil {
+		return SanitizeNodeID(id), nil
+	}
+
+	isTarget, err := IsTargetKey(ctx, client, id)
+	if err != nil {
+		return "", fmt.Errorf("cannot check target: %w", err)
+	}
+	if isTarget {
+		item, err := client.GetItem(ctx, id)
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve target %q to UUID: %w", id, err)
+		}
+		return item.ID, nil
+	}
+
+	return ResolveNodeID(ctx, client, id)
+}
+
 // ExpandTilde expands a leading ~ to the user's home directory
 func ExpandTilde(path string) string {
 	if !strings.HasPrefix(path, "~") {

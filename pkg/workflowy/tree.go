@@ -1,6 +1,9 @@
 package workflowy
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 func FindItemByID(items []*Item, id string) *Item {
 	for _, item := range items {
@@ -110,4 +113,35 @@ func FilterEmpty(items []*Item) []*Item {
 		filtered = append(filtered, item)
 	}
 	return filtered
+}
+
+// IsWriteRestricted returns true if writeRootID represents an active restriction.
+func IsWriteRestricted(writeRootID string) bool {
+	return writeRootID != "" && writeRootID != "None"
+}
+
+// IsDescendantOf checks if targetID equals rootID or is a descendant of rootID.
+func IsDescendantOf(items []*Item, rootID, targetID string) bool {
+	if !IsWriteRestricted(rootID) {
+		return true
+	}
+	if rootID == targetID {
+		return true
+	}
+	root := FindItemByID(items, rootID)
+	if root == nil {
+		return false
+	}
+	return FindItemByID(root.Children, targetID) != nil
+}
+
+// ValidateWriteAccess returns an error if targetID is not within writeRootID scope.
+func ValidateWriteAccess(items []*Item, writeRootID, targetID, operation string) error {
+	if !IsWriteRestricted(writeRootID) {
+		return nil
+	}
+	if !IsDescendantOf(items, writeRootID, targetID) {
+		return fmt.Errorf("%s denied: %s is not within write-root %s", operation, targetID, writeRootID)
+	}
+	return nil
 }
