@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.2] - Mirror Report
+
+### Added
+- `report mirrors` command to rank nodes by mirror count (most mirrored first)
+- MCP tool `workflowy_report_mirrors` for AI assistant access to mirror data
+- Mirror report shows original node with parent context and all mirror locations
+
+### Notes
+- Mirror data is only available in backup files (`--method=backup` required)
+
 ## [0.7.1] - Write Restrictions
 
 ### Added

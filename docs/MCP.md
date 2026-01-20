@@ -25,6 +25,7 @@ Connect AI assistants like Claude, ChatGPT, and other MCP-compatible clients to 
   - [workflowy_report_children](#workflowy_report_children)
   - [workflowy_report_created](#workflowy_report_created)
   - [workflowy_report_modified](#workflowy_report_modified)
+  - [workflowy_report_mirrors](#workflowy_report_mirrors)
 - [Exposure Modes](#exposure-modes)
 - [Sandboxed Access](#sandboxed-access)
 - [Example Conversations](#example-conversations)
@@ -244,6 +245,20 @@ Rank nodes by modification date (oldest first).
 | `preserve_tags` | boolean | Keep HTML tags | `false` |
 
 **Example prompt:** "Find notes I haven't touched in a while"
+
+---
+
+#### workflowy_report_mirrors
+
+Rank nodes by mirror count (most mirrored first). Uses backup file as mirror data is only available there.
+
+**Parameters:**
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `top_n` | number | Number of results | `20` |
+| `preserve_tags` | boolean | Keep HTML tags | `false` |
+
+**Example prompt:** "Which nodes are mirrored the most?"
 
 ---
 

@@ -233,3 +233,7 @@ go test ./...
 ## License
 
 MIT — see [LICENSE](LICENSE)
+
+## Acknowledgments
+
+- Thanks to Craig P. Motlin for pointing out mirrors are defined in the backup files

@@ -573,6 +573,39 @@ workflowy report modified --top-n 20
 
 ---
 
+### workflowy report mirrors
+
+Find nodes that are mirrored most frequently. Shows the original node and all locations where it appears as a mirror.
+
+**Note:** This report requires the backup method (`--method=backup`) as mirror data is only available in backup files.
+
+```bash
+# Top 20 most mirrored nodes (default)
+workflowy report mirrors
+
+# Top 10
+workflowy report mirrors --top-n 10
+```
+
+**Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--top-n <n>` | Number of results | `20` |
+
+**Example output:**
+
+```
+# Top 20 Nodes by Mirror Count
+
+- 1. Project Template (8 mirrors)
+  - original: [Project Template](...) in [Templates](...)
+  - [abc123...](...) in [Project A](...)
+  - [def456...](...) in [Project B](...)
+```
+
+---
+
 ## Data Access Methods
 
 ### GET API (`--method=get`)
