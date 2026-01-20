@@ -24,8 +24,10 @@ test-all: test test-integration
 release-test:
 	goreleaser release --snapshot --clean
 
-# Create and publish release (requires git tag)
-release:
+# Create and publish release
+release VERSION:
+	just release-prep {{VERSION}}
+	just push-tag {{VERSION}}
 	goreleaser release --clean
 
 # Extract version from CHANGELOG.md (topmost ## [x.x.x] entry)
@@ -73,6 +75,26 @@ release-prep VERSION:
 	just create-tag {{VERSION}}
 	@echo ""
 	@echo "Ready to push. Run: just push-tag {{VERSION}}"
+
+# Login to GitHub Container Registry
+docker-login:
+	@echo "Logging in to ghcr.io..."
+	@echo "$$GITHUB_CONTAINER_REGISTRY_TOKEN" | docker login ghcr.io -u mholzen --password-stdin
+
+# Build and push multi-platform Docker image
+docker-build VERSION:
+	docker buildx build --platform linux/amd64,linux/arm64 \
+		-t "ghcr.io/mholzen/workflowy:{{VERSION}}" \
+		-t "ghcr.io/mholzen/workflowy:latest" \
+		--push .
+
+# Full Docker release: login, build, push, and publish to MCP registry
+docker-release VERSION:
+	just docker-login
+	just docker-build {{VERSION}}
+	mcp-publisher login github
+	mcp-publisher publish
+	@echo "Docker image pushed and MCP registry updated"
 
 get item_id:
 	go run cmd/workflowy/main.go {{item_id}}

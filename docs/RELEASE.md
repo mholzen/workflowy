@@ -4,15 +4,15 @@ This document describes how to create a new release of the Workflowy CLI.
 
 ## Prerequisites
 
-1. **GitHub Personal Access Token** with `repo` scope
-   - Go to https://github.com/settings/tokens
-   - Generate a new token (classic)
-   - Select `repo` scope (full control of private repositories)
-   - Save the token securely
+1. **GitHub Tokens**
+   - `GITHUB_TOKEN` with `repo` scope for goreleaser
+   - `GITHUB_CONTAINER_REGISTRY_TOKEN` with `write:packages` scope for Docker
+   - Go to https://github.com/settings/tokens to create tokens
 
-2. **GoReleaser installed**
+2. **Tools installed**
    ```bash
    brew install goreleaser
+   brew install mcp-publisher  # For MCP registry
    ```
 
 3. **Clean working directory**
@@ -20,146 +20,59 @@ This document describes how to create a new release of the Workflowy CLI.
    git status  # Should show no uncommitted changes
    ```
 
-## Release Steps
-
-### 0. Choose the version number
-
-Update CHANGELOG.md and pick a version number
+## Quick Release
 
 ```bash
-export VERSION=0.7.0
-```
+# 1. Update CHANGELOG.md with new version (e.g., 0.7.1)
 
-### 1. Update Version References
-
-Update version in `server.json` (MCP registry manifest):
-```bash
-# Update both "version" and the Docker tag in "identifier"
-# Example: for releasing v$VERSION
-{
-  "version": "$VERSION",
-  "packages": [
-    {
-      "identifier": "ghcr.io/mholzen/workflowy:$VERSION",
-      ...
-    }
-  ]
-}
-```
-
-Update any other version references if needed:
-- `README.md`
-- Any other docs mentioning version
-
-### 2. Test Everything
-
-Run the test suite to ensure everything works:
-```bash
+# 2. Test locally
 just test
-```
-
-Test a local release build:
-```bash
 just release-test
+
+# 3. Full release (binaries + Homebrew + Scoop)
+just release 0.7.1
+
+# 4. Docker + MCP registry
+just docker-release 0.7.1
 ```
 
-This creates a snapshot release in `./dist/` without publishing. Verify:
-```bash
-# Test the built binary
-./dist/workflowy_darwin_arm64_v8.0/workflowy version
-./dist/workflowy_darwin_arm64_v8.0/workflowy --help
+## What Each Command Does
 
-# Check the generated Homebrew formula
-cat dist/homebrew/Formula/workflowy.rb
-```
+### `just release VERSION`
 
-### 3. Create and Push Git Tag
+1. **verify-version** - Checks VERSION matches CHANGELOG.md
+2. **update-server-json** - Updates version in server.json
+3. **create-tag** - Creates annotated git tag with changelog description
+4. **push-tag** - Pushes tag to origin
+5. **goreleaser release** - Builds and publishes:
+   - Binaries for all platforms (Linux, macOS, Windows; amd64, arm64)
+   - GitHub release with archives and checksums
+   - Homebrew formula to `mholzen/homebrew-workflowy`
+   - Scoop manifest to `mholzen/scoop-workflowy`
 
-Create a semantic version tag:
-```bash
-# Create annotated tag
-git tag -a "v${VERSION}" -m "Release v${VERSION} - Description of changes"
+### `just docker-release VERSION`
 
-# Push the tag
-git push origin "v${VERSION}"
-```
+1. **docker-login** - Logs in to ghcr.io
+2. **docker-build** - Builds and pushes multi-platform image (amd64, arm64)
+3. **mcp-publisher publish** - Updates MCP registry
 
-**Note:** The tag must start with `v` (e.g., `v${VERSION}`)
+## Verify Release
 
-### 4. Set GitHub Token
-
-Export your GitHub token as an environment variable:
-```bash
-export GITHUB_TOKEN=your_github_token_here
-```
-
-Or add it to your shell profile (~/.zshrc, ~/.bashrc):
-```bash
-export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
-```
-
-### 5. Run Release
-
-Execute the release:
-```bash
-just release
-```
-
-This will:
-1. Run `go mod tidy`
-2. Run `go test ./...`
-3. Build binaries for all platforms (Linux, macOS, Windows; amd64, arm64)
-4. Create archives (tar.gz, zip)
-5. Generate checksums
-6. Create GitHub release with all artifacts
-7. Automatically update the Homebrew tap at `mholzen/homebrew-workflowy`
-
-### 6. Verify Release
-
-1. **Check GitHub Release**
-   - Go to https://github.com/mholzen/workflowy/releases
-   - Verify the new release appears with all artifacts
-
-2. **Check Homebrew Formula**
-   - Go to https://github.com/mholzen/homebrew-workflowy
-   - Verify `Formula/workflowy-cli.rb` was updated with new version
-
-3. **Test Installation**
-   ```bash
-   # Update tap
-   brew update
-
-   # Upgrade to new version
-   brew upgrade workflowy-cli
-
-   # Verify version
-   workflowy version
-   ```
-
-### 7. Publish Docker Image and MCP Registry
-
-Build and push the Docker image to GitHub Container Registry, then publish to the MCP registry.
-
-**Important:** The MCP registry requires `linux/amd64` platform. Use `docker buildx` to build multi-platform images:
+1. **GitHub Release**: https://github.com/mholzen/workflowy/releases
+2. **Homebrew**: https://github.com/mholzen/homebrew-workflowy
+3. **Scoop**: https://github.com/mholzen/scoop-workflowy
+4. **Docker**: https://ghcr.io/mholzen/workflowy
 
 ```bash
-# Login to ghcr.io (requires PAT with write:packages scope)
-echo "$GITHUB_CONTAINER_REGISTRY_TOKEN" | docker login ghcr.io -u mholzen --password-stdin
+# Test Homebrew
+brew update && brew upgrade workflowy-cli && workflowy version
 
-# Build and push multi-platform image (required for MCP registry)
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t "ghcr.io/mholzen/workflowy:${VERSION}" \
-  -t "ghcr.io/mholzen/workflowy:latest" \
-  --push .
+# Test Scoop (Windows)
+scoop update workflowy && workflowy version
 
-# Publish updated server.json to MCP registry
-# (must be done AFTER Docker image is pushed - registry validates image exists)
-mcp-publisher publish
+# Test Docker
+docker run --rm ghcr.io/mholzen/workflowy:latest version
 ```
-
-**Note:** The `GITHUB_TOKEN` needs `write:packages` scope. Create one at https://github.com/settings/tokens if needed.
-
-**Troubleshooting:** If you get "no child with platform linux/amd64" error from `mcp-publisher publish`, ensure you used `docker buildx` with `--platform linux/amd64` instead of plain `docker build`.
 
 ## What Gets Released
 
