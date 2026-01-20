@@ -64,3 +64,13 @@ brews:
       system "#{bin}/workflowy version"
     install: |
       bin.install "workflowy"
+
+scoops:
+  - name: workflowy
+    repository:
+      owner: mholzen
+      name: scoop-workflowy
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    homepage: "https://github.com/mholzen/workflowy"
+    description: "MCP server & CLI for Workflowy - search, bulk replace, reports, offline access"
+    license: "MIT"

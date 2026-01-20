@@ -175,10 +175,33 @@ workflowy search -i "project" --method=backup
 
 ## Installation Options
 
-### Homebrew (Recommended)
+### Homebrew (macOS & Linux)
 
 ```bash
 brew install mholzen/workflowy/workflowy-cli
+```
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add workflowy https://github.com/mholzen/scoop-workflowy
+scoop install workflowy
+```
+
+### Go Install
+
+```bash
+go install github.com/mholzen/workflowy/cmd/workflowy@latest
+```
+
+### Download Binary
+
+Download pre-built binaries from [GitHub Releases](https://github.com/mholzen/workflowy/releases/latest).
+
+### Docker
+
+```bash
+docker run --rm -e WORKFLOWY_API_KEY=your-key ghcr.io/mholzen/workflowy:latest get
 ```
 
 ### From Source
