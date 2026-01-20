@@ -70,14 +70,8 @@ func getWriteFlags(commandFlags ...cli.Flag) []cli.Flag {
 	return flags
 }
 
-func getReportFlags(commandFlags ...cli.Flag) []cli.Flag {
-	flags := make([]cli.Flag, 0)
-	flags = append(flags, getMethodFlags()...)
-	flags = append(flags, commandFlags...)
-
-	flags = append(flags, getIdFlag("ID to start from (default: root)"))
-
-	flags = append(flags,
+func getReportOutputFlags() []cli.Flag {
+	return []cli.Flag{
 		&cli.BoolFlag{
 			Name:  "upload",
 			Usage: "Upload report to Workflowy instead of printing",
@@ -91,15 +85,21 @@ func getReportFlags(commandFlags ...cli.Flag) []cli.Flag {
 			Name:  "preserve-tags",
 			Usage: "Preserve HTML tags in list output (by default, HTML tags are stripped)",
 		},
-	)
+	}
+}
 
+func getReportFlags(commandFlags ...cli.Flag) []cli.Flag {
+	flags := make([]cli.Flag, 0)
+	flags = append(flags, getMethodFlags()...)
+	flags = append(flags, commandFlags...)
+	flags = append(flags, getIdFlag("ID to start from (default: root)"))
+	flags = append(flags, getReportOutputFlags()...)
 	return flags
 }
 
 func getRankingReportFlags() []cli.Flag {
 	reportFlags := getReportFlags()
 	reportFlags = append(reportFlags,
-		getIdFlag("ID to start from (default: root)"),
 		&cli.IntFlag{
 			Name:  "top-n",
 			Value: 20,
@@ -107,6 +107,29 @@ func getRankingReportFlags() []cli.Flag {
 		},
 	)
 	return reportFlags
+}
+
+func getMirrorReportFlags() []cli.Flag {
+	flags := []cli.Flag{
+		&cli.StringFlag{
+			Name:  "method",
+			Value: "backup",
+			Usage: "Access method (only 'backup' is supported for mirror report)",
+		},
+		&cli.StringFlag{
+			Name:  "backup-file",
+			Usage: "Path to backup file (default: latest in ~/Dropbox/Apps/Workflowy/Data)",
+		},
+		getAPIKeyFlag(),
+	}
+	flags = append(flags, getIdFlag("ID to start from (default: root)"))
+	flags = append(flags, getReportOutputFlags()...)
+	flags = append(flags, &cli.IntFlag{
+		Name:  "top-n",
+		Value: 20,
+		Usage: "Number of top results to show (0 for all)",
+	})
+	return flags
 }
 
 func getFetchArguments() []cli.Argument {

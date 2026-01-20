@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/mholzen/workflowy/pkg/mcp"
+	"github.com/mholzen/workflowy/pkg/mirror"
 	"github.com/mholzen/workflowy/pkg/reports"
 	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
@@ -569,6 +570,7 @@ func getReportCommand() *cli.Command {
 			getChildrenReportCommand(),
 			getCreatedReportCommand(),
 			getModifiedReportCommand(),
+			getMirrorReportCommand(),
 		},
 	}
 }
@@ -665,6 +667,37 @@ func getModifiedReportCommand() *cli.Command {
 			ranked := workflowy.RankByModified(nodesWithTimestamps, topN)
 
 			report := &reports.ModifiedReportOutput{
+				Ranked: ranked,
+				TopN:   topN,
+			}
+
+			return outputReport(ctx, cmd, client, report, os.Stdout)
+		}),
+	}
+}
+
+func getMirrorReportCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "mirrors",
+		Usage:     "Rank nodes by mirror count (most mirrored first)",
+		UsageText: "workflowy report mirrors [options]",
+		Flags:     getMirrorReportFlags(),
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+			method := cmd.String("method")
+			if method != "" && method != "backup" {
+				return fmt.Errorf("mirror report requires --method=backup (mirror data is only available in backup files)")
+			}
+
+			items, err := loadTree(ctx, cmd, client)
+			if err != nil {
+				return err
+			}
+
+			infos := mirror.CollectMirrorInfos(items)
+			topN := cmd.Int("top-n")
+			ranked := mirror.RankByMirrorCount(infos, topN)
+
+			report := &reports.MirrorCountReportOutput{
 				Ranked: ranked,
 				TopN:   topN,
 			}

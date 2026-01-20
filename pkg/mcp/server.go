@@ -159,6 +159,7 @@ var (
 		ToolReportChildren,
 		ToolReportCreated,
 		ToolReportModified,
+		ToolReportMirrors,
 		ToolReplace,
 		ToolTransform,
 	}
@@ -173,6 +174,7 @@ var (
 		ToolReportChildren,
 		ToolReportCreated,
 		ToolReportModified,
+		ToolReportMirrors,
 	}
 
 	writeTools = []string{
@@ -208,6 +210,7 @@ var (
 		"report_children": ToolReportChildren,
 		"report_created":  ToolReportCreated,
 		"report_modified": ToolReportModified,
+		"report_mirrors":  ToolReportMirrors,
 		"replace":         ToolReplace,
 		"transform":       ToolTransform,
 	}

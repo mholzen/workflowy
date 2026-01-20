@@ -9,6 +9,7 @@ import (
 
 	mcptypes "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
+	"github.com/mholzen/workflowy/pkg/mirror"
 	"github.com/mholzen/workflowy/pkg/replace"
 	"github.com/mholzen/workflowy/pkg/reports"
 	"github.com/mholzen/workflowy/pkg/search"
@@ -32,6 +33,7 @@ const (
 	ToolReportChildren = "workflowy_report_children"
 	ToolReportCreated  = "workflowy_report_created"
 	ToolReportModified = "workflowy_report_modified"
+	ToolReportMirrors  = "workflowy_report_mirrors"
 	ToolReplace        = "workflowy_replace"
 	ToolTransform      = "workflowy_transform"
 )
@@ -117,6 +119,7 @@ func (b ToolBuilder) BuildTools(toolNames []string) ([]mcpserver.ServerTool, err
 		ToolReportChildren: b.buildReportChildrenTool,
 		ToolReportCreated:  b.buildReportCreatedTool,
 		ToolReportModified: b.buildReportModifiedTool,
+		ToolReportMirrors:  b.buildReportMirrorsTool,
 		ToolReplace:        b.buildReplaceTool,
 		ToolTransform:      b.buildTransformTool,
 	}
@@ -816,6 +819,41 @@ func (b ToolBuilder) buildReportModifiedTool() mcpserver.ServerTool {
 			ranked := workflowy.RankByModified(nodesWithTimestamps, topN)
 
 			output := &reports.ModifiedReportOutput{
+				Ranked: ranked,
+				TopN:   topN,
+			}
+
+			return mcptypes.NewToolResultJSON(output)
+		},
+	}
+}
+
+func (b ToolBuilder) buildReportMirrorsTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolReportMirrors,
+			mcptypes.WithDescription("Rank nodes by mirror count (most mirrored first). Uses backup file as mirror data is only available there."),
+			mcptypes.WithNumber("top_n",
+				mcptypes.Description("Number of top results to include (0 for all)"),
+				mcptypes.DefaultNumber(20),
+			),
+			mcptypes.WithBoolean("preserve_tags",
+				mcptypes.Description("Preserve HTML tags in output"),
+				mcptypes.DefaultBool(false),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			topN := req.GetInt("top_n", 20)
+
+			items, err := workflowy.ReadLatestBackup()
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot load backup file (mirror data requires backup)", err), nil
+			}
+
+			infos := mirror.CollectMirrorInfos(items)
+			ranked := mirror.RankByMirrorCount(infos, topN)
+
+			output := &reports.MirrorCountReportOutput{
 				Ranked: ranked,
 				TopN:   topN,
 			}
