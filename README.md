@@ -44,6 +44,9 @@ Get your API key at https://workflowy.com/api-key/
 ### Run Your First Command
 
 ```bash
+# Get the top-level nodes, and nodes two levels deep
+workflowy get
+
 # Generate a report showing where most of your nodes are
 workflowy report count | pbcopy   # paste directly into Workflowy!
 ```
@@ -53,25 +56,31 @@ Use `pbcopy` on macOS, `clip` on Windows, `wl-copy` on Linux, or `xclip` for X11
 
 ## Use with Claude Desktop or Claude Code
 
-Add to your Claude Desktop configuration
+### Claude Code
+
+```bash
+claude mcp add --transport=stdio workflowy -- workflowy mcp --expose=all
+```
+
+Remove `—expose=all` to limit to read-only tools.
+
+### Claude Desktop
+
+Add to your configuration file:
 
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-or `~/.claude.json` for Claude Code:
 
 ```json
 {
   "mcpServers": {
     "workflowy": {
       "command": "workflowy",
-      "args": ["mcp", "--expose=all", "--log-file=/tmp/workflowy-mcp.log"]
+      "args": ["mcp", "--expose=all"]
     }
   }
 }
 ```
-
-Switch `--expose=all` to `--expose=read` if you want to allow read tools only.
 
 Restart Claude Desktop and start asking Claude to work with your Workflowy!
 
