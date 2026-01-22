@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.3] - Transform Improvements
+
+### Added
+- Debug logging for shell transforms (`-x`): logs input/output (truncated to 40 chars) at debug level
+- `--all` flag for transform (equivalent to `--depth=-1`)
+
+### Changed
+- Transform command now uses same fetch logic as `get` command (supports `get`, `export`, `backup` methods)
+- Transform default depth changed from unlimited to 2 (consistent with `get` command)
+- Write-root validation only performed when `--write-root-id` flag is actually set
+
+### Documentation
+- Added missing MCP tools to README: `workflowy_move`, `workflowy_transform`, `workflowy_id`, `workflowy_report_mirrors`
+- Added Claude Code setup command: `claude mcp add --transport=stdio workflowy -- workflowy mcp --expose=all`
+- Added Transform Content section to README with examples
+- Updated feature list with sandboxed AI access and content transformation
+
 ## [0.7.2] - Mirror Report
 
 ### Added
