@@ -3,6 +3,7 @@ package transform
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"sort"
 	"strings"
@@ -177,12 +178,23 @@ func RemoveWhitespace(s string) (string, error) {
 func ShellTransformer(cmdTemplate string) Transformer {
 	return func(s string) (string, error) {
 		cmd := strings.ReplaceAll(cmdTemplate, "{}", s)
+		slog.Debug("transform exec", "input", truncate(s, 40), "cmd", cmd)
 		out, err := exec.Command("sh", "-c", cmd).Output()
 		if err != nil {
+			slog.Debug("transform exec failed", "error", err)
 			return "", err
 		}
-		return strings.TrimSuffix(string(out), "\n"), nil
+		result := strings.TrimSuffix(string(out), "\n")
+		slog.Debug("transform exec", "output", truncate(result, 40))
+		return result, nil
 	}
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 func ResolveTransformer(transformName, execCmd string) (Transformer, error) {

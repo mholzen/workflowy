@@ -51,8 +51,13 @@ Examples:
 }
 
 func getTransformFlags() []cli.Flag {
-	return append(getMethodFlags(),
-		getDepthFlag(-1, "Maximum depth to traverse (-1 for unlimited)"),
+	flags := getMethodFlags()
+	flags = append(flags,
+		getDepthFlag(2, "Recursion depth (-1 for unlimited)"),
+		&cli.BoolFlag{
+			Name:  "all",
+			Usage: "Transform all descendants (equivalent to --depth=-1)",
+		},
 		&cli.BoolFlag{
 			Name:  "dry-run",
 			Usage: "Show changes without applying them",
@@ -86,17 +91,12 @@ func getTransformFlags() []cli.Flag {
 			Usage: "Insert result as child of source node instead of replacing",
 		},
 	)
+	return flags
 }
 
 func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 	format := cmd.String("format")
 	if err := validateFormat(format); err != nil {
-		return err
-	}
-
-	// Initialize write guard for access control
-	guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
-	if err != nil {
 		return err
 	}
 
@@ -110,23 +110,39 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 		return fmt.Errorf("cannot resolve ID: %w", err)
 	}
 
-	// Validate target is within write-root scope
-	if err := guard.ValidateTarget(itemID, "transform"); err != nil {
-		return err
+	// Validate write-root scope only if restriction is in effect
+	writeRootID := getWriteRootID(cmd)
+	if workflowy.IsWriteRestricted(writeRootID) {
+		guard, err := NewWriteGuard(ctx, client, writeRootID)
+		if err != nil {
+			return err
+		}
+		if err := guard.ValidateTarget(itemID, "transform"); err != nil {
+			return err
+		}
 	}
 
-	items, err := loadTree(ctx, cmd, client)
+	// Calculate depth (--all overrides --depth)
+	depth := int(cmd.Int("depth"))
+	if cmd.Bool("all") {
+		depth = -1
+	}
+
+	// Use the same fetch logic as get command
+	result, err := fetchItems(cmd, ctx, client, itemID, depth)
 	if err != nil {
 		return err
 	}
 
-	searchRoot := items
-	if itemID != "None" {
-		rootItem := findItemByID(items, itemID)
-		if rootItem == nil {
-			return fmt.Errorf("item not found: %s", itemID)
-		}
-		searchRoot = []*workflowy.Item{rootItem}
+	// Convert result to searchRoot slice
+	var searchRoot []*workflowy.Item
+	switch v := result.(type) {
+	case *workflowy.Item:
+		searchRoot = []*workflowy.Item{v}
+	case *workflowy.ListChildrenResponse:
+		searchRoot = v.Items
+	default:
+		return fmt.Errorf("unexpected result type from fetchItems")
 	}
 
 	transformName := cmd.StringArg("transform_name")
@@ -157,7 +173,7 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 		Fields:      transform.DetermineFields(cmd.Bool("name"), cmd.Bool("note")),
 		DryRun:      cmd.Bool("dry-run"),
 		Interactive: cmd.Bool("interactive"),
-		Depth:       int(cmd.Int("depth")),
+		Depth:       -1, // fetchItems already limited depth, process all fetched nodes
 		AsChild:     cmd.Bool("as-child"),
 	}
 
@@ -189,10 +205,10 @@ func runSplitTransform(ctx context.Context, cmd *cli.Command, client workflowy.C
 
 	fields := transform.DetermineFields(cmd.Bool("name"), cmd.Bool("note"))
 	dryRun := cmd.Bool("dry-run")
-	depth := int(cmd.Int("depth"))
 
 	var results []transform.SplitResult
-	transform.CollectSplits(searchRoot, separator, fields, true, 0, depth, &results)
+	// fetchItems already limited depth, process all fetched nodes
+	transform.CollectSplits(searchRoot, separator, fields, true, 0, -1, &results)
 
 	if len(results) == 0 {
 		if format == "json" {
