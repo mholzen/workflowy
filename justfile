@@ -26,7 +26,10 @@ release-test:
 
 # Create and publish release
 release VERSION:
-	just release-prep {{VERSION}}
+	just verify-version {{VERSION}}
+	just ensure-server-json {{VERSION}}
+	just check-git-clean
+	just create-tag {{VERSION}}
 	just push-tag {{VERSION}}
 	goreleaser release --clean
 
@@ -48,13 +51,39 @@ verify-version VERSION:
 	fi
 	echo "Version {{VERSION}} matches CHANGELOG.md"
 
-# Update server.json with new version
+# Get current version from server.json
+server-json-version:
+	@grep '"version"' server.json | sed 's/.*"version": "\([^"]*\)".*/\1/'
+
+# Update server.json with new version (standalone target)
 update-server-json VERSION:
 	#!/bin/bash
-	just verify-version {{VERSION}}
 	sed -i '' 's/"version": "[^"]*"/"version": "{{VERSION}}"/' server.json
 	sed -i '' 's|ghcr.io/mholzen/workflowy:[^"]*|ghcr.io/mholzen/workflowy:{{VERSION}}|' server.json
 	echo "Updated server.json to version {{VERSION}}"
+
+# Check if git working directory is clean
+check-git-clean:
+	#!/bin/bash
+	if [ -n "$(git status --porcelain)" ]; then
+		echo "ERROR: Git working directory is dirty. Please commit your changes first."
+		git status --short
+		exit 1
+	fi
+
+# Ensure server.json version matches, update if needed
+ensure-server-json VERSION:
+	#!/bin/bash
+	current=$(just server-json-version)
+	if [ "$current" = "{{VERSION}}" ]; then
+		echo "server.json already at version {{VERSION}}"
+	else
+		echo "Updating server.json from $current to {{VERSION}}"
+		just update-server-json {{VERSION}}
+		echo ""
+		echo "server.json updated. Please commit and run 'just release {{VERSION}}' again."
+		exit 1
+	fi
 
 # Create git tag with description from CHANGELOG.md
 create-tag VERSION:
@@ -67,14 +96,6 @@ create-tag VERSION:
 # Push tag to remote
 push-tag VERSION:
 	git push origin "v{{VERSION}}"
-
-# Full release prep: verify, update server.json, create and push tag
-release-prep VERSION:
-	just verify-version {{VERSION}}
-	just update-server-json {{VERSION}}
-	just create-tag {{VERSION}}
-	@echo ""
-	@echo "Ready to push. Run: just push-tag {{VERSION}}"
 
 # Login to GitHub Container Registry
 docker-login:
