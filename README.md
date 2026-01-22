@@ -13,7 +13,9 @@ A feature-rich **Model Context Protocol (MCP) server** and **Command Line Interf
 
  - Full-text search with regex
  - Bulk search & replace
- - Usage reports (stale nodes, size analysis)
+ - Content transformation (split, clean, pipe to LLMs)
+ - Usage reports (stale nodes, size analysis, mirrors)
+ - Sandboxed AI access with `--write-root-id`
  - Offline mode via backup files
  - CLI + MCP server in one tool
  - Caching for performance
@@ -82,20 +84,24 @@ Restart Claude Desktop and start asking Claude to work with your Workflowy!
 | `workflowy_list` | List descendants as a flat list |
 | `workflowy_search` | Search nodes by text or regex |
 | `workflowy_targets` | List shortcuts and system targets (inbox, etc.) |
+| `workflowy_id` | Resolve short ID or target key to full UUID |
 | `workflowy_report_count` | Find where most of your content lives |
 | `workflowy_report_children` | Find nodes with many children |
 | `workflowy_report_created` | Find oldest nodes |
 | `workflowy_report_modified` | Find stale, unmodified nodes |
+| `workflowy_report_mirrors` | Find most mirrored nodes (requires backup) |
 
 ### Write Tools
 | Tool | Description |
 |------|-------------|
 | `workflowy_create` | Create new nodes |
 | `workflowy_update` | Update node content |
+| `workflowy_move` | Move node to a new parent |
 | `workflowy_delete` | Delete nodes |
 | `workflowy_complete` | Mark nodes complete |
 | `workflowy_uncomplete` | Mark nodes incomplete |
 | `workflowy_replace` | Bulk find-and-replace with regex |
+| `workflowy_transform` | Transform node content (split, trim, shell commands) |
 
 ## CLI Features
 
@@ -134,8 +140,28 @@ workflowy create "Buy groceries" --parent-id=inbox
 # Change the name of an item
 workflowy update xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx --name "Project Plan v2"
 
+# Move an item to a different parent
+workflowy move <item-id> <new-parent-id>
+
 # Mark a node as complete, using a short ID
 workflowy complete https://workflowy.com/#/xxxxxxxxxxxx
+
+# Resolve a short ID or target key to full UUID
+workflowy id inbox
+```
+
+### Transform Content
+
+```bash
+# Split a node's content by newlines into child nodes
+workflowy transform <item-id> split -s "\n"
+
+# Clean up text
+workflowy transform <item-id> trim
+workflowy transform <item-id> no-punctuation
+
+# Pipe content through any shell command (e.g., an LLM)
+workflowy transform <item-id> -x 'echo {} | llm "summarize this"'
 ```
 
 
@@ -150,6 +176,9 @@ workflowy report children --top-n 20
 
 # Find stale content (oldest modified)
 workflowy report modified --top-n 50
+
+# Find most mirrored nodes (requires backup)
+workflowy report mirrors --top-n 20
 ```
 
 ## Data Access Methods
@@ -228,6 +257,8 @@ Ask Claude:
 - "Show me nodes I haven't touched in 6 months"
 - "Replace all 'v1' with 'v2' in my Project A folder"
 - "What's taking up the most space in my outline?"
+- "Which nodes are mirrored the most?"
+- "Move this item to my inbox"
 
 ### CLI Workflows
 
@@ -238,8 +269,14 @@ workflowy report modified --top-n 20
 # Weekly cleanup: find oversized nodes
 workflowy report count --threshold 0.05
 
+# Find unnecessary mirrors
+workflowy report mirrors --top-n 20
+
 # Bulk rename: update project prefix
 workflowy replace "OLD-" "NEW-" --parent-id projects-folder-id
+
+# Split pasted content into child nodes
+workflowy transform <item-id> split -s "\n"
 ```
 
 ## Contributing
