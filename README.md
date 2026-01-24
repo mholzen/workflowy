@@ -112,6 +112,42 @@ Restart Claude Desktop and start asking Claude to work with your Workflowy!
 | `workflowy_replace` | Bulk find-and-replace with regex |
 | `workflowy_transform` | Transform node content (split, trim, shell commands) |
 
+## Hosted MCP Server with OAuth
+
+Run the MCP server over HTTP with OAuth authentication for hosted deployments:
+
+```bash
+# Development mode (no auth, local only)
+workflowy serve --addr=:8080
+
+# Production with OAuth and HTTPS
+workflowy serve --addr=:8443 \
+  --tls-cert=cert.pem --tls-key=key.pem \
+  --oauth-issuer=https://auth.example.com \
+  --base-url=https://mcp.example.com
+```
+
+### OAuth Configuration
+
+When `--oauth-issuer` is specified, the server:
+- Requires OAuth 2.0 bearer tokens in the `Authorization` header
+- Implements RFC 9728 Protected Resource Metadata at `/.well-known/oauth-protected-resource`
+- Returns HTTP 401 with `WWW-Authenticate` header for unauthenticated requests
+
+### Serve Command Options
+
+| Flag | Description |
+|------|-------------|
+| `--addr` | Listen address (default: `:8080`) |
+| `--base-url` | Canonical URL of this server |
+| `--tls-cert`, `--tls-key` | TLS certificate and key for HTTPS |
+| `--oauth-issuer` | OAuth authorization server URL |
+| `--oauth-require-auth` | Require auth for all requests (default: true) |
+| `--oauth-scope` | Accepted OAuth scopes (repeatable) |
+| `--endpoint-path` | MCP endpoint path (default: `/mcp`) |
+| `--cors` | Enable CORS headers |
+| `--expose` | Tools to expose: read, write, all |
+
 ## CLI Features
 
 ### Search Your Entire Outline

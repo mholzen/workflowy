@@ -33,6 +33,7 @@ func getCommands() []*cli.Command {
 		getTransformCommand(),
 		getIDCommand(),
 		getMcpCommand(),
+		getServeCommand(),
 		getVersionCommand(),
 	}
 }
@@ -990,6 +991,143 @@ Examples:
 				WriteRootID:       cmd.String("write-root-id"),
 			}
 			return mcp.RunServer(ctx, serverConfig)
+		},
+	}
+}
+
+func getServeCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "serve",
+		Usage:     "Run as hosted MCP server (streamable HTTP transport with OAuth)",
+		UsageText: "workflowy serve [options]",
+		Description: `Start the Workflowy MCP server over HTTP with optional OAuth authentication.
+
+This command runs the MCP server using streamable HTTP transport, which is suitable
+for hosted deployments accessible to remote MCP clients.
+
+OAuth Authentication:
+  When --oauth-issuer is specified, the server requires OAuth 2.0 bearer tokens.
+  Clients must obtain tokens from the specified authorization server and include
+  them in the Authorization header. The server implements RFC 9728 Protected
+  Resource Metadata for automatic OAuth discovery.
+
+TLS/HTTPS:
+  For production deployments, use --tls-cert and --tls-key to enable HTTPS.
+  This is required for secure OAuth token transmission.
+
+Examples:
+  # Start server on port 8080 (no auth, development only)
+  workflowy serve --addr=:8080
+
+  # Start with OAuth authentication
+  workflowy serve --addr=:8443 \
+    --tls-cert=cert.pem --tls-key=key.pem \
+    --oauth-issuer=https://auth.example.com \
+    --base-url=https://mcp.example.com
+
+  # Restrict to read-only tools
+  workflowy serve --addr=:8080 --expose=read`,
+		Flags: []cli.Flag{
+			getAPIKeyFlag(),
+			&cli.StringFlag{
+				Name:  "addr",
+				Value: ":8080",
+				Usage: "Address to listen on (e.g., :8080 or localhost:8080)",
+			},
+			&cli.StringFlag{
+				Name:  "base-url",
+				Usage: "Canonical URL of this server (for OAuth resource indicator)",
+			},
+			&cli.StringFlag{
+				Name:  "expose",
+				Value: "read",
+				Usage: "Tools to expose: read, write, all, or comma-separated tool names",
+			},
+			getWriteRootIdFlag(),
+			&cli.StringFlag{
+				Name:  "tls-cert",
+				Usage: "Path to TLS certificate file for HTTPS",
+			},
+			&cli.StringFlag{
+				Name:  "tls-key",
+				Usage: "Path to TLS key file for HTTPS",
+			},
+			&cli.StringFlag{
+				Name:  "oauth-issuer",
+				Usage: "OAuth authorization server URL (enables OAuth authentication)",
+			},
+			&cli.BoolFlag{
+				Name:  "oauth-require-auth",
+				Value: true,
+				Usage: "Require authentication for all requests (when OAuth is enabled)",
+			},
+			&cli.StringSliceFlag{
+				Name:  "oauth-scope",
+				Usage: "OAuth scopes this server accepts (can be specified multiple times)",
+			},
+			&cli.StringFlag{
+				Name:  "endpoint-path",
+				Value: "/mcp",
+				Usage: "Path for the MCP endpoint",
+			},
+			&cli.BoolFlag{
+				Name:  "cors",
+				Usage: "Enable CORS for browser-based clients",
+			},
+			&cli.StringSliceFlag{
+				Name:  "cors-origin",
+				Usage: "Allowed CORS origins (if empty, allows all when --cors is enabled)",
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			// Build OAuth config if issuer is specified
+			var oauthConfig *mcp.OAuthConfig
+			oauthIssuer := cmd.String("oauth-issuer")
+			if oauthIssuer != "" {
+				baseURL := cmd.String("base-url")
+				if baseURL == "" {
+					// Infer base URL from address
+					addr := cmd.String("addr")
+					protocol := "http"
+					if cmd.String("tls-cert") != "" {
+						protocol = "https"
+					}
+					baseURL = fmt.Sprintf("%s://localhost%s", protocol, addr)
+				}
+
+				oauthConfig = &mcp.OAuthConfig{
+					AuthorizationServers: []string{oauthIssuer},
+					Resource:             baseURL,
+					ResourceName:         "Workflowy MCP Server",
+					RequireAuth:          cmd.Bool("oauth-require-auth"),
+					Scopes:               cmd.StringSlice("oauth-scope"),
+				}
+
+				slog.Info("OAuth authentication enabled",
+					"issuer", oauthIssuer,
+					"require_auth", oauthConfig.RequireAuth,
+				)
+			}
+
+			httpConfig := mcp.HTTPConfig{
+				Config: mcp.Config{
+					APIKeyFile:        cmd.String("api-key-file"),
+					DefaultAPIKeyFile: defaultAPIKeyFile,
+					Expose:            cmd.String("expose"),
+					Version:           version,
+					WriteRootID:       cmd.String("write-root-id"),
+				},
+				Addr:           cmd.String("addr"),
+				BaseURL:        cmd.String("base-url"),
+				TLSCertFile:    cmd.String("tls-cert"),
+				TLSKeyFile:     cmd.String("tls-key"),
+				OAuth:          oauthConfig,
+				EndpointPath:   cmd.String("endpoint-path"),
+				EnableCORS:     cmd.Bool("cors"),
+				AllowedOrigins: cmd.StringSlice("cors-origin"),
+			}
+
+			return mcp.RunHTTPServer(ctx, httpConfig)
 		},
 	}
 }
