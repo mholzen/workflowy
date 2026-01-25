@@ -305,4 +305,5 @@ MIT — see [LICENSE](LICENSE)
 
 ## Acknowledgments
 
+- Thanks to Andrew Lisy for requesting a method to sandbox write commands
 - Thanks to Craig P. Motlin for pointing out mirrors are defined in the backup files
