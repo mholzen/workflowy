@@ -36,7 +36,6 @@ brew install mholzen/workflowy/workflowy-cli
 ```bash
 mkdir -p ~/.workflowy
 echo "your-api-key-here" > ~/.workflowy/api.key
-chmod 600 ~/.workflowy/api.key
 ```
 
 Get your API key at https://workflowy.com/api-key/

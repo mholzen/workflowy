@@ -2,10 +2,9 @@
 
 ## SHOULD DO
 
+- FEATURE: a more general purpose exporter (perhaps one that elements certain elements but leaves others)
 - FEATURE: Add --name and --note flags to search and replace commands to allow
   searching/replacing in notes (currently only operates on name)
-- FEATURE: add a more general purpose Dockerfile for easy installation from agents
-- BUG: strip html tags when creating links in reports, as they are not recognized when pasting to WF
 - BUG: rename 'markdown' format to 'document' to avoid confusion with 'list'
 - CODE: unify markdown for display and for upload
 - BUG: list --format=json should merge nodes
