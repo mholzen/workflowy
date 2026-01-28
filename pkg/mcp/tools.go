@@ -42,17 +42,55 @@ const (
 type ToolBuilder struct {
 	client      workflowy.Client
 	writeRootID string
+	readRootID  string
 }
 
 // NewToolBuilder creates a builder bound to the provided Workflowy client.
 // If writeRootID is set, write operations are restricted to that node and its descendants.
-func NewToolBuilder(client workflowy.Client, writeRootID string) ToolBuilder {
-	return ToolBuilder{client: client, writeRootID: writeRootID}
+// If readRootID is set, all operations are restricted to that node and its descendants.
+func NewToolBuilder(client workflowy.Client, writeRootID, readRootID string) ToolBuilder {
+	return ToolBuilder{client: client, writeRootID: writeRootID, readRootID: readRootID}
 }
 
 // isRestricted returns true if write restrictions are in effect.
 func (b ToolBuilder) isRestricted() bool {
 	return workflowy.IsWriteRestricted(b.writeRootID)
+}
+
+// isReadRestricted returns true if read restrictions are in effect.
+func (b ToolBuilder) isReadRestricted() bool {
+	return workflowy.IsRestricted(b.readRootID)
+}
+
+// validateReadTarget checks if the target is within the read-root scope.
+func (b ToolBuilder) validateReadTarget(ctx context.Context, targetID, operation string) error {
+	if !b.isReadRestricted() {
+		return nil
+	}
+	items, err := b.loadExportTree(ctx)
+	if err != nil {
+		return fmt.Errorf("cannot load tree for read validation: %w", err)
+	}
+	return workflowy.ValidateReadAccess(items, b.readRootID, targetID, operation)
+}
+
+// defaultReadID returns the readRootID when itemID is "None" and read restrictions are in effect.
+func (b ToolBuilder) defaultReadID(itemID string) string {
+	if !b.isReadRestricted() {
+		return itemID
+	}
+	if itemID == "None" || itemID == "" {
+		return b.readRootID
+	}
+	return itemID
+}
+
+// readRestrictionNote returns a note about read restrictions if enabled.
+func (b ToolBuilder) readRestrictionNote() string {
+	if !b.isReadRestricted() {
+		return ""
+	}
+	return fmt.Sprintf(" (restricted to %s and descendants)", b.readRootID)
 }
 
 // validateWriteTarget checks if the target is within the write-root scope.
@@ -139,7 +177,7 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 	return mcpserver.ServerTool{
 		Tool: mcptypes.NewTool(
 			ToolGet,
-			mcptypes.WithDescription("Get node and descendants"),
+			mcptypes.WithDescription("Get node and descendants"+b.readRestrictionNote()),
 			mcptypes.WithString("id",
 				mcptypes.Description("ID (default: root)"),
 				mcptypes.DefaultString("None"),
@@ -154,13 +192,17 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := req.GetString("id", "None")
+			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			depth := req.GetInt("depth", 2)
 			includeEmpty := req.GetBool("include_empty_names", false)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
+			}
+
+			if err := b.validateReadTarget(ctx, itemID, "get"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
 			result, err := b.fetchItems(ctx, itemID, depth)
@@ -186,7 +228,7 @@ func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
 	return mcpserver.ServerTool{
 		Tool: mcptypes.NewTool(
 			ToolList,
-			mcptypes.WithDescription("List descendants as flat list"),
+			mcptypes.WithDescription("List descendants as flat list"+b.readRestrictionNote()),
 			mcptypes.WithString("id",
 				mcptypes.Description("ID (default: root)"),
 				mcptypes.DefaultString("None"),
@@ -201,13 +243,17 @@ func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := req.GetString("id", "None")
+			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			depth := req.GetInt("depth", 2)
 			includeEmpty := req.GetBool("include_empty_names", false)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
+			}
+
+			if err := b.validateReadTarget(ctx, itemID, "list"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
 			data, err := b.fetchItems(ctx, itemID, depth)
@@ -229,7 +275,7 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 	return mcpserver.ServerTool{
 		Tool: mcptypes.NewTool(
 			ToolSearch,
-			mcptypes.WithDescription("Search node names by text or regular expression"),
+			mcptypes.WithDescription("Search node names by text or regular expression"+b.readRestrictionNote()),
 			mcptypes.WithString("pattern",
 				mcptypes.Description("Search text or regular expression"),
 				mcptypes.Required(),
@@ -253,13 +299,17 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultError("pattern is required"), nil
 			}
 
-			rawItemID := req.GetString("id", "None")
+			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			useRegexp := req.GetBool("regexp", false)
 			ignoreCase := req.GetBool("ignore_case", false)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
+			}
+
+			if err := b.validateReadTarget(ctx, itemID, "search"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
 			items, err := b.loadExportTree(ctx)
@@ -297,18 +347,28 @@ func (b ToolBuilder) buildTargetsTool() mcpserver.ServerTool {
 
 			result := map[string]any{"targets": response.Targets}
 
-			if b.isRestricted() {
-				writeRoot := map[string]string{"id": b.writeRootID}
-
-				// Try to get the name of the write-root node
+			if b.isRestricted() || b.isReadRestricted() {
 				items, err := b.loadExportTree(ctx)
-				if err == nil {
-					if item := workflowy.FindItemByID(items, b.writeRootID); item != nil {
-						writeRoot["name"] = item.Name
+
+				if b.isRestricted() {
+					writeRoot := map[string]string{"id": b.writeRootID}
+					if err == nil {
+						if item := workflowy.FindItemByID(items, b.writeRootID); item != nil {
+							writeRoot["name"] = item.Name
+						}
 					}
+					result["write_root"] = writeRoot
 				}
 
-				result["write_root"] = writeRoot
+				if b.isReadRestricted() {
+					readRoot := map[string]string{"id": b.readRootID}
+					if err == nil {
+						if item := workflowy.FindItemByID(items, b.readRootID); item != nil {
+							readRoot["name"] = item.Name
+						}
+					}
+					result["read_root"] = readRoot
+				}
 			}
 
 			return mcptypes.NewToolResultJSON(result)
@@ -382,6 +442,9 @@ func (b ToolBuilder) buildCreateTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve parent ID", err), nil
 			}
 
+			if err := b.validateReadTarget(ctx, parentID, "create"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
 			if err := b.validateWriteParent(ctx, parentID, "create"); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
@@ -440,6 +503,9 @@ func (b ToolBuilder) buildUpdateTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
+			if err := b.validateReadTarget(ctx, itemID, "update"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
 			if err := b.validateWriteTarget(ctx, itemID, "update"); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
@@ -512,6 +578,12 @@ func (b ToolBuilder) buildMoveTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve parent ID", err), nil
 			}
 
+			if err := b.validateReadTarget(ctx, itemID, "move"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
+			if err := b.validateReadTarget(ctx, parentID, "move destination"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
 			if err := b.validateWriteTarget(ctx, itemID, "move"); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
@@ -557,6 +629,9 @@ func (b ToolBuilder) buildDeleteTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
+			if err := b.validateReadTarget(ctx, itemID, "delete"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
 			if err := b.validateWriteTarget(ctx, itemID, "delete"); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
@@ -592,6 +667,9 @@ func (b ToolBuilder) buildCompleteTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
+			if err := b.validateReadTarget(ctx, itemID, "complete"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
 			if err := b.validateWriteTarget(ctx, itemID, "complete"); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
@@ -627,6 +705,9 @@ func (b ToolBuilder) buildUncompleteTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
+			if err := b.validateReadTarget(ctx, itemID, "uncomplete"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
 			if err := b.validateWriteTarget(ctx, itemID, "uncomplete"); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
@@ -645,7 +726,7 @@ func (b ToolBuilder) buildReportCountTool() mcpserver.ServerTool {
 	return mcpserver.ServerTool{
 		Tool: mcptypes.NewTool(
 			ToolReportCount,
-			mcptypes.WithDescription("Generate descendant count report"),
+			mcptypes.WithDescription("Generate descendant count report"+b.readRestrictionNote()),
 			mcptypes.WithString("id",
 				mcptypes.Description("ID (default: root)"),
 				mcptypes.DefaultString("None"),
@@ -660,12 +741,16 @@ func (b ToolBuilder) buildReportCountTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := req.GetString("id", "None")
+			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			threshold := req.GetFloat("threshold", 0.01)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
+			}
+
+			if err := b.validateReadTarget(ctx, itemID, "report_count"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
 			root, err := b.buildReportRoot(ctx, itemID)
@@ -694,7 +779,7 @@ func (b ToolBuilder) buildReportChildrenTool() mcpserver.ServerTool {
 	return mcpserver.ServerTool{
 		Tool: mcptypes.NewTool(
 			ToolReportChildren,
-			mcptypes.WithDescription("Rank nodes by immediate children count"),
+			mcptypes.WithDescription("Rank nodes by immediate children count"+b.readRestrictionNote()),
 			mcptypes.WithString("id",
 				mcptypes.Description("ID (default: root)"),
 				mcptypes.DefaultString("None"),
@@ -709,12 +794,16 @@ func (b ToolBuilder) buildReportChildrenTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := req.GetString("id", "None")
+			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			topN := req.GetInt("top_n", 20)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
+			}
+
+			if err := b.validateReadTarget(ctx, itemID, "report_children"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
 			root, err := b.buildReportRoot(ctx, itemID)
@@ -740,7 +829,7 @@ func (b ToolBuilder) buildReportCreatedTool() mcpserver.ServerTool {
 	return mcpserver.ServerTool{
 		Tool: mcptypes.NewTool(
 			ToolReportCreated,
-			mcptypes.WithDescription("Rank nodes by creation date (oldest first)"),
+			mcptypes.WithDescription("Rank nodes by creation date (oldest first)"+b.readRestrictionNote()),
 			mcptypes.WithString("id",
 				mcptypes.Description("ID (default: root)"),
 				mcptypes.DefaultString("None"),
@@ -755,12 +844,16 @@ func (b ToolBuilder) buildReportCreatedTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := req.GetString("id", "None")
+			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			topN := req.GetInt("top_n", 20)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
+			}
+
+			if err := b.validateReadTarget(ctx, itemID, "report_created"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
 			root, err := b.buildReportRoot(ctx, itemID)
@@ -786,7 +879,7 @@ func (b ToolBuilder) buildReportModifiedTool() mcpserver.ServerTool {
 	return mcpserver.ServerTool{
 		Tool: mcptypes.NewTool(
 			ToolReportModified,
-			mcptypes.WithDescription("Rank nodes by modification date (oldest first)"),
+			mcptypes.WithDescription("Rank nodes by modification date (oldest first)"+b.readRestrictionNote()),
 			mcptypes.WithString("id",
 				mcptypes.Description("ID (default: root)"),
 				mcptypes.DefaultString("None"),
@@ -801,12 +894,16 @@ func (b ToolBuilder) buildReportModifiedTool() mcpserver.ServerTool {
 			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
-			rawItemID := req.GetString("id", "None")
+			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			topN := req.GetInt("top_n", 20)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
+			}
+
+			if err := b.validateReadTarget(ctx, itemID, "report_modified"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
 			root, err := b.buildReportRoot(ctx, itemID)
@@ -922,6 +1019,9 @@ func (b ToolBuilder) buildReplaceTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve parent ID", err), nil
 			}
 
+			if err := b.validateReadTarget(ctx, parentID, "replace"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
 			if err := b.validateWriteTarget(ctx, parentID, "replace"); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
@@ -1026,6 +1126,9 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
+			if err := b.validateReadTarget(ctx, itemID, "transform"); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
 			if err := b.validateWriteTarget(ctx, itemID, "transform"); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}

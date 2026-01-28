@@ -115,14 +115,19 @@ func FilterEmpty(items []*Item) []*Item {
 	return filtered
 }
 
+// IsRestricted returns true if rootID represents an active restriction (not empty and not "None").
+func IsRestricted(rootID string) bool {
+	return rootID != "" && rootID != "None"
+}
+
 // IsWriteRestricted returns true if writeRootID represents an active restriction.
 func IsWriteRestricted(writeRootID string) bool {
-	return writeRootID != "" && writeRootID != "None"
+	return IsRestricted(writeRootID)
 }
 
 // IsDescendantOf checks if targetID equals rootID or is a descendant of rootID.
 func IsDescendantOf(items []*Item, rootID, targetID string) bool {
-	if !IsWriteRestricted(rootID) {
+	if !IsRestricted(rootID) {
 		return true
 	}
 	if rootID == targetID {
@@ -135,13 +140,23 @@ func IsDescendantOf(items []*Item, rootID, targetID string) bool {
 	return FindItemByID(root.Children, targetID) != nil
 }
 
-// ValidateWriteAccess returns an error if targetID is not within writeRootID scope.
-func ValidateWriteAccess(items []*Item, writeRootID, targetID, operation string) error {
-	if !IsWriteRestricted(writeRootID) {
+// ValidateAccess returns an error if targetID is not within rootID scope.
+func ValidateAccess(items []*Item, rootID, targetID, rootLabel, operation string) error {
+	if !IsRestricted(rootID) {
 		return nil
 	}
-	if !IsDescendantOf(items, writeRootID, targetID) {
-		return fmt.Errorf("%s denied: %s is not within write-root %s", operation, targetID, writeRootID)
+	if !IsDescendantOf(items, rootID, targetID) {
+		return fmt.Errorf("%s denied: %s is not within %s %s", operation, targetID, rootLabel, rootID)
 	}
 	return nil
+}
+
+// ValidateWriteAccess returns an error if targetID is not within writeRootID scope.
+func ValidateWriteAccess(items []*Item, writeRootID, targetID, operation string) error {
+	return ValidateAccess(items, writeRootID, targetID, "write-root", operation)
+}
+
+// ValidateReadAccess returns an error if targetID is not within readRootID scope.
+func ValidateReadAccess(items []*Item, readRootID, targetID, operation string) error {
+	return ValidateAccess(items, readRootID, targetID, "read-root", operation)
 }

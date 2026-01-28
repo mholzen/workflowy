@@ -50,9 +50,18 @@ func getGetCommand() *cli.Command {
 				return err
 			}
 
-			itemID, err := workflowy.ResolveNodeID(ctx, client, params.itemID)
+			readGuard, err := NewReadGuard(ctx, client, getReadRootID(cmd))
+			if err != nil {
+				return err
+			}
+
+			itemID, err := workflowy.ResolveNodeID(ctx, client, readGuard.DefaultID(params.itemID))
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
+			}
+
+			if err := readGuard.ValidateTarget(itemID, "get"); err != nil {
+				return err
 			}
 
 			result, err := fetchItems(cmd, ctx, client, itemID, params.depth)
@@ -79,9 +88,18 @@ func getListCommand() *cli.Command {
 				return err
 			}
 
-			itemID, err := workflowy.ResolveNodeID(ctx, client, params.itemID)
+			readGuard, err := NewReadGuard(ctx, client, getReadRootID(cmd))
+			if err != nil {
+				return err
+			}
+
+			itemID, err := workflowy.ResolveNodeID(ctx, client, readGuard.DefaultID(params.itemID))
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
+			}
+
+			if err := readGuard.ValidateTarget(itemID, "list"); err != nil {
+				return err
 			}
 
 			treeResult, err := fetchItems(cmd, ctx, client, itemID, params.depth)
@@ -735,15 +753,26 @@ func getSearchCommand() *cli.Command {
 				return fmt.Errorf("cannot search using the GET method")
 			}
 
+			readGuard, err := NewReadGuard(ctx, client, getReadRootID(cmd))
+			if err != nil {
+				return err
+			}
+
 			items, err := loadTree(ctx, cmd, client)
 			if err != nil {
 				return err
 			}
 
-			itemID, err := workflowy.ResolveNodeID(ctx, client, getID(cmd))
+			rawID := readGuard.DefaultID(getID(cmd))
+			itemID, err := workflowy.ResolveNodeID(ctx, client, rawID)
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
+
+			if err := readGuard.ValidateTarget(itemID, "search"); err != nil {
+				return err
+			}
+
 			rootItem := findRootItem(items, itemID)
 			if rootItem == nil && itemID != "None" {
 				return fmt.Errorf("item not found: %s", itemID)
@@ -980,6 +1009,7 @@ Examples:
 				Usage: "Tools to expose: read, write, all, or comma-separated tool names",
 			},
 			getWriteRootIdFlag(),
+			getReadRootIdFlag(),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			serverConfig := mcp.Config{
@@ -988,6 +1018,7 @@ Examples:
 				Expose:            cmd.String("expose"),
 				Version:           version,
 				WriteRootID:       cmd.String("write-root-id"),
+				ReadRootID:        cmd.String("read-root-id"),
 			}
 			return mcp.RunServer(ctx, serverConfig)
 		},

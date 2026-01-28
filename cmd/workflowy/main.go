@@ -52,6 +52,7 @@ Examples:
 			},
 			getAPIKeyFlag(),
 			getWriteRootIdFlag(),
+			getReadRootIdFlag(),
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			setupLogging(cmd.String("log"), cmd.String("log-file"))

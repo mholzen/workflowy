@@ -135,14 +135,24 @@ func loadAndCountDescendants(ctx context.Context, cmd *cli.Command, client workf
 }
 
 func loadAndCountDescendantsWithBackupProvider(ctx context.Context, cmd *cli.Command, client workflowy.Client, backupProvider workflowy.BackupProvider) (workflowy.Descendants, error) {
+	readGuard, err := NewReadGuard(ctx, client, getReadRootID(cmd))
+	if err != nil {
+		return nil, err
+	}
+
 	items, err := loadTreeWithBackupProvider(ctx, cmd, client, backupProvider)
 	if err != nil {
 		return nil, err
 	}
 
-	itemID, err := workflowy.ResolveNodeID(ctx, client, getID(cmd))
+	rawID := readGuard.DefaultID(getID(cmd))
+	itemID, err := workflowy.ResolveNodeID(ctx, client, rawID)
 	if err != nil {
 		return nil, fmt.Errorf("cannot resolve item ID: %w", err)
+	}
+
+	if err := readGuard.ValidateTarget(itemID, "report"); err != nil {
+		return nil, err
 	}
 
 	var rootItem *workflowy.Item
@@ -223,14 +233,24 @@ func DefaultReportDeps() ReportDeps {
 
 func countReportAction(deps ReportDeps) func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 	return func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+		readGuard, err := NewReadGuard(ctx, client, getReadRootID(cmd))
+		if err != nil {
+			return err
+		}
+
 		items, err := loadTreeWithBackupProvider(ctx, cmd, client, deps.BackupProvider)
 		if err != nil {
 			return err
 		}
 
-		itemID, err := workflowy.ResolveNodeID(ctx, client, getID(cmd))
+		rawID := readGuard.DefaultID(getID(cmd))
+		itemID, err := workflowy.ResolveNodeID(ctx, client, rawID)
 		if err != nil {
 			return fmt.Errorf("cannot resolve item ID: %w", err)
+		}
+
+		if err := readGuard.ValidateTarget(itemID, "report count"); err != nil {
+			return err
 		}
 
 		var rootItem *workflowy.Item

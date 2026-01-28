@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.4] - Read Restrictions
+
+### Added
+- `--read-root-id` global flag to restrict all operations (read and write) to a specific subtree
+- MCP `--read-root-id` flag for fully sandboxed AI access
+- MCP tool descriptions dynamically show read restrictions when active
+- `workflowy_targets` returns `read_root` info when read restrictions are set
+- `ValidateReadAccess` and `ValidateAccess` generalized tree validation functions
+
+### Changed
+- When `--read-root-id` is set, bare requests (no ID) default to the read-root subtree
+- Write operations check both read-root and write-root constraints when both are set
+
 ## [0.7.3] - Transform Improvements
 
 ### Added

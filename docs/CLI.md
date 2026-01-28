@@ -78,10 +78,26 @@ These options apply to all commands:
 | `--backup-file <path>` | Backup file path (for `--method=backup`) | auto-detected |
 | `--force-refresh` | Bypass cache (for `--method=export`) | `false` |
 | `--write-root-id <id>` | Restrict write operations to this node and descendants | - |
+| `--read-root-id <id>` | Restrict all operations to this node and descendants | - |
+
+### Read Restrictions
+
+Use `--read-root-id` to restrict **all operations** (read and write) to a specific subtree:
+
+```bash
+# All operations scoped to a project subtree
+workflowy --read-root-id=<project-id> get          # Returns project subtree
+workflowy --read-root-id=<project-id> search "TODO" # Searches within project only
+workflowy --read-root-id=<project-id> report count  # Reports on project only
+
+# Attempting to access nodes outside the scope fails
+workflowy --read-root-id=<project-id> get <outside-id>
+# Error: get denied: <outside-id> is not within read-root <project-id>
+```
 
 ### Write Restrictions
 
-Use `--write-root-id` to restrict all write operations (create, update, delete, move, complete, uncomplete, replace, transform) to a specific subtree:
+Use `--write-root-id` to restrict only write operations (create, update, delete, move, complete, uncomplete, replace, transform) to a specific subtree:
 
 ```bash
 # All writes restricted to inbox and its descendants
@@ -95,7 +111,18 @@ workflowy --write-root-id=inbox update some-other-id --name "New name"
 # Error: update denied: some-other-id is not within write-root abc-123
 ```
 
-This is useful for:
+### Combining Restrictions
+
+When both flags are set, write operations must satisfy both constraints:
+
+```bash
+# Read scoped to project, writes scoped to project's inbox subfolder
+workflowy --read-root-id=<project-id> --write-root-id=<project-inbox-id> create "Task"
+```
+
+**Implementation note:** These restrictions are enforced locally by the CLI, not by the Workflowy API. When required by the operation, the full data export is retrieved from Workflowy, then operations are validated and scoped before returning results. For example, search reads the full tree from the API even though only results within the restricted subtree are returned.
+
+These restrictions are useful for:
 - Sandboxing AI assistants to a specific area
 - Preventing accidental modifications outside a project
 - Scripted operations that should only affect one subtree

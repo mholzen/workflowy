@@ -268,3 +268,15 @@ func getWriteRootID(cmd *cli.Command) string {
 	return cmd.String("write-root-id")
 }
 
+func getReadRootIdFlag() cli.Flag {
+	return &cli.StringFlag{
+		Name:  "read-root-id",
+		Value: "None",
+		Usage: "Restrict all operations to this node and its descendants",
+	}
+}
+
+func getReadRootID(cmd *cli.Command) string {
+	return cmd.String("read-root-id")
+}
+

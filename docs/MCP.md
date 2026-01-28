@@ -429,9 +429,34 @@ workflowy mcp --expose=get,list,search,create
 
 ## Sandboxed Access
 
-Use `--write-root-id` to restrict all write operations to a specific subtree. This is ideal for giving AI assistants access to only a portion of your Workflowy.
+Use `--read-root-id` and/or `--write-root-id` to restrict operations to specific subtrees. This is ideal for giving AI assistants access to only a portion of your Workflowy.
 
-### Configuration
+### Read Restrictions (`--read-root-id`)
+
+Restricts **all operations** (read and write) to a node and its descendants:
+
+```json
+{
+  "mcpServers": {
+    "workflowy": {
+      "command": "workflowy",
+      "args": ["mcp", "--expose=all", "--read-root-id=<project-id>"]
+    }
+  }
+}
+```
+
+When `--read-root-id` is set:
+
+1. **All tool descriptions** include the restriction note
+2. **Read operations** (get, list, search, reports) are scoped to the subtree
+3. **Write operations** are also restricted to the subtree
+4. **Default scope**: bare requests (no ID specified) return the read-root subtree
+5. **workflowy_targets** returns `read_root` info with the ID and name
+
+### Write Restrictions (`--write-root-id`)
+
+Restricts only **write operations** to a node and its descendants:
 
 ```json
 {
@@ -444,41 +469,59 @@ Use `--write-root-id` to restrict all write operations to a specific subtree. Th
 }
 ```
 
-### Behavior
-
 When `--write-root-id` is set:
 
-1. **Tool descriptions** include the restriction, so the AI knows the boundaries
-2. **Create operations** default to the write-root as parent (no need to specify parent_id)
+1. **Write tool descriptions** include the restriction
+2. **Create operations** default to the write-root as parent
 3. **All write operations** (update, delete, move, complete, etc.) are restricted to descendants
-4. **workflowy_targets** returns `write_root` info with the ID and name of the restricted area
+4. **workflowy_targets** returns `write_root` info
+
+### Combining Both
+
+When both flags are set, write operations must satisfy both constraints:
+
+```json
+{
+  "mcpServers": {
+    "workflowy": {
+      "command": "workflowy",
+      "args": ["mcp", "--expose=all", "--read-root-id=<project-id>", "--write-root-id=<project-inbox-id>"]
+    }
+  }
+}
+```
 
 ### Example
 
 ```bash
-# Start MCP server with sandbox
-workflowy mcp --expose=all --write-root-id=inbox
+# Start MCP server with full sandbox
+workflowy mcp --expose=all --read-root-id=<project-id>
 ```
 
 The AI assistant will see tool descriptions like:
-> "Create a new node (writes restricted to abc-123 and descendants)"
+> "Get node and descendants (restricted to abc-123 and descendants)"
 
 And `workflowy_targets` will return:
 ```json
 {
   "targets": [...],
-  "write_root": {
+  "read_root": {
     "id": "abc-123-full-uuid",
-    "name": "Inbox"
+    "name": "My Project"
   }
 }
 ```
 
+### Implementation Note
+
+These restrictions are enforced by the MCP server, not by the Workflowy API itself. When required by the operation, the full data export is retrieved from Workflowy, then operations are validated and scoped locally before returning results. This means that for operations like search, the full tree is read from the API even though only results within the restricted subtree are provided to the agent.
+
 ### Use Cases
 
-- **AI Sandbox**: Give Claude write access to only an "AI Workspace" folder
-- **Project Isolation**: Restrict a script to only modify one project
-- **Safe Experimentation**: Test write operations without risking other data
+- **Full Sandbox**: Use `--read-root-id` to completely isolate an AI to one subtree
+- **Read All, Write Some**: Use `--write-root-id` alone to allow reading everything but writing only to a specific area
+- **Project Isolation**: Restrict a script to only see and modify one project
+- **Safe Experimentation**: Test operations without risking other data
 
 ---
 

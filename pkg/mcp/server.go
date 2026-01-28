@@ -19,6 +19,7 @@ type Config struct {
 	Expose            string
 	Version           string
 	WriteRootID       string
+	ReadRootID        string
 }
 
 // RunServer starts the MCP stdio server with the requested tool set.
@@ -51,7 +52,18 @@ func RunServer(ctx context.Context, cfg Config) error {
 		slog.Info("write restrictions enabled", "write_root_id", writeRootID)
 	}
 
-	builder := NewToolBuilder(client, writeRootID)
+	// Resolve read-root-id if provided
+	readRootID := cfg.ReadRootID
+	if workflowy.IsRestricted(readRootID) {
+		resolvedID, err := workflowy.ResolveNodeIDToUUID(ctx, client, readRootID)
+		if err != nil {
+			return fmt.Errorf("cannot resolve read-root-id: %w", err)
+		}
+		readRootID = resolvedID
+		slog.Info("read restrictions enabled", "read_root_id", readRootID)
+	}
+
+	builder := NewToolBuilder(client, writeRootID, readRootID)
 	serverTools, err := builder.BuildTools(toolsToEnable)
 	if err != nil {
 		return err
