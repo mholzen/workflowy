@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -62,16 +63,64 @@ func (b ToolBuilder) isReadRestricted() bool {
 	return workflowy.IsRestricted(b.readRootID)
 }
 
+// validateAccessWithRetry loads the tree, runs the validator, and retries with a cache
+// refresh if the node is not found. The label (e.g. "target", "parent") and rootLabel
+// (e.g. "read_root", "write_root") are used for log messages.
+func (b ToolBuilder) validateAccessWithRetry(
+	ctx context.Context,
+	resolvedID, rootID, operation, label, rootLabel string,
+	validate func(items []*workflowy.Item) error,
+) error {
+	items, err := b.loadExportTree(ctx, false)
+	if err != nil {
+		return fmt.Errorf("cannot load tree for %s validation: %w", rootLabel, err)
+	}
+	err = validate(items)
+	if err == nil {
+		return nil
+	}
+
+	var notFound *workflowy.NodeNotFoundError
+	if errors.As(err, &notFound) {
+		items, refreshErr := b.loadExportTree(ctx, true)
+		if refreshErr != nil {
+			slog.Warn(label+" not found, cache refresh failed",
+				"operation", operation, label, resolvedID, "error", refreshErr)
+			return fmt.Errorf("%s denied: %s %s not found in cache (refresh failed: %w)",
+				operation, label, resolvedID, refreshErr)
+		}
+		err = validate(items)
+		if errors.As(err, &notFound) {
+			slog.Warn(label+" not found after cache refresh, may be too new",
+				"operation", operation, label, resolvedID, rootLabel, rootID)
+			return fmt.Errorf("%s denied: %s %s not found in cache; if newly created, retry in ~60s",
+				operation, label, resolvedID)
+		}
+	}
+
+	if err != nil {
+		slog.Warn(rootLabel+" access denied", "operation", operation, label, resolvedID,
+			rootLabel, rootID, "error", err)
+	}
+	return err
+}
+
 // validateReadTarget checks if the target is within the read-root scope.
 func (b ToolBuilder) validateReadTarget(ctx context.Context, targetID, operation string) error {
 	if !b.isReadRestricted() {
 		return nil
 	}
-	items, err := b.loadExportTree(ctx)
+	resolvedID, err := workflowy.ResolveNodeIDToUUID(ctx, b.client, targetID)
 	if err != nil {
-		return fmt.Errorf("cannot load tree for read validation: %w", err)
+		slog.Warn("read access denied: target outside read-root scope",
+			"operation", operation, "target", targetID, "read_root", b.readRootID)
+		return fmt.Errorf("%s denied: %s is not within read-root %s", operation, targetID, b.readRootID)
 	}
-	return workflowy.ValidateReadAccess(items, b.readRootID, targetID, operation)
+	return b.validateAccessWithRetry(ctx, resolvedID, b.readRootID, operation, "target", "read_root",
+		func(items []*workflowy.Item) error {
+			return workflowy.ValidateReadAccess(items, b.readRootID, resolvedID, operation)
+		},
+	)
 }
 
 // defaultReadID returns the readRootID when itemID is "None" and read restrictions are in effect.
@@ -98,11 +147,17 @@ func (b ToolBuilder) validateWriteTarget(ctx context.Context, targetID, operatio
 	if !b.isRestricted() {
 		return nil
 	}
-	items, err := b.loadExportTree(ctx)
+	resolvedID, err := workflowy.ResolveNodeIDToUUID(ctx, b.client, targetID)
 	if err != nil {
-		return fmt.Errorf("cannot load tree for write validation: %w", err)
+		slog.Warn("write access denied: target outside write-root scope",
+			"operation", operation, "target", targetID, "write_root", b.writeRootID)
+		return fmt.Errorf("%s denied: %s is not within write-root %s", operation, targetID, b.writeRootID)
 	}
-	return workflowy.ValidateWriteAccess(items, b.writeRootID, targetID, operation)
+	return b.validateAccessWithRetry(ctx, resolvedID, b.writeRootID, operation, "target", "write_root",
+		func(items []*workflowy.Item) error {
+			return workflowy.ValidateWriteAccess(items, b.writeRootID, resolvedID, operation)
+		},
+	)
 }
 
 // validateWriteParent checks if the parent is within the write-root scope.
@@ -111,22 +166,35 @@ func (b ToolBuilder) validateWriteParent(ctx context.Context, parentID, operatio
 		return nil
 	}
 	if parentID == "None" || parentID == "" {
-		return fmt.Errorf("%s denied: cannot use root as parent when write-root-id is set to %s", operation, b.writeRootID)
+		err := fmt.Errorf("%s denied: cannot use root as parent when write-root-id is set to %s", operation, b.writeRootID)
+		slog.Warn("write parent access denied", "operation", operation, "parent", parentID,
+			"write_root", b.writeRootID, "error", err)
+		return err
 	}
-	items, err := b.loadExportTree(ctx)
+	resolvedID, err := workflowy.ResolveNodeIDToUUID(ctx, b.client, parentID)
 	if err != nil {
-		return fmt.Errorf("cannot load tree for write validation: %w", err)
+		slog.Warn("write parent access denied: target outside write-root scope",
+			"operation", operation, "parent", parentID, "write_root", b.writeRootID)
+		return fmt.Errorf("%s denied: %s is not within write-root %s", operation, parentID, b.writeRootID)
 	}
-	return workflowy.ValidateWriteAccess(items, b.writeRootID, parentID, operation)
+	return b.validateAccessWithRetry(ctx, resolvedID, b.writeRootID, operation, "parent", "write_root",
+		func(items []*workflowy.Item) error {
+			return workflowy.ValidateWriteAccess(items, b.writeRootID, resolvedID, operation)
+		},
+	)
 }
 
-// defaultParent returns the write-root-id if parentID is "None" and restrictions are in effect.
-func (b ToolBuilder) defaultParent(parentID string) string {
-	if !b.isRestricted() {
+// defaultCreateParent returns the appropriate parent for create operations.
+// Priority: explicit parent > write-root-id > read-root-id > "None"
+func (b ToolBuilder) defaultCreateParent(parentID string) string {
+	if parentID != "None" && parentID != "" {
 		return parentID
 	}
-	if parentID == "None" || parentID == "" {
+	if b.isRestricted() {
 		return b.writeRootID
+	}
+	if b.isReadRestricted() {
+		return b.readRootID
 	}
 	return parentID
 }
@@ -312,7 +380,7 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
-			items, err := b.loadExportTree(ctx)
+			items, err := b.loadExportTree(ctx, false)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot load tree for search", err), nil
 			}
@@ -348,7 +416,7 @@ func (b ToolBuilder) buildTargetsTool() mcpserver.ServerTool {
 			result := map[string]any{"targets": response.Targets}
 
 			if b.isRestricted() || b.isReadRestricted() {
-				items, err := b.loadExportTree(ctx)
+				items, err := b.loadExportTree(ctx, false)
 
 				if b.isRestricted() {
 					writeRoot := map[string]string{"id": b.writeRootID}
@@ -434,8 +502,8 @@ func (b ToolBuilder) buildCreateTool() mcpserver.ServerTool {
 			layoutMode := strings.TrimSpace(req.GetString("layout_mode", ""))
 			note := strings.TrimSpace(req.GetString("note", ""))
 
-			// Default parent to write-root-id if not specified and restrictions are in effect
-			rawParentID := b.defaultParent(req.GetString("parent_id", "None"))
+			// Default parent to write-root-id or read-root-id if not specified
+			rawParentID := b.defaultCreateParent(req.GetString("parent_id", "None"))
 
 			parentID, err := workflowy.ResolveNodeID(ctx, b.client, rawParentID)
 			if err != nil {
@@ -1026,7 +1094,7 @@ func (b ToolBuilder) buildReplaceTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
-			items, err := b.loadExportTree(ctx)
+			items, err := b.loadExportTree(ctx, false)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
 			}
@@ -1133,7 +1201,7 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
-			items, err := b.loadExportTree(ctx)
+			items, err := b.loadExportTree(ctx, false)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
 			}
@@ -1217,7 +1285,7 @@ func (b ToolBuilder) fetchItems(ctx context.Context, itemID string, depth int) (
 
 	switch useMethod {
 	case "export":
-		tree, err := b.loadExportTree(ctx)
+		tree, err := b.loadExportTree(ctx, false)
 		if err != nil {
 			return nil, err
 		}
@@ -1267,8 +1335,8 @@ func (b ToolBuilder) fetchItems(ctx context.Context, itemID string, depth int) (
 	}
 }
 
-func (b ToolBuilder) loadExportTree(ctx context.Context) ([]*workflowy.Item, error) {
-	resp, err := b.client.ExportNodesWithCache(ctx, false)
+func (b ToolBuilder) loadExportTree(ctx context.Context, force bool) ([]*workflowy.Item, error) {
+	resp, err := b.client.ExportNodesWithCache(ctx, force)
 	if err != nil {
 		return nil, err
 	}
@@ -1277,7 +1345,7 @@ func (b ToolBuilder) loadExportTree(ctx context.Context) ([]*workflowy.Item, err
 }
 
 func (b ToolBuilder) buildReportRoot(ctx context.Context, itemID string) (*workflowy.Item, error) {
-	items, err := b.loadExportTree(ctx)
+	items, err := b.loadExportTree(ctx, false)
 	if err != nil {
 		return nil, err
 	}

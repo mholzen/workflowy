@@ -737,7 +737,7 @@ func (wc *WorkflowyClient) ExportNodesWithCache(ctx context.Context, forceRefres
 		// If API call fails, try to use stale cache as fallback
 		if cachedData != nil {
 			age := cache.GetCacheAge(cachedData)
-			slog.Warn("API call failed, using stale cache", "age_seconds", int(age.Seconds()))
+			slog.Warn("API call failed, using stale cache", "error", err, "age_seconds", int(age.Seconds()))
 
 			var fallbackResp ExportNodesResponse
 			if unmarshalErr := json.Unmarshal(cachedData.Data, &fallbackResp); unmarshalErr == nil {

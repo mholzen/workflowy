@@ -5,6 +5,15 @@ import (
 	"strings"
 )
 
+// NodeNotFoundError indicates a node was not found in the tree.
+type NodeNotFoundError struct {
+	NodeID string
+}
+
+func (e *NodeNotFoundError) Error() string {
+	return fmt.Sprintf("node not found: %s", e.NodeID)
+}
+
 func FindItemByID(items []*Item, id string) *Item {
 	for _, item := range items {
 		if item.ID == id {
@@ -141,14 +150,27 @@ func IsDescendantOf(items []*Item, rootID, targetID string) bool {
 }
 
 // ValidateAccess returns an error if targetID is not within rootID scope.
+// Returns NodeNotFoundError if target is not found in the tree at all.
+// Returns a standard error if target exists but is not within rootID.
 func ValidateAccess(items []*Item, rootID, targetID, rootLabel, operation string) error {
 	if !IsRestricted(rootID) {
 		return nil
 	}
-	if !IsDescendantOf(items, rootID, targetID) {
-		return fmt.Errorf("%s denied: %s is not within %s %s", operation, targetID, rootLabel, rootID)
+	if rootID == targetID {
+		return nil
 	}
-	return nil
+	root := FindItemByID(items, rootID)
+	if root == nil {
+		return fmt.Errorf("%s denied: %s %s not found in cache", operation, rootLabel, rootID)
+	}
+	if FindItemByID(root.Children, targetID) != nil {
+		return nil // Found as descendant
+	}
+	// Not found under root - could be not found at all or outside scope
+	if FindItemByID(items, targetID) == nil {
+		return &NodeNotFoundError{NodeID: targetID}
+	}
+	return fmt.Errorf("%s denied: %s is not within %s %s", operation, targetID, rootLabel, rootID)
 }
 
 // ValidateWriteAccess returns an error if targetID is not within writeRootID scope.
