@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.5] - Permission Validation Improvements
+
+### Fixed
+- Permission errors now logged at WARN level (previously DEBUG), visible in standard `--log info` output
+- Access denied errors for target keys (e.g., "inbox") now say "not within read-root" instead of misleading "node not found"
+- Newly created nodes that fail cache validation now return a clear error: "not found in cache; if newly created, retry in ~60s"
+- Stale cache fallback log now includes the HTTP response code from the failed API call
+
+### Changed
+- Create operations default to `--read-root-id` as parent when `--write-root-id` is not set
+- Validation functions resolve target keys to UUIDs before tree lookup
+- Validation retries with a forced cache refresh when a node is not found (handles newly created nodes)
+- Refactored validation functions to share retry logic via `validateAccessWithRetry`
+
+### Documentation
+- Added "Create Default Parent" section to MCP docs explaining parent priority
+- Added "Cache and Rate Limiting" section to MCP docs explaining newly created node behavior
+
 ## [0.7.4] - Read Restrictions
 
 ### Added

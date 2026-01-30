@@ -516,6 +516,36 @@ And `workflowy_targets` will return:
 
 These restrictions are enforced by the MCP server, not by the Workflowy API itself. When required by the operation, the full data export is retrieved from Workflowy, then operations are validated and scoped locally before returning results. This means that for operations like search, the full tree is read from the API even though only results within the restricted subtree are provided to the agent.
 
+### Create Default Parent
+
+When `--read-root-id` is set (even without `--write-root-id`), create operations default to the read-root as the parent node. Priority for the default parent is:
+
+1. Explicitly specified `parent_id`
+2. `--write-root-id` (if set)
+3. `--read-root-id` (if set)
+4. Root ("None")
+
+### Cache and Rate Limiting
+
+The MCP server uses Workflowy's Export API with a local cache to validate access restrictions. The Export API is rate-limited to one request per minute, which affects how quickly newly created nodes become visible for validation.
+
+**What happens with newly created nodes:**
+
+When a node is created, it exists in Workflowy immediately but may not appear in the local export cache. If a subsequent operation (e.g., `workflowy_complete`) targets that node, the server:
+
+1. Checks the cached tree — node not found
+2. Forces a cache refresh from the Export API
+3. If the refresh succeeds — retries validation with fresh data
+4. If the refresh is rate-limited — returns stale cache data, and the node is still not found
+
+When the cache refresh cannot find the node, the error message indicates this clearly:
+
+```
+complete denied: target <node-id> not found in cache; if newly created, retry in ~60s
+```
+
+**Workaround:** Wait approximately 60 seconds between creating a node and performing operations on it that require cache validation (complete, delete, update, move). Operations that don't require cache validation (like reading via `workflowy_get`) work immediately.
+
 ### Use Cases
 
 - **Full Sandbox**: Use `--read-root-id` to completely isolate an AI to one subtree
