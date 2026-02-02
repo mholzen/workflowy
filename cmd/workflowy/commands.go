@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/mholzen/workflowy/pkg/search"
 	"github.com/mholzen/workflowy/pkg/mcp"
 	"github.com/mholzen/workflowy/pkg/mirror"
 	"github.com/mholzen/workflowy/pkg/reports"
@@ -783,14 +784,28 @@ func getSearchCommand() *cli.Command {
 				searchRoot = []*workflowy.Item{rootItem}
 			}
 
-			results := searchItems(
-				searchRoot,
-				pattern,
-				cmd.Bool("regexp"),
-				cmd.Bool("ignore-case"),
-			)
-
-			printOutput(results, format, false)
+			if groupBy := cmd.String("group-by"); groupBy != "" {
+				strategy, err := search.ParseGroupBy(groupBy, int(cmd.Int("path-max-length")))
+				if err != nil {
+					return err
+				}
+				grouped := search.SearchItemsGroupedBy(
+					searchRoot,
+					pattern,
+					cmd.Bool("regexp"),
+					cmd.Bool("ignore-case"),
+					strategy,
+				)
+				printOutput(grouped, format, false)
+			} else {
+				results := searchItems(
+					searchRoot,
+					pattern,
+					cmd.Bool("regexp"),
+					cmd.Bool("ignore-case"),
+				)
+				printOutput(results, format, false)
+			}
 			return nil
 		}),
 	}

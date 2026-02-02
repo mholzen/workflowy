@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mholzen/workflowy/pkg/search"
 	"github.com/mholzen/workflowy/pkg/formatter"
 	"github.com/mholzen/workflowy/pkg/workflowy"
 )
@@ -105,6 +106,10 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 			for _, result := range v {
 				fmt.Println(result.String())
 			}
+		case []search.GroupedResult:
+			for _, group := range v {
+				fmt.Println(group.String())
+			}
 		case []workflowy.Target:
 			for _, target := range v {
 				name := "null"
@@ -133,6 +138,10 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 		case []SearchResult:
 			for _, result := range v {
 				fmt.Println(result.String())
+			}
+		case []search.GroupedResult:
+			for _, group := range v {
+				fmt.Println(group.String())
 			}
 		case []workflowy.Target:
 			for _, target := range v {
