@@ -27,7 +27,7 @@ type Option func(*Client)
 func New(base string, opts ...Option) *Client {
 	c := &Client{
 		baseURL: strings.TrimRight(base, "/"),
-		http:    &http.Client{Timeout: 10 * time.Second}, // always set timeouts
+		http:    &http.Client{Timeout: 30 * time.Second}, // always set timeouts
 		auth:    func(*http.Request) {},
 	}
 	for _, opt := range opts {
