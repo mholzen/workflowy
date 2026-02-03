@@ -784,6 +784,15 @@ func getSearchCommand() *cli.Command {
 				searchRoot = []*workflowy.Item{rootItem}
 			}
 
+			var orderBy *search.OrderBy
+			if ob := cmd.String("order-by"); ob != "" {
+				parsed, err := search.ParseOrderBy(ob)
+				if err != nil {
+					return err
+				}
+				orderBy = &parsed
+			}
+
 			if groupBy := cmd.String("group-by"); groupBy != "" {
 				strategy, err := search.ParseGroupBy(groupBy, int(cmd.Int("path-max-length")))
 				if err != nil {
@@ -796,6 +805,9 @@ func getSearchCommand() *cli.Command {
 					cmd.Bool("ignore-case"),
 					strategy,
 				)
+				if orderBy != nil {
+					search.SortGroupedResults(grouped, *orderBy)
+				}
 				printOutput(grouped, format, false)
 			} else {
 				results := searchItems(
@@ -804,6 +816,9 @@ func getSearchCommand() *cli.Command {
 					cmd.Bool("regexp"),
 					cmd.Bool("ignore-case"),
 				)
+				if orderBy != nil {
+					search.SortResults(results, *orderBy)
+				}
 				printOutput(results, format, false)
 			}
 			return nil

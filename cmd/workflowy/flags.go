@@ -219,6 +219,11 @@ func getSearchFlags() []cli.Flag {
 			Value: 20,
 			Usage: "Max characters per path segment name when using --group-by=path",
 		},
+		&cli.StringFlag{
+			Name:    "order-by",
+			Aliases: []string{"o"},
+			Usage:   "Sort results by: match, parent, path, modified, created (prefix +/- for asc/desc)",
+		},
 	}
 }
 

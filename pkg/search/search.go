@@ -5,6 +5,7 @@ package search
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,6 +18,11 @@ type Result struct {
 	HighlightedName string          `json:"highlighted_name"`
 	URL             string          `json:"url"`
 	MatchPositions  []MatchPosition `json:"match_positions"`
+
+	CreatedAt  int64  `json:"-"`
+	ModifiedAt int64  `json:"-"`
+	ParentName string `json:"-"`
+	Path       string `json:"-"`
 }
 
 func (r Result) String() string {
@@ -32,17 +38,32 @@ func SearchItems(items []*workflowy.Item, pattern string, useRegexp, ignoreCase 
 	var results []Result
 
 	for _, item := range items {
-		collectSearchResults(item, pattern, useRegexp, ignoreCase, &results)
+		collectSearchResults(item, nil, pattern, useRegexp, ignoreCase, &results)
 	}
 
 	return results
 }
 
-func collectSearchResults(item *workflowy.Item, pattern string, useRegexp, ignoreCase bool, results *[]Result) {
+func buildPath(ancestors []*workflowy.Item) string {
+	if len(ancestors) == 0 {
+		return "(root)"
+	}
+	parts := make([]string, len(ancestors))
+	for i, a := range ancestors {
+		parts[i] = stripHTMLTags(a.Name)
+	}
+	return strings.Join(parts, " > ")
+}
+
+func collectSearchResults(item *workflowy.Item, ancestors []*workflowy.Item, pattern string, useRegexp, ignoreCase bool, results *[]Result) {
 	name := stripHTMLTags(item.Name)
 	matchPositions := FindMatches(name, pattern, useRegexp, ignoreCase)
 
 	if len(matchPositions) > 0 {
+		parentName := "(root)"
+		if len(ancestors) > 0 {
+			parentName = stripHTMLTags(ancestors[len(ancestors)-1].Name)
+		}
 		highlightedName := HighlightMatches(name, matchPositions)
 		*results = append(*results, Result{
 			ID:              item.ID,
@@ -50,11 +71,16 @@ func collectSearchResults(item *workflowy.Item, pattern string, useRegexp, ignor
 			HighlightedName: highlightedName,
 			URL:             fmt.Sprintf("https://workflowy.com/#/%s", item.ID),
 			MatchPositions:  matchPositions,
+			CreatedAt:       item.CreatedAt,
+			ModifiedAt:      item.ModifiedAt,
+			ParentName:      parentName,
+			Path:            buildPath(ancestors),
 		})
 	}
 
+	childAncestors := append(append([]*workflowy.Item{}, ancestors...), item)
 	for _, child := range item.Children {
-		collectSearchResults(child, pattern, useRegexp, ignoreCase, results)
+		collectSearchResults(child, childAncestors, pattern, useRegexp, ignoreCase, results)
 	}
 }
 
@@ -279,6 +305,10 @@ func collectGroupedByResults(item *workflowy.Item, ancestors []*workflowy.Item, 
 			*groupOrder = append(*groupOrder, key)
 		}
 
+		parentName := "(root)"
+		if len(ancestors) > 0 {
+			parentName = stripHTMLTags(ancestors[len(ancestors)-1].Name)
+		}
 		highlightedName := HighlightMatches(name, matchPositions)
 		groupMap[key].Children = append(groupMap[key].Children, Result{
 			ID:              item.ID,
@@ -286,6 +316,10 @@ func collectGroupedByResults(item *workflowy.Item, ancestors []*workflowy.Item, 
 			HighlightedName: highlightedName,
 			URL:             fmt.Sprintf("https://workflowy.com/#/%s", item.ID),
 			MatchPositions:  matchPositions,
+			CreatedAt:       item.CreatedAt,
+			ModifiedAt:      item.ModifiedAt,
+			ParentName:      parentName,
+			Path:            buildPath(ancestors),
 		})
 	}
 
@@ -293,6 +327,124 @@ func collectGroupedByResults(item *workflowy.Item, ancestors []*workflowy.Item, 
 	for _, child := range item.Children {
 		collectGroupedByResults(child, childAncestors, pattern, useRegexp, ignoreCase, strategy, groupMap, groupOrder)
 	}
+}
+
+// OrderBy describes a sort field and direction.
+type OrderBy struct {
+	Field     string
+	Ascending bool
+}
+
+// ParseOrderBy parses a --order-by value like "+modified", "-created", "match".
+func ParseOrderBy(value string) (OrderBy, error) {
+	ascending := true
+	field := value
+
+	if strings.HasPrefix(field, "+") {
+		field = field[1:]
+		ascending = true
+	} else if strings.HasPrefix(field, "-") {
+		field = field[1:]
+		ascending = false
+	} else {
+		switch field {
+		case "modified", "created":
+			ascending = false
+		}
+	}
+
+	switch field {
+	case "match", "parent", "path", "modified", "created":
+		return OrderBy{Field: field, Ascending: ascending}, nil
+	default:
+		return OrderBy{}, fmt.Errorf("unknown --order-by value: %q (expected match, parent, path, modified, or created)", value)
+	}
+}
+
+// SortResults sorts a flat result list by the given order.
+func SortResults(results []Result, order OrderBy) {
+	sort.SliceStable(results, func(i, j int) bool {
+		cmp := compareResults(results[i], results[j], order.Field)
+		if order.Ascending {
+			return cmp < 0
+		}
+		return cmp > 0
+	})
+}
+
+func compareResults(a, b Result, field string) int {
+	switch field {
+	case "match":
+		return strings.Compare(a.Name, b.Name)
+	case "parent":
+		return strings.Compare(a.ParentName, b.ParentName)
+	case "path":
+		return strings.Compare(a.Path, b.Path)
+	case "modified":
+		return compareInt64(a.ModifiedAt, b.ModifiedAt)
+	case "created":
+		return compareInt64(a.CreatedAt, b.CreatedAt)
+	default:
+		return 0
+	}
+}
+
+func compareInt64(a, b int64) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
+}
+
+// SortGroupedResults sorts groups. For parent/path/match it sorts by label;
+// for modified/created it sorts by the max (or min) timestamp among children.
+func SortGroupedResults(groups []GroupedResult, order OrderBy) {
+	sort.SliceStable(groups, func(i, j int) bool {
+		cmp := compareGroups(groups[i], groups[j], order)
+		if order.Ascending {
+			return cmp < 0
+		}
+		return cmp > 0
+	})
+}
+
+func compareGroups(a, b GroupedResult, order OrderBy) int {
+	switch order.Field {
+	case "match", "parent", "path":
+		return strings.Compare(a.GroupLabel, b.GroupLabel)
+	case "modified":
+		return compareInt64(groupTimestamp(a, "modified", order.Ascending), groupTimestamp(b, "modified", order.Ascending))
+	case "created":
+		return compareInt64(groupTimestamp(a, "created", order.Ascending), groupTimestamp(b, "created", order.Ascending))
+	default:
+		return 0
+	}
+}
+
+func groupTimestamp(g GroupedResult, field string, ascending bool) int64 {
+	if len(g.Children) == 0 {
+		return 0
+	}
+	ts := getTimestamp(g.Children[0], field)
+	for _, c := range g.Children[1:] {
+		v := getTimestamp(c, field)
+		if ascending && v < ts {
+			ts = v
+		} else if !ascending && v > ts {
+			ts = v
+		}
+	}
+	return ts
+}
+
+func getTimestamp(r Result, field string) int64 {
+	if field == "created" {
+		return r.CreatedAt
+	}
+	return r.ModifiedAt
 }
 
 func HighlightMatches(text string, positions []MatchPosition) string {
