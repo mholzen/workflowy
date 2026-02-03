@@ -794,21 +794,34 @@ func getSearchCommand() *cli.Command {
 			}
 
 			if groupBy := cmd.String("group-by"); groupBy != "" {
-				strategy, err := search.ParseGroupBy(groupBy, int(cmd.Int("path-max-length")))
-				if err != nil {
-					return err
+				if groupBy == "tree" {
+					tree := search.SearchItemsTree(
+						searchRoot,
+						pattern,
+						cmd.Bool("regexp"),
+						cmd.Bool("ignore-case"),
+					)
+					if orderBy != nil {
+						search.SortTreeNodes(tree, *orderBy)
+					}
+					printOutput(tree, format, false)
+				} else {
+					strategy, err := search.ParseGroupBy(groupBy, int(cmd.Int("path-max-length")))
+					if err != nil {
+						return err
+					}
+					grouped := search.SearchItemsGroupedBy(
+						searchRoot,
+						pattern,
+						cmd.Bool("regexp"),
+						cmd.Bool("ignore-case"),
+						strategy,
+					)
+					if orderBy != nil {
+						search.SortGroupedResults(grouped, *orderBy)
+					}
+					printOutput(grouped, format, false)
 				}
-				grouped := search.SearchItemsGroupedBy(
-					searchRoot,
-					pattern,
-					cmd.Bool("regexp"),
-					cmd.Bool("ignore-case"),
-					strategy,
-				)
-				if orderBy != nil {
-					search.SortGroupedResults(grouped, *orderBy)
-				}
-				printOutput(grouped, format, false)
 			} else {
 				results := searchItems(
 					searchRoot,

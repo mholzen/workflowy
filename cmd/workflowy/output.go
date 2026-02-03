@@ -110,6 +110,10 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 			for _, group := range v {
 				fmt.Println(group.String())
 			}
+		case []*search.TreeNode:
+			for _, node := range v {
+				fmt.Println(node.String())
+			}
 		case []workflowy.Target:
 			for _, target := range v {
 				name := "null"
@@ -142,6 +146,10 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 		case []search.GroupedResult:
 			for _, group := range v {
 				fmt.Println(group.String())
+			}
+		case []*search.TreeNode:
+			for _, node := range v {
+				fmt.Println(node.String())
 			}
 		case []workflowy.Target:
 			for _, target := range v {

@@ -212,7 +212,7 @@ func getSearchFlags() []cli.Flag {
 		&cli.StringFlag{
 			Name:    "group-by",
 			Aliases: []string{"g"},
-			Usage:   "Group results by: parent, path, modified.<unit>, created.<unit> (unit: year, month, day, or Go time format)",
+			Usage:   "Group results by: parent, path, tree, modified.<unit>, created.<unit> (unit: year, month, day, or Go time format)",
 		},
 		&cli.IntFlag{
 			Name:  "path-max-length",
