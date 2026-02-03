@@ -360,6 +360,19 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				mcptypes.Description("Case-insensitive search"),
 				mcptypes.DefaultBool(false),
 			),
+			mcptypes.WithBoolean("include_completed",
+				mcptypes.Description("Include completed nodes in search results (excluded by default)"),
+				mcptypes.DefaultBool(false),
+			),
+			mcptypes.WithString("group_by",
+				mcptypes.Description("Group results by: parent, path, tree, modified.<unit>, created.<unit> (unit: year, month, day, or Go time format)"),
+			),
+			mcptypes.WithNumber("path_max_length",
+				mcptypes.Description("Max characters per path segment name when using group_by=path"),
+			),
+			mcptypes.WithString("order_by",
+				mcptypes.Description("Sort results by: match, parent, path, modified, created (prefix +/- for asc/desc)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			pattern := strings.TrimSpace(req.GetString("pattern", ""))
@@ -370,6 +383,7 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			useRegexp := req.GetBool("regexp", false)
 			ignoreCase := req.GetBool("ignore_case", false)
+			includeCompleted := req.GetBool("include_completed", false)
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
@@ -395,7 +409,41 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				searchRoot = []*workflowy.Item{rootItem}
 			}
 
-			results := search.SearchItems(searchRoot, pattern, useRegexp, ignoreCase, false)
+			var orderBy *search.OrderBy
+			if ob := req.GetString("order_by", ""); ob != "" {
+				parsed, err := search.ParseOrderBy(ob)
+				if err != nil {
+					return mcptypes.NewToolResultError(err.Error()), nil
+				}
+				orderBy = &parsed
+			}
+
+			groupBy := req.GetString("group_by", "")
+			if groupBy != "" {
+				if groupBy == "tree" {
+					tree := search.SearchItemsTree(searchRoot, pattern, useRegexp, ignoreCase, includeCompleted)
+					if orderBy != nil {
+						search.SortTreeNodes(tree, *orderBy)
+					}
+					return mcptypes.NewToolResultJSON(map[string]any{"results": tree})
+				}
+
+				pathMaxLen := req.GetInt("path_max_length", 20)
+				strategy, err := search.ParseGroupBy(groupBy, pathMaxLen)
+				if err != nil {
+					return mcptypes.NewToolResultError(err.Error()), nil
+				}
+				grouped := search.SearchItemsGroupedBy(searchRoot, pattern, useRegexp, ignoreCase, includeCompleted, strategy)
+				if orderBy != nil {
+					search.SortGroupedResults(grouped, *orderBy)
+				}
+				return mcptypes.NewToolResultJSON(map[string]any{"results": grouped})
+			}
+
+			results := search.SearchItems(searchRoot, pattern, useRegexp, ignoreCase, includeCompleted)
+			if orderBy != nil {
+				search.SortResults(results, *orderBy)
+			}
 			return mcptypes.NewToolResultJSON(map[string]any{"results": results})
 		},
 	}

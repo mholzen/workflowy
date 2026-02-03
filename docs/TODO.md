@@ -26,3 +26,4 @@
 - improve status and error reporting
   - status report for create, update is JSON -- should be similar to complete/uncomplete
 - FEATURE: ranking reports should support topN _and_ thresholds
+- FEATURE: should support RFC type date specs for group-by={modified,created}
