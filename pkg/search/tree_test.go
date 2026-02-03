@@ -34,7 +34,7 @@ func TestSearchItemsTree_BasicNesting(t *testing.T) {
 		},
 	}
 
-	tree := SearchItemsTree(items, "match", false, false)
+	tree := SearchItemsTree(items, "match", false, false, true)
 
 	if len(tree) != 1 {
 		t.Fatalf("expected 1 root, got %d", len(tree))
@@ -82,7 +82,7 @@ func TestSearchItemsTree_RootMatch(t *testing.T) {
 		{ID: "a", Name: "match here"},
 	}
 
-	tree := SearchItemsTree(items, "match", false, false)
+	tree := SearchItemsTree(items, "match", false, false, true)
 	if len(tree) != 1 {
 		t.Fatalf("expected 1 root, got %d", len(tree))
 	}
@@ -96,7 +96,7 @@ func TestSearchItemsTree_NoMatches(t *testing.T) {
 		{ID: "a", Name: "nothing"},
 	}
 
-	tree := SearchItemsTree(items, "xyz", false, false)
+	tree := SearchItemsTree(items, "xyz", false, false, true)
 	if len(tree) != 0 {
 		t.Errorf("expected 0 roots, got %d", len(tree))
 	}
@@ -141,5 +141,72 @@ func TestSortTreeNodes(t *testing.T) {
 	SortTreeNodes(nodes, OrderBy{Field: "modified", Ascending: false})
 	if nodes[0].ID != "a" {
 		t.Errorf("expected 'a' first after sort by modified desc, got %q", nodes[0].ID)
+	}
+}
+
+func TestSearchItemsTree_ExcludesCompleted(t *testing.T) {
+	completed := int64(100)
+	items := []*workflowy.Item{
+		{
+			ID: "a", Name: "A",
+			Children: []*workflowy.Item{
+				{
+					ID: "b", Name: "B", CompletedAt: &completed,
+					Children: []*workflowy.Item{
+						{ID: "c", Name: "C match"},
+					},
+				},
+				{
+					ID: "d", Name: "D",
+					Children: []*workflowy.Item{
+						{ID: "e", Name: "E match"},
+					},
+				},
+			},
+		},
+	}
+
+	tree := SearchItemsTree(items, "match", false, false, false)
+	if len(tree) != 1 {
+		t.Fatalf("expected 1 root, got %d", len(tree))
+	}
+
+	// Only D > E path should appear; B > C excluded
+	root := tree[0]
+	if len(root.Children) != 1 {
+		t.Fatalf("expected 1 child of A, got %d", len(root.Children))
+	}
+	if root.Children[0].ID != "d" {
+		t.Errorf("expected child 'd', got %q", root.Children[0].ID)
+	}
+}
+
+func TestSearchItemsTree_IncludeCompleted(t *testing.T) {
+	completed := int64(100)
+	items := []*workflowy.Item{
+		{
+			ID: "a", Name: "A",
+			Children: []*workflowy.Item{
+				{
+					ID: "b", Name: "B", CompletedAt: &completed,
+					Children: []*workflowy.Item{
+						{ID: "c", Name: "C match"},
+					},
+				},
+			},
+		},
+	}
+
+	tree := SearchItemsTree(items, "match", false, false, true)
+	if len(tree) != 1 {
+		t.Fatalf("expected 1 root, got %d", len(tree))
+	}
+	// B > C should be included
+	root := tree[0]
+	if len(root.Children) != 1 || root.Children[0].ID != "b" {
+		t.Fatalf("expected child 'b'")
+	}
+	if len(root.Children[0].Children) != 1 || root.Children[0].Children[0].ID != "c" {
+		t.Error("expected C match under B")
 	}
 }

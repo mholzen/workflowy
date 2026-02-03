@@ -224,6 +224,10 @@ func getSearchFlags() []cli.Flag {
 			Aliases: []string{"o"},
 			Usage:   "Sort results by: match, parent, path, modified, created (prefix +/- for asc/desc)",
 		},
+		&cli.BoolFlag{
+			Name:  "include-completed",
+			Usage: "Include completed nodes in search results (excluded by default)",
+		},
 	}
 }
 

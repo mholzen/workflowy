@@ -34,11 +34,11 @@ type MatchPosition struct {
 	End   int `json:"end"`
 }
 
-func SearchItems(items []*workflowy.Item, pattern string, useRegexp, ignoreCase bool) []Result {
+func SearchItems(items []*workflowy.Item, pattern string, useRegexp, ignoreCase, includeCompleted bool) []Result {
 	var results []Result
 
 	for _, item := range items {
-		collectSearchResults(item, nil, pattern, useRegexp, ignoreCase, &results)
+		collectSearchResults(item, nil, pattern, useRegexp, ignoreCase, includeCompleted, &results)
 	}
 
 	return results
@@ -55,7 +55,11 @@ func buildPath(ancestors []*workflowy.Item) string {
 	return strings.Join(parts, " > ")
 }
 
-func collectSearchResults(item *workflowy.Item, ancestors []*workflowy.Item, pattern string, useRegexp, ignoreCase bool, results *[]Result) {
+func collectSearchResults(item *workflowy.Item, ancestors []*workflowy.Item, pattern string, useRegexp, ignoreCase, includeCompleted bool, results *[]Result) {
+	if !includeCompleted && item.CompletedAt != nil {
+		return
+	}
+
 	name := stripHTMLTags(item.Name)
 	matchPositions := FindMatches(name, pattern, useRegexp, ignoreCase)
 
@@ -80,7 +84,7 @@ func collectSearchResults(item *workflowy.Item, ancestors []*workflowy.Item, pat
 
 	childAncestors := append(append([]*workflowy.Item{}, ancestors...), item)
 	for _, child := range item.Children {
-		collectSearchResults(child, childAncestors, pattern, useRegexp, ignoreCase, results)
+		collectSearchResults(child, childAncestors, pattern, useRegexp, ignoreCase, includeCompleted, results)
 	}
 }
 
@@ -274,12 +278,12 @@ func unitToFormat(unit string) string {
 }
 
 // SearchItemsGroupedBy searches items and groups results using the given strategy.
-func SearchItemsGroupedBy(items []*workflowy.Item, pattern string, useRegexp, ignoreCase bool, strategy GroupingStrategy) []GroupedResult {
+func SearchItemsGroupedBy(items []*workflowy.Item, pattern string, useRegexp, ignoreCase, includeCompleted bool, strategy GroupingStrategy) []GroupedResult {
 	groupMap := make(map[string]*GroupedResult)
 	var groupOrder []string
 
 	for _, item := range items {
-		collectGroupedByResults(item, nil, pattern, useRegexp, ignoreCase, strategy, groupMap, &groupOrder)
+		collectGroupedByResults(item, nil, pattern, useRegexp, ignoreCase, includeCompleted, strategy, groupMap, &groupOrder)
 	}
 
 	results := make([]GroupedResult, 0, len(groupOrder))
@@ -289,7 +293,11 @@ func SearchItemsGroupedBy(items []*workflowy.Item, pattern string, useRegexp, ig
 	return results
 }
 
-func collectGroupedByResults(item *workflowy.Item, ancestors []*workflowy.Item, pattern string, useRegexp, ignoreCase bool, strategy GroupingStrategy, groupMap map[string]*GroupedResult, groupOrder *[]string) {
+func collectGroupedByResults(item *workflowy.Item, ancestors []*workflowy.Item, pattern string, useRegexp, ignoreCase, includeCompleted bool, strategy GroupingStrategy, groupMap map[string]*GroupedResult, groupOrder *[]string) {
+	if !includeCompleted && item.CompletedAt != nil {
+		return
+	}
+
 	name := stripHTMLTags(item.Name)
 	matchPositions := FindMatches(name, pattern, useRegexp, ignoreCase)
 
@@ -325,7 +333,7 @@ func collectGroupedByResults(item *workflowy.Item, ancestors []*workflowy.Item, 
 
 	childAncestors := append(append([]*workflowy.Item{}, ancestors...), item)
 	for _, child := range item.Children {
-		collectGroupedByResults(child, childAncestors, pattern, useRegexp, ignoreCase, strategy, groupMap, groupOrder)
+		collectGroupedByResults(child, childAncestors, pattern, useRegexp, ignoreCase, includeCompleted, strategy, groupMap, groupOrder)
 	}
 }
 

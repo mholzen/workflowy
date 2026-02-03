@@ -41,19 +41,23 @@ func (n *TreeNode) renderAtDepth(depth int) string {
 	return b.String()
 }
 
-func SearchItemsTree(items []*workflowy.Item, pattern string, useRegexp, ignoreCase bool) []*TreeNode {
+func SearchItemsTree(items []*workflowy.Item, pattern string, useRegexp, ignoreCase, includeCompleted bool) []*TreeNode {
 	nodeMap := make(map[string]*TreeNode)
 	var roots []*TreeNode
 	rootSet := make(map[string]bool)
 
 	for _, item := range items {
-		collectTreeResults(item, nil, pattern, useRegexp, ignoreCase, nodeMap, &roots, rootSet)
+		collectTreeResults(item, nil, pattern, useRegexp, ignoreCase, includeCompleted, nodeMap, &roots, rootSet)
 	}
 
 	return roots
 }
 
-func collectTreeResults(item *workflowy.Item, ancestors []*workflowy.Item, pattern string, useRegexp, ignoreCase bool, nodeMap map[string]*TreeNode, roots *[]*TreeNode, rootSet map[string]bool) {
+func collectTreeResults(item *workflowy.Item, ancestors []*workflowy.Item, pattern string, useRegexp, ignoreCase, includeCompleted bool, nodeMap map[string]*TreeNode, roots *[]*TreeNode, rootSet map[string]bool) {
+	if !includeCompleted && item.CompletedAt != nil {
+		return
+	}
+
 	name := stripHTMLTags(item.Name)
 	matchPositions := FindMatches(name, pattern, useRegexp, ignoreCase)
 
@@ -63,7 +67,7 @@ func collectTreeResults(item *workflowy.Item, ancestors []*workflowy.Item, patte
 
 	childAncestors := append(append([]*workflowy.Item{}, ancestors...), item)
 	for _, child := range item.Children {
-		collectTreeResults(child, childAncestors, pattern, useRegexp, ignoreCase, nodeMap, roots, rootSet)
+		collectTreeResults(child, childAncestors, pattern, useRegexp, ignoreCase, includeCompleted, nodeMap, roots, rootSet)
 	}
 }
 

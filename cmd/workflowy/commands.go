@@ -793,6 +793,8 @@ func getSearchCommand() *cli.Command {
 				orderBy = &parsed
 			}
 
+			includeCompleted := cmd.Bool("include-completed")
+
 			if groupBy := cmd.String("group-by"); groupBy != "" {
 				if groupBy == "tree" {
 					tree := search.SearchItemsTree(
@@ -800,6 +802,7 @@ func getSearchCommand() *cli.Command {
 						pattern,
 						cmd.Bool("regexp"),
 						cmd.Bool("ignore-case"),
+						includeCompleted,
 					)
 					if orderBy != nil {
 						search.SortTreeNodes(tree, *orderBy)
@@ -815,6 +818,7 @@ func getSearchCommand() *cli.Command {
 						pattern,
 						cmd.Bool("regexp"),
 						cmd.Bool("ignore-case"),
+						includeCompleted,
 						strategy,
 					)
 					if orderBy != nil {
@@ -828,6 +832,7 @@ func getSearchCommand() *cli.Command {
 					pattern,
 					cmd.Bool("regexp"),
 					cmd.Bool("ignore-case"),
+					includeCompleted,
 				)
 				if orderBy != nil {
 					search.SortResults(results, *orderBy)

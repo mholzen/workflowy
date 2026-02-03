@@ -395,7 +395,7 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				searchRoot = []*workflowy.Item{rootItem}
 			}
 
-			results := search.SearchItems(searchRoot, pattern, useRegexp, ignoreCase)
+			results := search.SearchItems(searchRoot, pattern, useRegexp, ignoreCase, false)
 			return mcptypes.NewToolResultJSON(map[string]any{"results": results})
 		},
 	}

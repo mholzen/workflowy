@@ -12,6 +12,6 @@ func findRootItem(items []*workflowy.Item, itemID string) *workflowy.Item {
 	return workflowy.FindRootItem(items, itemID)
 }
 
-func searchItems(items []*workflowy.Item, pattern string, useRegexp, ignoreCase bool) []SearchResult {
-	return search.SearchItems(items, pattern, useRegexp, ignoreCase)
+func searchItems(items []*workflowy.Item, pattern string, useRegexp, ignoreCase, includeCompleted bool) []SearchResult {
+	return search.SearchItems(items, pattern, useRegexp, ignoreCase, includeCompleted)
 }
