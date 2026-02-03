@@ -435,7 +435,7 @@ workflowy get home
 
 ### workflowy search
 
-Search through nodes by name with text or regex patterns.
+Search through nodes by name with text or regex patterns. Completed nodes (and their descendants) are excluded by default.
 
 ```bash
 # Basic search (case-sensitive)
@@ -451,7 +451,31 @@ workflowy search -E "test.*ing"
 workflowy search -iE "bug.*fix"
 
 # Search within specific subtree
-workflowy search "todo" --item-id abc-123-def
+workflowy search "todo" --id abc-123-def
+
+# Include completed nodes
+workflowy search "done" --include-completed
+
+# Group results by parent node
+workflowy search -iE "bug" --group-by=parent
+
+# Group results as a tree
+workflowy search -iE "bug" --group-by=tree
+
+# Group by path with truncated segment names
+workflowy search "meeting" --group-by=path --path-max-length=30
+
+# Group by modification date (by day)
+workflowy search "review" --group-by=modified.day
+
+# Group by creation year
+workflowy search "project" --group-by=created.year
+
+# Sort results by modification date (newest first)
+workflowy search "todo" --order-by=modified
+
+# Sort ascending
+workflowy search "todo" --order-by=+created
 
 # JSON output with match positions
 workflowy search "meeting" --format json
@@ -461,9 +485,15 @@ workflowy search "meeting" --format json
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-i` | Case-insensitive | `false` |
-| `-E` | Treat pattern as regex | `false` |
-| `--item-id <id>` | Limit search to subtree | root |
+| `-i, --ignore-case` | Case-insensitive | `false` |
+| `-E, --regexp` | Treat pattern as regex | `false` |
+| `--id <id>` | Limit search to subtree | root |
+| `--include-completed` | Include completed nodes in results | `false` |
+| `-g, --group-by <mode>` | Group results: `parent`, `path`, `tree`, `modified.<unit>`, `created.<unit>` | - |
+| `--path-max-length <n>` | Max chars per path segment when using `--group-by=path` | `20` |
+| `-o, --order-by <field>` | Sort by: `match`, `parent`, `path`, `modified`, `created` (prefix `+`/`-` for asc/desc) | - |
+
+**Group-by units:** `year`, `month`, `day`, or a Go time format string.
 
 **Output:**
 - `--format list`: Markdown with clickable links and **highlighted** matches

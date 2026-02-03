@@ -157,20 +157,27 @@ List descendants as a flat list.
 
 #### workflowy_search
 
-Search nodes by text or regex pattern.
+Search nodes by text or regex pattern. Completed nodes (and their descendants) are excluded by default.
 
 **Parameters:**
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | `pattern` | string | Search text or regex | required |
-| `item_id` | string | Limit to subtree | root |
+| `id` | string | Limit to subtree | root |
 | `regexp` | boolean | Treat as regex | `false` |
 | `ignore_case` | boolean | Case-insensitive | `false` |
+| `include_completed` | boolean | Include completed nodes in results | `false` |
+| `group_by` | string | Group results: `parent`, `path`, `tree`, `modified.<unit>`, `created.<unit>` | - |
+| `path_max_length` | number | Max chars per path segment when using `group_by=path` | `20` |
+| `order_by` | string | Sort by: `match`, `parent`, `path`, `modified`, `created` (prefix `+`/`-` for asc/desc) | - |
+
+**Group-by units:** `year`, `month`, `day`, or a Go time format string.
 
 **Example prompts:**
 - "Search for all items containing 'meeting'"
 - "Find items matching the pattern TODO or FIXME"
-- "Search for dates in my notes"
+- "Search for dates in my notes, grouped by parent"
+- "Find all TODOs grouped as a tree"
 
 ---
 
