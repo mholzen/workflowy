@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - Search Grouping and Sorting
+
+### Added
+- `--group-by` flag for search: group results by `parent`, `path`, `tree`, `modified.<unit>`, or `created.<unit>`
+- `--order-by` flag for search: sort results by `match`, `parent`, `path`, `modified`, or `created` (prefix `+`/`-` for asc/desc)
+- `--path-max-length` flag: control max characters per path segment when using `--group-by=path`
+- `--include-completed` flag: opt into including completed nodes in search results
+- MCP search tool now supports `group_by`, `order_by`, `path_max_length`, and `include_completed` parameters
+- Single-dash options can now be combined (e.g., `search -iE` instead of `search -i -E`)
+
+### Changed
+- Completed nodes and their descendants are now excluded from search results by default
+- API timeout increased from 10s to 30s
+
+### Documentation
+- Updated CLI.md and MCP.md with all new search options
+- Added blog post for the release
+
 ## [0.7.5] - Permission Validation Improvements
 
 ### Fixed
