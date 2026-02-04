@@ -32,6 +32,8 @@ release VERSION:
 	just create-tag {{VERSION}}
 	just push-tag {{VERSION}}
 	goreleaser release --clean
+	@echo ""
+	@echo "Release complete. Now run: just docker-release {{VERSION}}"
 
 # Extract version from CHANGELOG.md (topmost ## [x.x.x] entry)
 changelog-version:
