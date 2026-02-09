@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/mholzen/workflowy/pkg/transform"
@@ -30,6 +31,8 @@ Examples:
   workflowy transform 1a2b3c trim --name --note
   workflowy transform 1a2b3c split                 # Split by "," (default)
   workflowy transform 1a2b3c split -s "\n"         # Split by newline
+  workflowy transform 1a2b3c split -s '[0-9]+\.' -e  # Split by numbered list (regex)
+  workflowy transform 1a2b3c split -l              # Split by markdown list (-, *, +, 1.)
   workflowy transform 1a2b3c -x 'echo {} | tr a-z A-Z'
   workflowy transform 1a2b3c uppercase --as-child  # Insert as child, keep original
   workflowy transform 1a2b3c uppercase --dry-run --depth 2`,
@@ -77,6 +80,16 @@ func getTransformFlags() []cli.Flag {
 			Aliases: []string{"s"},
 			Value:   ",",
 			Usage:   "Separator for split transform (default: \",\")",
+		},
+		&cli.BoolFlag{
+			Name:    "regex",
+			Aliases: []string{"e"},
+			Usage:   "Treat separator as a regular expression pattern",
+		},
+		&cli.BoolFlag{
+			Name:    "list",
+			Aliases: []string{"l"},
+			Usage:   "Split by markdown list markers (-, *, +, 1., 2), etc.)",
 		},
 		&cli.BoolFlag{
 			Name:  "name",
@@ -151,7 +164,9 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 	// Handle split transform
 	if transformName == "split" {
 		separator := cmd.String("separator")
-		return runSplitTransform(ctx, cmd, client, searchRoot, separator, format)
+		useRegex := cmd.Bool("regex")
+		useList := cmd.Bool("list")
+		return runSplitTransform(ctx, cmd, client, searchRoot, separator, useRegex, useList, format)
 	}
 
 	// Handle exec (no transform_name required)
@@ -200,15 +215,25 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 	return printTransformResults(results, format, opts.DryRun)
 }
 
-func runSplitTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client, searchRoot []*workflowy.Item, separator, format string) error {
-	separator = transform.UnescapeSeparator(separator)
-
+func runSplitTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client, searchRoot []*workflowy.Item, separator string, useRegex, useList bool, format string) error {
 	fields := transform.DetermineFields(cmd.Bool("name"), cmd.Bool("note"))
 	dryRun := cmd.Bool("dry-run")
 
 	var results []transform.SplitResult
 	// fetchItems already limited depth, process all fetched nodes
-	transform.CollectSplits(searchRoot, separator, fields, true, 0, -1, &results)
+	if useList {
+		// Use built-in markdown list pattern
+		transform.CollectSplitsRegex(searchRoot, transform.MarkdownListPattern, fields, true, 0, -1, &results)
+	} else if useRegex {
+		pattern, err := regexp.Compile(separator)
+		if err != nil {
+			return fmt.Errorf("invalid regex pattern: %w", err)
+		}
+		transform.CollectSplitsRegex(searchRoot, pattern, fields, true, 0, -1, &results)
+	} else {
+		separator = transform.UnescapeSeparator(separator)
+		transform.CollectSplits(searchRoot, separator, fields, true, 0, -1, &results)
+	}
 
 	if len(results) == 0 {
 		if format == "json" {

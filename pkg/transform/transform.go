@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -16,6 +17,12 @@ import (
 )
 
 type Transformer func(string) (string, error)
+
+// MarkdownListPattern matches markdown list markers:
+// - Unordered: -, *, +
+// - Ordered: 1., 2., 1), 2), etc.
+// The pattern splits on the marker, leaving the content after each marker.
+var MarkdownListPattern = regexp.MustCompile(`\s*(?:[-*+]|\d+[.)])\s+`)
 
 var BuiltinTransformers = map[string]Transformer{
 	"lowercase":      Lowercase,
@@ -335,6 +342,22 @@ func Split(text, separator string, skipEmpty bool) []string {
 	return result
 }
 
+func SplitRegex(text string, pattern *regexp.Regexp, skipEmpty bool) []string {
+	parts := pattern.Split(text, -1)
+	if !skipEmpty {
+		return parts
+	}
+
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
 func CollectSplits(items []*workflowy.Item, separator string, field Field, skipEmpty bool, depth int, maxDepth int, results *[]SplitResult) {
 	if maxDepth >= 0 && depth > maxDepth {
 		return
@@ -362,6 +385,37 @@ func CollectSplits(items []*workflowy.Item, separator string, field Field, skipE
 
 		if len(item.Children) > 0 {
 			CollectSplits(item.Children, separator, field, skipEmpty, depth+1, maxDepth, results)
+		}
+	}
+}
+
+func CollectSplitsRegex(items []*workflowy.Item, pattern *regexp.Regexp, field Field, skipEmpty bool, depth int, maxDepth int, results *[]SplitResult) {
+	if maxDepth >= 0 && depth > maxDepth {
+		return
+	}
+
+	for _, item := range items {
+		var text string
+		if field&FieldName != 0 {
+			text = item.Name
+		} else if field&FieldNote != 0 && item.Note != nil {
+			text = *item.Note
+		}
+
+		if text != "" {
+			parts := SplitRegex(text, pattern, skipEmpty)
+			if len(parts) > 1 {
+				*results = append(*results, SplitResult{
+					ParentID:  item.ID,
+					ParentURL: "https://workflowy.com/#/" + item.ID,
+					Original:  text,
+					Parts:     parts,
+				})
+			}
+		}
+
+		if len(item.Children) > 0 {
+			CollectSplitsRegex(item.Children, pattern, field, skipEmpty, depth+1, maxDepth, results)
 		}
 	}
 }

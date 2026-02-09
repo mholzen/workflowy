@@ -1210,6 +1210,14 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 				mcptypes.Description("Separator for split transform. Use \\n for newline, \\t for tab."),
 				mcptypes.DefaultString(","),
 			),
+			mcptypes.WithBoolean("regex",
+				mcptypes.Description("Treat separator as a regular expression pattern"),
+				mcptypes.DefaultBool(false),
+			),
+			mcptypes.WithBoolean("list",
+				mcptypes.Description("Split by markdown list markers (-, *, +, 1., 2), etc.)"),
+				mcptypes.DefaultBool(false),
+			),
 			mcptypes.WithNumber("depth",
 				mcptypes.Description("Maximum depth to traverse (-1 for unlimited)"),
 				mcptypes.DefaultNumber(-1),
@@ -1269,7 +1277,9 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 			// Handle split transform
 			if transformName == "split" {
 				separator := req.GetString("separator", ",")
-				return b.handleSplitTransform(ctx, req, searchRoot, separator)
+				useRegex := req.GetBool("regex", false)
+				useList := req.GetBool("list", false)
+				return b.handleSplitTransform(ctx, req, searchRoot, separator, useRegex, useList)
 			}
 
 			// Handle exec (no transform_name required)
@@ -1308,14 +1318,24 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 	}
 }
 
-func (b ToolBuilder) handleSplitTransform(ctx context.Context, req mcptypes.CallToolRequest, searchRoot []*workflowy.Item, separator string) (*mcptypes.CallToolResult, error) {
-	separator = transform.UnescapeSeparator(separator)
+func (b ToolBuilder) handleSplitTransform(ctx context.Context, req mcptypes.CallToolRequest, searchRoot []*workflowy.Item, separator string, useRegex, useList bool) (*mcptypes.CallToolResult, error) {
 	fields := transform.DetermineFields(req.GetBool("name", false), req.GetBool("note", false))
 	dryRun := req.GetBool("dry_run", true)
 	depth := req.GetInt("depth", -1)
 
 	var results []transform.SplitResult
-	transform.CollectSplits(searchRoot, separator, fields, true, 0, depth, &results)
+	if useList {
+		transform.CollectSplitsRegex(searchRoot, transform.MarkdownListPattern, fields, true, 0, depth, &results)
+	} else if useRegex {
+		pattern, err := regexp.Compile(separator)
+		if err != nil {
+			return mcptypes.NewToolResultErrorf("invalid regex pattern: %v", err), nil
+		}
+		transform.CollectSplitsRegex(searchRoot, pattern, fields, true, 0, depth, &results)
+	} else {
+		separator = transform.UnescapeSeparator(separator)
+		transform.CollectSplits(searchRoot, separator, fields, true, 0, depth, &results)
+	}
 
 	if !dryRun {
 		transform.ApplySplitResults(ctx, b.client, results)

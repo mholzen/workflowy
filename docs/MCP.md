@@ -395,6 +395,8 @@ Transform node names and/or notes using built-in or shell transformations.
 | `transform_name` | string | Built-in: lowercase, uppercase, capitalize, title, trim, no-punctuation, no-whitespace, split | - |
 | `exec` | string | Shell command (use `{}` for input) | - |
 | `separator` | string | Separator for split transform | `,` |
+| `regex` | boolean | Treat separator as regex pattern | `false` |
+| `list` | boolean | Split by markdown list markers (-, *, +, 1., etc.) | `false` |
 | `depth` | number | Traversal depth (-1 unlimited) | `-1` |
 | `name` | boolean | Transform node names | `true` |
 | `note` | boolean | Transform node notes | `false` |
@@ -404,6 +406,7 @@ Transform node names and/or notes using built-in or shell transformations.
 **Example prompts:**
 - "Convert this node to uppercase"
 - "Split this comma-separated list into child nodes"
+- "Split this markdown list into separate child nodes"
 - "Trim whitespace from all items in this folder"
 
 ---

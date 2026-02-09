@@ -374,6 +374,8 @@ workflowy transform <item-id> lowercase --name --note
 # Split by separator (creates child nodes)
 workflowy transform <item-id> split                 # Split by comma (default)
 workflowy transform <item-id> split -s "\n"         # Split by newline
+workflowy transform <item-id> split -s '[0-9]+\.' -e  # Split by regex pattern
+workflowy transform <item-id> split -l              # Split by markdown list (-, *, +, 1.)
 
 # Shell command transform
 workflowy transform <item-id> -x 'echo {} | tr a-z A-Z'
@@ -401,6 +403,8 @@ workflowy transform <item-id> uppercase --interactive
 | `--interactive` | Confirm each transformation | `false` |
 | `-x, --exec <cmd>` | Shell command (use `{}` for input) | - |
 | `-s, --separator <sep>` | Separator for split | `,` |
+| `-e, --regex` | Treat separator as regex pattern | `false` |
+| `-l, --list` | Split by markdown list markers | `false` |
 | `--as-child` | Insert result as child node | `false` |
 
 ---
