@@ -20,7 +20,7 @@ func getTransformCommand() *cli.Command {
 		UsageText: "workflowy transform <id> [<transform-name>] [options]",
 		Description: `Apply transformations to node names and/or notes.
 
-Built-in transforms: ` + strings.Join(transform.ListBuiltins(), ", ") + `, split
+Built-in transforms: ` + strings.Join(transform.ListBuiltins(), ", ") + `, split, group
 
 By default, transforms are applied to names. Use --note to transform notes,
 or both --name and --note to transform both fields.
@@ -33,6 +33,9 @@ Examples:
   workflowy transform 1a2b3c split -s "\n"         # Split by newline
   workflowy transform 1a2b3c split -s '[0-9]+\.' -e  # Split by numbered list (regex)
   workflowy transform 1a2b3c split -l              # Split by markdown list (-, *, +, 1.)
+  workflowy transform 1a2b3c group                    # Group children by created date (default)
+  workflowy transform 1a2b3c group --by=modified.day  # Group by modified date
+  workflowy transform 1a2b3c group --by=created.month --order=+created  # Oldest first
   workflowy transform 1a2b3c -x 'echo {} | tr a-z A-Z'
   workflowy transform 1a2b3c uppercase --as-child  # Insert as child, keep original
   workflowy transform 1a2b3c uppercase --dry-run --depth 2`,
@@ -103,6 +106,17 @@ func getTransformFlags() []cli.Flag {
 			Name:  "as-child",
 			Usage: "Insert result as child of source node instead of replacing",
 		},
+		&cli.StringFlag{
+			Name:    "by",
+			Aliases: []string{"b"},
+			Value:   "created.day",
+			Usage:   "Group by field: modified, created, modified.<unit>, created.<unit> (unit: year, month, day)",
+		},
+		&cli.StringFlag{
+			Name:    "order",
+			Aliases: []string{"o"},
+			Usage:   "Sort order: +modified, -modified, +created, -created (default: newest first)",
+		},
 	)
 	return flags
 }
@@ -167,6 +181,13 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 		useRegex := cmd.Bool("regex")
 		useList := cmd.Bool("list")
 		return runSplitTransform(ctx, cmd, client, searchRoot, separator, useRegex, useList, format)
+	}
+
+	// Handle group transform
+	if transformName == "group" {
+		byValue := cmd.String("by")
+		orderValue := cmd.String("order")
+		return runGroupTransform(ctx, cmd, client, searchRoot, byValue, orderValue, format)
 	}
 
 	// Handle exec (no transform_name required)
@@ -249,6 +270,79 @@ func runSplitTransform(ctx context.Context, cmd *cli.Command, client workflowy.C
 	}
 
 	return printSplitResults(results, format, dryRun)
+}
+
+func runGroupTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client, searchRoot []*workflowy.Item, byValue, orderValue, format string) error {
+	field, dateFormat, granularity, err := transform.ParseGroupBy(byValue)
+	if err != nil {
+		return err
+	}
+
+	ascending, err := transform.ParseOrder(orderValue, field)
+	if err != nil {
+		return err
+	}
+
+	dryRun := cmd.Bool("dry-run")
+
+	opts := transform.GroupOptions{
+		Field:       field,
+		Format:      dateFormat,
+		Granularity: granularity,
+		Ascending:   ascending,
+		DryRun:      dryRun,
+	}
+
+	results := transform.CollectGroupResults(searchRoot, opts)
+
+	if len(results) == 0 {
+		if format == "json" {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("No items to group")
+		}
+		return nil
+	}
+
+	if !dryRun {
+		if err := transform.ApplyGroupResults(ctx, client, results, granularity); err != nil {
+			return err
+		}
+	}
+
+	return printGroupResults(results, format, dryRun, field, granularity, ascending)
+}
+
+func printGroupResults(results []transform.GroupResult, format string, dryRun bool, field, granularity string, ascending bool) error {
+	if format == "json" {
+		printJSON(results)
+		return nil
+	}
+
+	order := "newest first"
+	if ascending {
+		order = "oldest first"
+	}
+	fmt.Printf("Group by: %s.%s (%s)\n\n", field, granularity, order)
+
+	totalItems := 0
+	totalGroups := 0
+	for _, result := range results {
+		fmt.Println(result.String())
+		totalGroups += len(result.Groups)
+		for _, g := range result.Groups {
+			totalItems += len(g.Items)
+		}
+		totalItems += len(result.NoDateItems)
+	}
+
+	if dryRun {
+		fmt.Printf("\nDry run: %d item(s) would be grouped into %d date group(s)\n", totalItems, totalGroups)
+	} else {
+		fmt.Printf("\nGrouped %d item(s) into %d date group(s)\n", totalItems, totalGroups)
+	}
+
+	return nil
 }
 
 func printSplitResults(results []transform.SplitResult, format string, dryRun bool) error {

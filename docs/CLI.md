@@ -377,6 +377,12 @@ workflowy transform <item-id> split -s "\n"         # Split by newline
 workflowy transform <item-id> split -s '[0-9]+\.' -e  # Split by regex pattern
 workflowy transform <item-id> split -l              # Split by markdown list (-, *, +, 1.)
 
+# Group children by date (creates date headers with time tags)
+workflowy transform <item-id> group                      # Group by created date (default)
+workflowy transform <item-id> group --by=modified.day    # Group by modified date
+workflowy transform <item-id> group --by=created.month   # Group by creation month
+workflowy transform <item-id> group --by=modified.year --order=+modified  # Oldest first
+
 # Shell command transform
 workflowy transform <item-id> -x 'echo {} | tr a-z A-Z'
 
@@ -390,7 +396,7 @@ workflowy transform <item-id> lowercase --dry-run
 workflowy transform <item-id> uppercase --interactive
 ```
 
-**Built-in transforms:** `lowercase`, `uppercase`, `capitalize`, `title`, `trim`, `no-punctuation`, `no-whitespace`, `split`
+**Built-in transforms:** `lowercase`, `uppercase`, `capitalize`, `title`, `trim`, `no-punctuation`, `no-whitespace`, `split`, `group`
 
 **Options:**
 
@@ -405,6 +411,8 @@ workflowy transform <item-id> uppercase --interactive
 | `-s, --separator <sep>` | Separator for split | `,` |
 | `-e, --regex` | Treat separator as regex pattern | `false` |
 | `-l, --list` | Split by markdown list markers | `false` |
+| `-b, --by` | Group by: modified, created, modified.<unit>, created.<unit> | `created.day` |
+| `-o, --order` | Group sort: +modified, -modified, +created, -created | `-modified` |
 | `--as-child` | Insert result as child node | `false` |
 
 ---

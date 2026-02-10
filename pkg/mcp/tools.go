@@ -1195,13 +1195,13 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 	return mcpserver.ServerTool{
 		Tool: mcptypes.NewTool(
 			ToolTransform,
-			mcptypes.WithDescription("Transform node names and/or notes. Built-in: "+strings.Join(transform.ListBuiltins(), ", ")+", split"+b.writeRestrictionNote()),
+			mcptypes.WithDescription("Transform node names and/or notes. Built-in: "+strings.Join(transform.ListBuiltins(), ", ")+", split, group"+b.writeRestrictionNote()),
 			mcptypes.WithString("id",
 				mcptypes.Description("ID to transform (includes descendants)"),
 				mcptypes.Required(),
 			),
 			mcptypes.WithString("transform_name",
-				mcptypes.Description("Transform name: "+strings.Join(transform.ListBuiltins(), ", ")+", or 'split'"),
+				mcptypes.Description("Transform name: "+strings.Join(transform.ListBuiltins(), ", ")+", 'split', or 'group'"),
 			),
 			mcptypes.WithString("exec",
 				mcptypes.Description("Shell command template (use {} for input text). Use instead of transform_name."),
@@ -1217,6 +1217,13 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 			mcptypes.WithBoolean("list",
 				mcptypes.Description("Split by markdown list markers (-, *, +, 1., 2), etc.)"),
 				mcptypes.DefaultBool(false),
+			),
+			mcptypes.WithString("group_by",
+				mcptypes.Description("For group transform: modified, created, modified.<unit>, created.<unit> (unit: year, month, day)"),
+				mcptypes.DefaultString("created.day"),
+			),
+			mcptypes.WithString("order",
+				mcptypes.Description("For group transform: +modified, -modified, +created, -created (default: newest first)"),
 			),
 			mcptypes.WithNumber("depth",
 				mcptypes.Description("Maximum depth to traverse (-1 for unlimited)"),
@@ -1282,6 +1289,13 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 				return b.handleSplitTransform(ctx, req, searchRoot, separator, useRegex, useList)
 			}
 
+			// Handle group transform
+			if transformName == "group" {
+				groupBy := req.GetString("group_by", "created.day")
+				order := req.GetString("order", "")
+				return b.handleGroupTransform(ctx, req, searchRoot, groupBy, order)
+			}
+
 			// Handle exec (no transform_name required)
 			if execCmd != "" {
 				if transformName != "" {
@@ -1339,6 +1353,38 @@ func (b ToolBuilder) handleSplitTransform(ctx context.Context, req mcptypes.Call
 
 	if !dryRun {
 		transform.ApplySplitResults(ctx, b.client, results)
+	}
+
+	return mcptypes.NewToolResultJSON(map[string]any{"results": results})
+}
+
+func (b ToolBuilder) handleGroupTransform(ctx context.Context, req mcptypes.CallToolRequest, searchRoot []*workflowy.Item, groupBy, order string) (*mcptypes.CallToolResult, error) {
+	field, dateFormat, granularity, err := transform.ParseGroupBy(groupBy)
+	if err != nil {
+		return mcptypes.NewToolResultError(err.Error()), nil
+	}
+
+	ascending, err := transform.ParseOrder(order, field)
+	if err != nil {
+		return mcptypes.NewToolResultError(err.Error()), nil
+	}
+
+	dryRun := req.GetBool("dry_run", true)
+
+	opts := transform.GroupOptions{
+		Field:       field,
+		Format:      dateFormat,
+		Granularity: granularity,
+		Ascending:   ascending,
+		DryRun:      dryRun,
+	}
+
+	results := transform.CollectGroupResults(searchRoot, opts)
+
+	if !dryRun {
+		if err := transform.ApplyGroupResults(ctx, b.client, results, granularity); err != nil {
+			return mcptypes.NewToolResultErrorFromErr("failed to apply group transform", err), nil
+		}
 	}
 
 	return mcptypes.NewToolResultJSON(map[string]any{"results": results})

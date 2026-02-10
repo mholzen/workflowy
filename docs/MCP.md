@@ -392,11 +392,13 @@ Transform node names and/or notes using built-in or shell transformations.
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | `id` | string | Node ID to transform | required |
-| `transform_name` | string | Built-in: lowercase, uppercase, capitalize, title, trim, no-punctuation, no-whitespace, split | - |
+| `transform_name` | string | Built-in: lowercase, uppercase, capitalize, title, trim, no-punctuation, no-whitespace, split, group | - |
 | `exec` | string | Shell command (use `{}` for input) | - |
 | `separator` | string | Separator for split transform | `,` |
 | `regex` | boolean | Treat separator as regex pattern | `false` |
 | `list` | boolean | Split by markdown list markers (-, *, +, 1., etc.) | `false` |
+| `group_by` | string | For group: modified, created, modified.<unit>, created.<unit> | `created.day` |
+| `order` | string | For group: +modified, -modified, +created, -created | `-modified` |
 | `depth` | number | Traversal depth (-1 unlimited) | `-1` |
 | `name` | boolean | Transform node names | `true` |
 | `note` | boolean | Transform node notes | `false` |
@@ -407,6 +409,8 @@ Transform node names and/or notes using built-in or shell transformations.
 - "Convert this node to uppercase"
 - "Split this comma-separated list into child nodes"
 - "Split this markdown list into separate child nodes"
+- "Group these items by the day they were modified"
+- "Organize my inbox by creation date, oldest first"
 - "Trim whitespace from all items in this folder"
 
 ---
