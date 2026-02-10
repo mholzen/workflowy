@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.1] - Group Transform and MCP Access Methods
+
+### Added
+- `transform group` command to group children by created/modified date with Workflowy time tags
+  - `--by` flag for group transform: `created.day`, `created.month`, `created.year`, `modified.day`, etc.
+  - `--order` flag for group transform: `+created`, `-created`, `+modified`, `-modified`
+  - `--regex` flag for split transform: treat separator as a regular expression pattern
+  - `--list` flag for split transform: split by markdown list markers (`-`, `*`, `+`, `1.`, `2.`, etc.)
+
+- MCP `--method` flag sets default access method for all operations: `get`, `export`, or `backup`
+  - Per-tool `method` parameter on all MCP tools to override the server default
+  - MCP `--backup-file` flag to specify custom backup file path
+
+### Changed
+- MCP access method is now a hybrid approach: server-wide default with per-tool override
+- Interface parity: MCP tools now have the same `method` flexibility as CLI commands
+
+### Documentation
+- Updated CLI.md with group transform examples
+- Updated MCP.md with access method documentation
+
 ## [0.8.0] - Search Grouping and Sorting
 
 ### Added
