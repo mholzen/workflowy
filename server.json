@@ -6,11 +6,11 @@
     "url": "https://github.com/mholzen/workflowy",
     "source": "github"
   },
-  "version": "0.8.0",
+  "version": "0.8.1",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/mholzen/workflowy:0.8.0",
+      "identifier": "ghcr.io/mholzen/workflowy:0.8.1",
       "transport": {
         "type": "stdio"
       },
