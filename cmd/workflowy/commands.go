@@ -1048,13 +1048,23 @@ Examples:
   workflowy mcp                      # Read-only tools (safe)
   workflowy mcp --expose=all         # All tools including write operations
   workflowy mcp --expose=read,write  # Explicit groups
-  workflowy mcp --expose=get,list    # Specific tools only`,
+  workflowy mcp --expose=get,list    # Specific tools only
+  workflowy mcp --method=export      # Force export method for all operations
+  workflowy mcp --method=backup      # Use local backup file (no API needed)`,
 		Flags: []cli.Flag{
 			getAPIKeyFlag(),
 			&cli.StringFlag{
 				Name:  "expose",
 				Value: "read",
 				Usage: "Tools to expose: read, write, all, or comma-separated tool names",
+			},
+			&cli.StringFlag{
+				Name:  "method",
+				Usage: "Force access method for all operations: get, export, or backup (default: auto-select based on depth)",
+			},
+			&cli.StringFlag{
+				Name:  "backup-file",
+				Usage: "Path to backup file (for backup method; default: latest in ~/Dropbox/Apps/Workflowy/Data)",
 			},
 			getWriteRootIdFlag(),
 			getReadRootIdFlag(),
@@ -1067,6 +1077,8 @@ Examples:
 				Version:           version,
 				WriteRootID:       cmd.String("write-root-id"),
 				ReadRootID:        cmd.String("read-root-id"),
+				Method:            cmd.String("method"),
+				BackupFile:        cmd.String("backup-file"),
 			}
 			return mcp.RunServer(ctx, serverConfig)
 		},

@@ -20,6 +20,8 @@ type Config struct {
 	Version           string
 	WriteRootID       string
 	ReadRootID        string
+	Method            string // "get", "export", "backup", or "" for auto
+	BackupFile        string // Path to backup file (for backup method)
 }
 
 // RunServer starts the MCP stdio server with the requested tool set.
@@ -63,7 +65,7 @@ func RunServer(ctx context.Context, cfg Config) error {
 		slog.Info("read restrictions enabled", "read_root_id", readRootID)
 	}
 
-	builder := NewToolBuilder(client, writeRootID, readRootID)
+	builder := NewToolBuilder(client, writeRootID, readRootID, cfg.Method, cfg.BackupFile)
 	serverTools, err := builder.BuildTools(toolsToEnable)
 	if err != nil {
 		return err

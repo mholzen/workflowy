@@ -135,6 +135,7 @@ Get a node and its descendants as a tree structure.
 | `item_id` | string | Node ID or target name | root |
 | `depth` | number | Recursion depth (-1 for all) | `2` |
 | `include_empty_names` | boolean | Include empty-named items | `false` |
+| `method` | string | Access method: get, export, or backup | auto |
 
 **Example prompt:** "Show me the contents of my Projects folder"
 
@@ -150,6 +151,7 @@ List descendants as a flat list.
 | `item_id` | string | Node ID or target name | root |
 | `depth` | number | Recursion depth (-1 for all) | `2` |
 | `include_empty_names` | boolean | Include empty-named items | `false` |
+| `method` | string | Access method: get, export, or backup | auto |
 
 **Example prompt:** "List all items in my inbox"
 
@@ -170,6 +172,7 @@ Search nodes by text or regex pattern. Completed nodes (and their descendants) a
 | `group_by` | string | Group results: `parent`, `path`, `tree`, `modified.<unit>`, `created.<unit>` | - |
 | `path_max_length` | number | Max chars per path segment when using `group_by=path` | `20` |
 | `order_by` | string | Sort by: `match`, `parent`, `path`, `modified`, `created` (prefix `+`/`-` for asc/desc) | - |
+| `method` | string | Access method: get, export, or backup | export |
 
 **Group-by units:** `year`, `month`, `day`, or a Go time format string.
 
@@ -185,7 +188,10 @@ Search nodes by text or regex pattern. Completed nodes (and their descendants) a
 
 List available shortcuts and system targets. Also returns write restriction info if `--write-root-id` is set.
 
-**Parameters:** None
+**Parameters:**
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `method` | string | Access method for resolving root names | auto |
 
 **Returns:**
 - `targets`: Array of available shortcuts and system targets
@@ -205,6 +211,7 @@ Generate a descendant count report showing where most content lives.
 | `item_id` | string | Root node for report | root |
 | `threshold` | number | Minimum ratio (0.0-1.0) | `0.01` |
 | `preserve_tags` | boolean | Keep HTML tags | `false` |
+| `method` | string | Access method: get, export, or backup | export |
 
 **Example prompt:** "Where is most of my content in Workflowy?"
 
@@ -220,6 +227,7 @@ Rank nodes by immediate children count.
 | `item_id` | string | Root node for report | root |
 | `top_n` | number | Number of results | `20` |
 | `preserve_tags` | boolean | Keep HTML tags | `false` |
+| `method` | string | Access method: get, export, or backup | export |
 
 **Example prompt:** "Which nodes have the most children?"
 
@@ -235,6 +243,7 @@ Rank nodes by creation date (oldest first).
 | `item_id` | string | Root node for report | root |
 | `top_n` | number | Number of results | `20` |
 | `preserve_tags` | boolean | Keep HTML tags | `false` |
+| `method` | string | Access method: get, export, or backup | export |
 
 **Example prompt:** "What are my oldest notes?"
 
@@ -250,6 +259,7 @@ Rank nodes by modification date (oldest first).
 | `item_id` | string | Root node for report | root |
 | `top_n` | number | Number of results | `20` |
 | `preserve_tags` | boolean | Keep HTML tags | `false` |
+| `method` | string | Access method: get, export, or backup | export |
 
 **Example prompt:** "Find notes I haven't touched in a while"
 
@@ -285,6 +295,7 @@ Create a new node.
 | `note` | string | Note content | - |
 | `position` | string | `top` or `bottom` | `bottom` |
 | `layout_mode` | string | bullets, todo, h1, h2, h3 | `bullets` |
+| `method` | string | Access method for validation (writes use API) | auto |
 
 **Example prompts:**
 - "Create a new item called 'Buy groceries' in my inbox"
@@ -303,6 +314,7 @@ Update an existing node.
 | `name` | string | New name | - |
 | `note` | string | New note | - |
 | `layout_mode` | string | bullets, todo, h1, h2, h3 | - |
+| `method` | string | Access method for validation (writes use API) | auto |
 
 **Example prompt:** "Update the note on that item to include today's date"
 
@@ -318,6 +330,7 @@ Move a node to a new parent.
 | `id` | string | Node ID to move | required |
 | `parent_id` | string | Destination parent ID or target | required |
 | `position` | string | `top` or `bottom` | `top` |
+| `method` | string | Access method for validation (writes use API) | auto |
 
 **Example prompts:**
 - "Move that task to my inbox"
@@ -333,6 +346,7 @@ Delete a node and its children.
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | `id` | string | Node ID to delete | required |
+| `method` | string | Access method for validation (writes use API) | auto |
 
 **Example prompt:** "Delete that completed task"
 
@@ -346,6 +360,7 @@ Mark a node as complete.
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | `item_id` | string | Node ID to complete | required |
+| `method` | string | Access method for validation (writes use API) | auto |
 
 **Example prompt:** "Mark that task as done"
 
@@ -359,6 +374,7 @@ Mark a node as incomplete.
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | `item_id` | string | Node ID to uncomplete | required |
+| `method` | string | Access method for validation (writes use API) | auto |
 
 **Example prompt:** "Uncheck that task"
 
@@ -377,6 +393,7 @@ Bulk find-and-replace text in node names.
 | `depth` | number | Traversal depth (-1 unlimited) | `-1` |
 | `ignore_case` | boolean | Case-insensitive | `false` |
 | `dry_run` | boolean | Preview without applying | `true` |
+| `method` | string | Access method for reading (writes use API) | export |
 
 **Example prompts:**
 - "Replace all occurrences of 'v1' with 'v2' in my project notes"
@@ -404,6 +421,7 @@ Transform node names and/or notes using built-in or shell transformations.
 | `note` | boolean | Transform node notes | `false` |
 | `dry_run` | boolean | Preview without applying | `true` |
 | `as_child` | boolean | Insert result as child | `false` |
+| `method` | string | Access method for reading (writes use API) | export |
 
 **Example prompts:**
 - "Convert this node to uppercase"
@@ -438,6 +456,110 @@ workflowy mcp --expose=all
 # Specific tools only
 workflowy mcp --expose=get,list,search,create
 ```
+
+---
+
+## Access Method
+
+The MCP server uses a **hybrid approach** for access methods:
+
+1. **Server-wide default** (`--method` flag): Sets the default for all tools
+2. **Per-tool override** (`method` parameter): Each tool call can override the default
+
+This provides flexibility - set a sensible default at server startup, then override for specific operations as needed.
+
+### Available Methods
+
+| Method | Description | Speed | Freshness |
+|--------|-------------|-------|-----------|
+| `get` | Direct API calls | Slowest | Always fresh |
+| `export` | Cached export API | Fast | Up to 1 minute stale |
+| `backup` | Local backup file | Fastest | Depends on backup age |
+| (auto) | `get` for depth 1-3, `export` for depth 4+ | Varies | Varies |
+
+### Server-Wide Default
+
+Set the default method when starting the MCP server:
+
+```bash
+# Auto-select based on depth (default)
+workflowy mcp
+
+# Always use fresh API data
+workflowy mcp --method=get
+
+# Always use cached export
+workflowy mcp --method=export
+
+# Work entirely offline from backup
+workflowy mcp --method=backup
+```
+
+### Per-Tool Override
+
+Every tool accepts a `method` parameter that overrides the server default:
+
+```json
+// Search using export (fresh data) even if server default is backup
+{"pattern": "TODO", "method": "export"}
+
+// Get a report from backup (fast) even if server default is get
+{"id": "abc123", "method": "backup"}
+```
+
+### Practical Example
+
+A common workflow is to start with backup for speed, then use export when fresh data is needed:
+
+```bash
+# Start server with backup as default (fast, offline)
+workflowy mcp --method=backup
+```
+
+Then in your AI conversation:
+1. **Search backup** - fast, but won't find recently created nodes
+2. **Create a node** - always uses API
+3. **Search with export** - finds the newly created node
+
+```json
+// Step 1: Search backup (won't find new nodes)
+{"pattern": "foobar", "method": "backup"}  // → no results
+
+// Step 2: Create node (always uses API)
+{"name": "foobar"}  // → created
+
+// Step 3: Search export (finds new node)
+{"pattern": "foobar", "method": "export"}  // → found!
+```
+
+### When to Use Each Method
+
+**`backup`:**
+- Fastest access (no API calls)
+- Works offline
+- Required for mirror data
+- Best for: bulk reports, offline work, mirror analysis
+
+**`export`:**
+- Fast cached access
+- Consistent data across operations
+- Rate-limited to 1 refresh/minute
+- Best for: most read operations, searching
+
+**`get`:**
+- Always fresh data
+- Slower (multiple API calls for deep trees)
+- Best for: recently modified nodes, shallow reads
+
+### Backup File
+
+Use `--backup-file` to specify a custom backup file path:
+
+```bash
+workflowy mcp --method=backup --backup-file=/path/to/backup.json
+```
+
+By default, the latest backup from `~/Dropbox/Apps/Workflowy/Data` is used.
 
 ---
 

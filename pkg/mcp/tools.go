@@ -44,13 +44,16 @@ type ToolBuilder struct {
 	client      workflowy.Client
 	writeRootID string
 	readRootID  string
+	method      string // "get", "export", "backup", or "" for auto-select based on depth
+	backupFile  string // Path to backup file (for backup method)
 }
 
 // NewToolBuilder creates a builder bound to the provided Workflowy client.
 // If writeRootID is set, write operations are restricted to that node and its descendants.
 // If readRootID is set, all operations are restricted to that node and its descendants.
-func NewToolBuilder(client workflowy.Client, writeRootID, readRootID string) ToolBuilder {
-	return ToolBuilder{client: client, writeRootID: writeRootID, readRootID: readRootID}
+// If method is set, it forces all operations to use that method (get, export, or backup).
+func NewToolBuilder(client workflowy.Client, writeRootID, readRootID, method, backupFile string) ToolBuilder {
+	return ToolBuilder{client: client, writeRootID: writeRootID, readRootID: readRootID, method: method, backupFile: backupFile}
 }
 
 // isRestricted returns true if write restrictions are in effect.
@@ -68,10 +71,10 @@ func (b ToolBuilder) isReadRestricted() bool {
 // (e.g. "read_root", "write_root") are used for log messages.
 func (b ToolBuilder) validateAccessWithRetry(
 	ctx context.Context,
-	resolvedID, rootID, operation, label, rootLabel string,
+	resolvedID, rootID, operation, label, rootLabel, method string,
 	validate func(items []*workflowy.Item) error,
 ) error {
-	items, err := b.loadExportTree(ctx, false)
+	items, err := b.loadTree(ctx, method)
 	if err != nil {
 		return fmt.Errorf("cannot load tree for %s validation: %w", rootLabel, err)
 	}
@@ -82,7 +85,7 @@ func (b ToolBuilder) validateAccessWithRetry(
 
 	var notFound *workflowy.NodeNotFoundError
 	if errors.As(err, &notFound) {
-		items, refreshErr := b.loadExportTree(ctx, true)
+		items, refreshErr := b.loadTreeWithRefresh(ctx, method, true)
 		if refreshErr != nil {
 			slog.Warn(label+" not found, cache refresh failed",
 				"operation", operation, label, resolvedID, "error", refreshErr)
@@ -106,7 +109,7 @@ func (b ToolBuilder) validateAccessWithRetry(
 }
 
 // validateReadTarget checks if the target is within the read-root scope.
-func (b ToolBuilder) validateReadTarget(ctx context.Context, targetID, operation string) error {
+func (b ToolBuilder) validateReadTarget(ctx context.Context, targetID, operation, method string) error {
 	if !b.isReadRestricted() {
 		return nil
 	}
@@ -116,7 +119,7 @@ func (b ToolBuilder) validateReadTarget(ctx context.Context, targetID, operation
 			"operation", operation, "target", targetID, "read_root", b.readRootID)
 		return fmt.Errorf("%s denied: %s is not within read-root %s", operation, targetID, b.readRootID)
 	}
-	return b.validateAccessWithRetry(ctx, resolvedID, b.readRootID, operation, "target", "read_root",
+	return b.validateAccessWithRetry(ctx, resolvedID, b.readRootID, operation, "target", "read_root", method,
 		func(items []*workflowy.Item) error {
 			return workflowy.ValidateReadAccess(items, b.readRootID, resolvedID, operation)
 		},
@@ -143,7 +146,7 @@ func (b ToolBuilder) readRestrictionNote() string {
 }
 
 // validateWriteTarget checks if the target is within the write-root scope.
-func (b ToolBuilder) validateWriteTarget(ctx context.Context, targetID, operation string) error {
+func (b ToolBuilder) validateWriteTarget(ctx context.Context, targetID, operation, method string) error {
 	if !b.isRestricted() {
 		return nil
 	}
@@ -153,7 +156,7 @@ func (b ToolBuilder) validateWriteTarget(ctx context.Context, targetID, operatio
 			"operation", operation, "target", targetID, "write_root", b.writeRootID)
 		return fmt.Errorf("%s denied: %s is not within write-root %s", operation, targetID, b.writeRootID)
 	}
-	return b.validateAccessWithRetry(ctx, resolvedID, b.writeRootID, operation, "target", "write_root",
+	return b.validateAccessWithRetry(ctx, resolvedID, b.writeRootID, operation, "target", "write_root", method,
 		func(items []*workflowy.Item) error {
 			return workflowy.ValidateWriteAccess(items, b.writeRootID, resolvedID, operation)
 		},
@@ -161,7 +164,7 @@ func (b ToolBuilder) validateWriteTarget(ctx context.Context, targetID, operatio
 }
 
 // validateWriteParent checks if the parent is within the write-root scope.
-func (b ToolBuilder) validateWriteParent(ctx context.Context, parentID, operation string) error {
+func (b ToolBuilder) validateWriteParent(ctx context.Context, parentID, operation, method string) error {
 	if !b.isRestricted() {
 		return nil
 	}
@@ -177,7 +180,7 @@ func (b ToolBuilder) validateWriteParent(ctx context.Context, parentID, operatio
 			"operation", operation, "parent", parentID, "write_root", b.writeRootID)
 		return fmt.Errorf("%s denied: %s is not within write-root %s", operation, parentID, b.writeRootID)
 	}
-	return b.validateAccessWithRetry(ctx, resolvedID, b.writeRootID, operation, "parent", "write_root",
+	return b.validateAccessWithRetry(ctx, resolvedID, b.writeRootID, operation, "parent", "write_root", method,
 		func(items []*workflowy.Item) error {
 			return workflowy.ValidateWriteAccess(items, b.writeRootID, resolvedID, operation)
 		},
@@ -258,22 +261,26 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 				mcptypes.Description("Include items with empty names"),
 				mcptypes.DefaultBool(false),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method: get, export, or backup (default: auto based on depth)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			depth := req.GetInt("depth", 2)
 			includeEmpty := req.GetBool("include_empty_names", false)
+			method := req.GetString("method", "")
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, itemID, "get"); err != nil {
+			if err := b.validateReadTarget(ctx, itemID, "get", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
-			result, err := b.fetchItems(ctx, itemID, depth)
+			result, err := b.fetchItems(ctx, itemID, depth, method)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot get item", err), nil
 			}
@@ -309,22 +316,26 @@ func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
 				mcptypes.Description("Include items with empty names"),
 				mcptypes.DefaultBool(false),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method: get, export, or backup (default: auto based on depth)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			depth := req.GetInt("depth", 2)
 			includeEmpty := req.GetBool("include_empty_names", false)
+			method := req.GetString("method", "")
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, itemID, "list"); err != nil {
+			if err := b.validateReadTarget(ctx, itemID, "list", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
-			data, err := b.fetchItems(ctx, itemID, depth)
+			data, err := b.fetchItems(ctx, itemID, depth, method)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot list items", err), nil
 			}
@@ -373,6 +384,9 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 			mcptypes.WithString("order_by",
 				mcptypes.Description("Sort results by: match, parent, path, modified, created (prefix +/- for asc/desc)"),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method: get, export, or backup (default: export)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			pattern := strings.TrimSpace(req.GetString("pattern", ""))
@@ -384,17 +398,18 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 			useRegexp := req.GetBool("regexp", false)
 			ignoreCase := req.GetBool("ignore_case", false)
 			includeCompleted := req.GetBool("include_completed", false)
+			method := req.GetString("method", "")
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, itemID, "search"); err != nil {
+			if err := b.validateReadTarget(ctx, itemID, "search", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
-			items, err := b.loadExportTree(ctx, false)
+			items, err := b.loadTree(ctx, method)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot load tree for search", err), nil
 			}
@@ -454,8 +469,13 @@ func (b ToolBuilder) buildTargetsTool() mcpserver.ServerTool {
 		Tool: mcptypes.NewTool(
 			ToolTargets,
 			mcptypes.WithDescription("List available Workflowy targets (shortcuts and system targets)"),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method for resolving root names: get, export, or backup"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			method := req.GetString("method", "")
+
 			response, err := b.client.ListTargets(ctx)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot list targets", err), nil
@@ -464,7 +484,7 @@ func (b ToolBuilder) buildTargetsTool() mcpserver.ServerTool {
 			result := map[string]any{"targets": response.Targets}
 
 			if b.isRestricted() || b.isReadRestricted() {
-				items, err := b.loadExportTree(ctx, false)
+				items, err := b.loadTree(ctx, method)
 
 				if b.isRestricted() {
 					writeRoot := map[string]string{"id": b.writeRootID}
@@ -540,6 +560,9 @@ func (b ToolBuilder) buildCreateTool() mcpserver.ServerTool {
 			mcptypes.WithString("note",
 				mcptypes.Description("Optional note content"),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method for validation: get, export, or backup (writes always use API)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			name := strings.TrimSpace(req.GetString("name", ""))
@@ -549,6 +572,7 @@ func (b ToolBuilder) buildCreateTool() mcpserver.ServerTool {
 
 			layoutMode := strings.TrimSpace(req.GetString("layout_mode", ""))
 			note := strings.TrimSpace(req.GetString("note", ""))
+			method := req.GetString("method", "")
 
 			// Default parent to write-root-id or read-root-id if not specified
 			rawParentID := b.defaultCreateParent(req.GetString("parent_id", "None"))
@@ -558,10 +582,10 @@ func (b ToolBuilder) buildCreateTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve parent ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, parentID, "create"); err != nil {
+			if err := b.validateReadTarget(ctx, parentID, "create", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
-			if err := b.validateWriteParent(ctx, parentID, "create"); err != nil {
+			if err := b.validateWriteParent(ctx, parentID, "create", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
@@ -607,22 +631,26 @@ func (b ToolBuilder) buildUpdateTool() mcpserver.ServerTool {
 			mcptypes.WithString("layout_mode",
 				mcptypes.Description("Display mode: bullets, todo, h1, h2, h3"),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method for validation: get, export, or backup (writes always use API)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := strings.TrimSpace(req.GetString("id", ""))
 			if rawItemID == "" {
 				return mcptypes.NewToolResultError("id is required"), nil
 			}
+			method := req.GetString("method", "")
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, itemID, "update"); err != nil {
+			if err := b.validateReadTarget(ctx, itemID, "update", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
-			if err := b.validateWriteTarget(ctx, itemID, "update"); err != nil {
+			if err := b.validateWriteTarget(ctx, itemID, "update", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
@@ -672,6 +700,9 @@ func (b ToolBuilder) buildMoveTool() mcpserver.ServerTool {
 			mcptypes.WithString("position",
 				mcptypes.Description("Position in new parent: top or bottom (default: top)"),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method for validation: get, export, or backup (writes always use API)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := strings.TrimSpace(req.GetString("id", ""))
@@ -683,6 +714,7 @@ func (b ToolBuilder) buildMoveTool() mcpserver.ServerTool {
 			if rawParentID == "" {
 				return mcptypes.NewToolResultError("parent_id is required"), nil
 			}
+			method := req.GetString("method", "")
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
@@ -694,16 +726,16 @@ func (b ToolBuilder) buildMoveTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve parent ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, itemID, "move"); err != nil {
+			if err := b.validateReadTarget(ctx, itemID, "move", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
-			if err := b.validateReadTarget(ctx, parentID, "move destination"); err != nil {
+			if err := b.validateReadTarget(ctx, parentID, "move destination", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
-			if err := b.validateWriteTarget(ctx, itemID, "move"); err != nil {
+			if err := b.validateWriteTarget(ctx, itemID, "move", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
-			if err := b.validateWriteParent(ctx, parentID, "move"); err != nil {
+			if err := b.validateWriteParent(ctx, parentID, "move", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
@@ -733,22 +765,26 @@ func (b ToolBuilder) buildDeleteTool() mcpserver.ServerTool {
 				mcptypes.Description("ID to delete"),
 				mcptypes.Required(),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method for validation: get, export, or backup (writes always use API)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := strings.TrimSpace(req.GetString("id", ""))
 			if rawItemID == "" {
 				return mcptypes.NewToolResultError("id is required"), nil
 			}
+			method := req.GetString("method", "")
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, itemID, "delete"); err != nil {
+			if err := b.validateReadTarget(ctx, itemID, "delete", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
-			if err := b.validateWriteTarget(ctx, itemID, "delete"); err != nil {
+			if err := b.validateWriteTarget(ctx, itemID, "delete", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
@@ -771,22 +807,26 @@ func (b ToolBuilder) buildCompleteTool() mcpserver.ServerTool {
 				mcptypes.Description("ID to complete"),
 				mcptypes.Required(),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method for validation: get, export, or backup (writes always use API)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := strings.TrimSpace(req.GetString("id", ""))
 			if rawItemID == "" {
 				return mcptypes.NewToolResultError("id is required"), nil
 			}
+			method := req.GetString("method", "")
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, itemID, "complete"); err != nil {
+			if err := b.validateReadTarget(ctx, itemID, "complete", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
-			if err := b.validateWriteTarget(ctx, itemID, "complete"); err != nil {
+			if err := b.validateWriteTarget(ctx, itemID, "complete", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
@@ -809,22 +849,26 @@ func (b ToolBuilder) buildUncompleteTool() mcpserver.ServerTool {
 				mcptypes.Description("ID to uncomplete"),
 				mcptypes.Required(),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method for validation: get, export, or backup (writes always use API)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := strings.TrimSpace(req.GetString("id", ""))
 			if rawItemID == "" {
 				return mcptypes.NewToolResultError("id is required"), nil
 			}
+			method := req.GetString("method", "")
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, itemID, "uncomplete"); err != nil {
+			if err := b.validateReadTarget(ctx, itemID, "uncomplete", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
-			if err := b.validateWriteTarget(ctx, itemID, "uncomplete"); err != nil {
+			if err := b.validateWriteTarget(ctx, itemID, "uncomplete", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
@@ -855,21 +899,25 @@ func (b ToolBuilder) buildReportCountTool() mcpserver.ServerTool {
 				mcptypes.Description("Preserve HTML tags in output"),
 				mcptypes.DefaultBool(false),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method: get, export, or backup (default: export)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			threshold := req.GetFloat("threshold", 0.01)
+			method := req.GetString("method", "")
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, itemID, "report_count"); err != nil {
+			if err := b.validateReadTarget(ctx, itemID, "report_count", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
-			root, err := b.buildReportRoot(ctx, itemID)
+			root, err := b.buildReportRoot(ctx, itemID, method)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
 			}
@@ -908,21 +956,25 @@ func (b ToolBuilder) buildReportChildrenTool() mcpserver.ServerTool {
 				mcptypes.Description("Preserve HTML tags in output"),
 				mcptypes.DefaultBool(false),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method: get, export, or backup (default: export)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			topN := req.GetInt("top_n", 20)
+			method := req.GetString("method", "")
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, itemID, "report_children"); err != nil {
+			if err := b.validateReadTarget(ctx, itemID, "report_children", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
-			root, err := b.buildReportRoot(ctx, itemID)
+			root, err := b.buildReportRoot(ctx, itemID, method)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
 			}
@@ -958,21 +1010,25 @@ func (b ToolBuilder) buildReportCreatedTool() mcpserver.ServerTool {
 				mcptypes.Description("Preserve HTML tags in output"),
 				mcptypes.DefaultBool(false),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method: get, export, or backup (default: export)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			topN := req.GetInt("top_n", 20)
+			method := req.GetString("method", "")
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, itemID, "report_created"); err != nil {
+			if err := b.validateReadTarget(ctx, itemID, "report_created", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
-			root, err := b.buildReportRoot(ctx, itemID)
+			root, err := b.buildReportRoot(ctx, itemID, method)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
 			}
@@ -1008,21 +1064,25 @@ func (b ToolBuilder) buildReportModifiedTool() mcpserver.ServerTool {
 				mcptypes.Description("Preserve HTML tags in output"),
 				mcptypes.DefaultBool(false),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method: get, export, or backup (default: export)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			topN := req.GetInt("top_n", 20)
+			method := req.GetString("method", "")
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, itemID, "report_modified"); err != nil {
+			if err := b.validateReadTarget(ctx, itemID, "report_modified", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
-			root, err := b.buildReportRoot(ctx, itemID)
+			root, err := b.buildReportRoot(ctx, itemID, method)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
 			}
@@ -1105,6 +1165,9 @@ func (b ToolBuilder) buildReplaceTool() mcpserver.ServerTool {
 				mcptypes.Description("Show what would be replaced without applying"),
 				mcptypes.DefaultBool(true),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method: get, export, or backup (writes always use API)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			pattern := strings.TrimSpace(req.GetString("pattern", ""))
@@ -1129,20 +1192,21 @@ func (b ToolBuilder) buildReplaceTool() mcpserver.ServerTool {
 			rawParentID := req.GetString("parent_id", "None")
 			depth := req.GetInt("depth", -1)
 			dryRun := req.GetBool("dry_run", true)
+			method := req.GetString("method", "")
 
 			parentID, err := workflowy.ResolveNodeID(ctx, b.client, rawParentID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve parent ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, parentID, "replace"); err != nil {
+			if err := b.validateReadTarget(ctx, parentID, "replace", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
-			if err := b.validateWriteTarget(ctx, parentID, "replace"); err != nil {
+			if err := b.validateWriteTarget(ctx, parentID, "replace", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
-			items, err := b.loadExportTree(ctx, false)
+			items, err := b.loadTree(ctx, method)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
 			}
@@ -1245,26 +1309,30 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 				mcptypes.Description("Insert result as child of source node instead of replacing"),
 				mcptypes.DefaultBool(false),
 			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method: get, export, or backup (writes always use API)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := strings.TrimSpace(req.GetString("id", ""))
 			if rawItemID == "" {
 				return mcptypes.NewToolResultError("id is required"), nil
 			}
+			method := req.GetString("method", "")
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
-			if err := b.validateReadTarget(ctx, itemID, "transform"); err != nil {
+			if err := b.validateReadTarget(ctx, itemID, "transform", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
-			if err := b.validateWriteTarget(ctx, itemID, "transform"); err != nil {
+			if err := b.validateWriteTarget(ctx, itemID, "transform", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
-			items, err := b.loadExportTree(ctx, false)
+			items, err := b.loadTree(ctx, method)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot load tree", err), nil
 			}
@@ -1391,10 +1459,15 @@ func (b ToolBuilder) handleGroupTransform(ctx context.Context, req mcptypes.Call
 }
 
 // fetchItems mirrors the CLI logic: depth >=4 or -1 uses export API; otherwise GET API.
-func (b ToolBuilder) fetchItems(ctx context.Context, itemID string, depth int) (interface{}, error) {
-	useMethod := "get"
-	if depth == -1 || depth >= 4 {
-		useMethod = "export"
+// If a method is provided (per-request or builder default), it overrides the auto-selection.
+func (b ToolBuilder) fetchItems(ctx context.Context, itemID string, depth int, method string) (interface{}, error) {
+	useMethod := b.resolveMethod(method)
+	if useMethod == "" {
+		// Auto-select based on depth
+		useMethod = "get"
+		if depth == -1 || depth >= 4 {
+			useMethod = "export"
+		}
 	}
 
 	switch useMethod {
@@ -1444,6 +1517,25 @@ func (b ToolBuilder) fetchItems(ctx context.Context, itemID string, depth int) (
 		}
 		return item, nil
 
+	case "backup":
+		tree, err := b.loadBackupTree()
+		if err != nil {
+			return nil, err
+		}
+
+		if itemID != "None" {
+			found := workflowy.FindItemInTree(tree, itemID, depth)
+			if found == nil {
+				return nil, fmt.Errorf("item %s not found in backup", itemID)
+			}
+			return found, nil
+		}
+
+		if depth >= 0 {
+			workflowy.LimitItemsDepth(tree, depth)
+		}
+		return &workflowy.ListChildrenResponse{Items: tree}, nil
+
 	default:
 		return nil, fmt.Errorf("unknown method %s", useMethod)
 	}
@@ -1458,8 +1550,41 @@ func (b ToolBuilder) loadExportTree(ctx context.Context, force bool) ([]*workflo
 	return root.Children, nil
 }
 
-func (b ToolBuilder) buildReportRoot(ctx context.Context, itemID string) (*workflowy.Item, error) {
-	items, err := b.loadExportTree(ctx, false)
+func (b ToolBuilder) loadBackupTree() ([]*workflowy.Item, error) {
+	if b.backupFile != "" {
+		return workflowy.ReadBackupFile(b.backupFile)
+	}
+	return workflowy.ReadLatestBackup()
+}
+
+// resolveMethod returns the per-request method if provided, otherwise falls back to the builder's default.
+func (b ToolBuilder) resolveMethod(reqMethod string) string {
+	if reqMethod != "" {
+		return reqMethod
+	}
+	return b.method
+}
+
+// loadTree loads the tree using the specified method (or builder default if empty).
+func (b ToolBuilder) loadTree(ctx context.Context, method string) ([]*workflowy.Item, error) {
+	useMethod := b.resolveMethod(method)
+	if useMethod == "backup" {
+		return b.loadBackupTree()
+	}
+	return b.loadExportTree(ctx, false)
+}
+
+// loadTreeWithRefresh loads the tree, with option to force refresh (only for export method).
+func (b ToolBuilder) loadTreeWithRefresh(ctx context.Context, method string, force bool) ([]*workflowy.Item, error) {
+	useMethod := b.resolveMethod(method)
+	if useMethod == "backup" {
+		return b.loadBackupTree()
+	}
+	return b.loadExportTree(ctx, force)
+}
+
+func (b ToolBuilder) buildReportRoot(ctx context.Context, itemID, method string) (*workflowy.Item, error) {
+	items, err := b.loadTree(ctx, method)
 	if err != nil {
 		return nil, err
 	}
