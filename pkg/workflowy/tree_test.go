@@ -80,3 +80,84 @@ func TestFindItemWithAncestors_SecondTopLevel(t *testing.T) {
 	assert.Equal(t, "f", item.ID)
 	assert.Empty(t, ancestors)
 }
+
+func TestBuildAncestorSpine_WithAncestors(t *testing.T) {
+	tree := makeTestTree()
+	item, ancestors := FindItemWithAncestors(tree, "c")
+
+	spine := BuildAncestorSpine(item, ancestors, -1)
+
+	// Spine root is a copy of "a"
+	assert.Equal(t, "a", spine.ID)
+	assert.Equal(t, "A", spine.Name)
+	assert.Len(t, spine.Children, 1)
+
+	// Next is copy of "b"
+	b := spine.Children[0]
+	assert.Equal(t, "b", b.ID)
+	assert.Len(t, b.Children, 1)
+
+	// Leaf is "c" with its original children
+	c := b.Children[0]
+	assert.Equal(t, "c", c.ID)
+	assert.Len(t, c.Children, 1)
+	assert.Equal(t, "d", c.Children[0].ID)
+}
+
+func TestBuildAncestorSpine_NoAncestors(t *testing.T) {
+	tree := makeTestTree()
+	item, ancestors := FindItemWithAncestors(tree, "a")
+
+	spine := BuildAncestorSpine(item, ancestors, -1)
+
+	// No ancestors, so the spine is the item itself
+	assert.Equal(t, "a", spine.ID)
+	assert.Len(t, spine.Children, 2) // original children preserved
+}
+
+func TestBuildAncestorSpine_DepthLimitsTargetChildren(t *testing.T) {
+	tree := makeTestTree()
+	item, ancestors := FindItemWithAncestors(tree, "c")
+
+	spine := BuildAncestorSpine(item, ancestors, 0)
+
+	// Walk to target
+	c := spine.Children[0].Children[0]
+	assert.Equal(t, "c", c.ID)
+	// depth=0 means no children on target
+	assert.Nil(t, c.Children)
+}
+
+func TestBuildAncestorSpine_AncestorsAreCopies(t *testing.T) {
+	tree := makeTestTree()
+	item, ancestors := FindItemWithAncestors(tree, "c")
+
+	spine := BuildAncestorSpine(item, ancestors, -1)
+
+	// Original "a" still has 2 children (b, e) -- spine copy has 1
+	original := tree[0]
+	assert.Len(t, original.Children, 2)
+	assert.Len(t, spine.Children, 1)
+}
+
+func TestBuildAncestorSpine_PreservesMetadata(t *testing.T) {
+	note := "test note"
+	items := []*Item{
+		{
+			ID: "parent", Name: "Parent", Note: &note,
+			CreatedAt: 1000, ModifiedAt: 2000,
+			Children: []*Item{
+				{ID: "child", Name: "Child"},
+			},
+		},
+	}
+
+	item, ancestors := FindItemWithAncestors(items, "child")
+	spine := BuildAncestorSpine(item, ancestors, -1)
+
+	assert.Equal(t, "parent", spine.ID)
+	assert.Equal(t, "Parent", spine.Name)
+	assert.Equal(t, &note, spine.Note)
+	assert.Equal(t, int64(1000), spine.CreatedAt)
+	assert.Equal(t, int64(2000), spine.ModifiedAt)
+}
