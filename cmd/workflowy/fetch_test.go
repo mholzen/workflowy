@@ -63,3 +63,17 @@ func TestFetchItems_NilClient_AutoMethod_AttemptsBackup(t *testing.T) {
 	err := cmd.Run(context.Background(), []string{"test", "--backup-file=/nonexistent/backup.json"})
 	assert.NoError(t, err)
 }
+
+func TestFetchItems_IncludeAncestors_WithGetMethod_ReturnsError(t *testing.T) {
+	cmd := &cli.Command{
+		Flags: getFetchFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			_, err := fetchItems(c, ctx, nil, "some-id", 2)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "cannot use --include-ancestors with --method=get")
+			return nil
+		},
+	}
+	err := cmd.Run(context.Background(), []string{"test", "--method=get", "--include-ancestors"})
+	assert.NoError(t, err)
+}
