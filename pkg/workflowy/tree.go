@@ -201,3 +201,37 @@ func findItemWithAncestors(items []*Item, targetID string, ancestors []*Item) (*
 	}
 	return nil, nil
 }
+
+// BuildAncestorSpine creates a spine tree from ancestors and target.
+// Each ancestor is shallow-copied with only the path child in its Children.
+// The target keeps its children, depth-limited by maxDepth.
+// Returns the target as-is when ancestors is empty.
+func BuildAncestorSpine(target *Item, ancestors []*Item, maxDepth int) *Item {
+	if maxDepth >= 0 {
+		LimitItemDepth(target, maxDepth)
+	}
+
+	if len(ancestors) == 0 {
+		return target
+	}
+
+	// Build spine from bottom up: start with target, wrap in ancestor copies
+	child := target
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		ancestor := ancestors[i]
+		copy := &Item{
+			ID:          ancestor.ID,
+			Name:        ancestor.Name,
+			Note:        ancestor.Note,
+			Priority:    ancestor.Priority,
+			Data:        ancestor.Data,
+			CreatedAt:   ancestor.CreatedAt,
+			ModifiedAt:  ancestor.ModifiedAt,
+			CompletedAt: ancestor.CompletedAt,
+			Children:    []*Item{child},
+		}
+		child = copy
+	}
+
+	return child
+}
