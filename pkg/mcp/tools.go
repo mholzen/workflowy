@@ -264,12 +264,21 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 			mcptypes.WithString("method",
 				mcptypes.Description("Access method: get, export, or backup (default: auto based on depth)"),
 			),
+			mcptypes.WithBoolean("include_ancestors",
+				mcptypes.Description("Wrap result in ancestor path from root to target node (requires export or backup method)"),
+				mcptypes.DefaultBool(false),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := b.defaultReadID(req.GetString("id", "None"))
 			depth := req.GetInt("depth", 2)
 			includeEmpty := req.GetBool("include_empty_names", false)
 			method := req.GetString("method", "")
+			includeAncestors := req.GetBool("include_ancestors", false)
+
+			if includeAncestors && b.resolveMethod(method) == "get" {
+				return mcptypes.NewToolResultError("cannot use include_ancestors with method=get (requires full tree)"), nil
+			}
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
 			if err != nil {
@@ -278,6 +287,19 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 
 			if err := b.validateReadTarget(ctx, itemID, "get", method); err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
+			}
+
+			if includeAncestors {
+				result, err := b.fetchItemWithAncestors(ctx, itemID, depth, method)
+				if err != nil {
+					return mcptypes.NewToolResultErrorFromErr("cannot get item with ancestors", err), nil
+				}
+
+				if !includeEmpty {
+					result = workflowy.FilterEmptyItem(result)
+				}
+
+				return mcptypes.NewToolResultJSON(result)
 			}
 
 			result, err := b.fetchItems(ctx, itemID, depth, method)
@@ -1456,6 +1478,36 @@ func (b ToolBuilder) handleGroupTransform(ctx context.Context, req mcptypes.Call
 	}
 
 	return mcptypes.NewToolResultJSON(map[string]any{"results": results})
+}
+
+// fetchItemWithAncestors loads the full tree and returns the target wrapped in its ancestor spine.
+func (b ToolBuilder) fetchItemWithAncestors(ctx context.Context, itemID string, depth int, method string) (*workflowy.Item, error) {
+	useMethod := b.resolveMethod(method)
+	if useMethod == "" || useMethod == "get" {
+		useMethod = "export"
+	}
+
+	var tree []*workflowy.Item
+	var err error
+
+	switch useMethod {
+	case "export":
+		tree, err = b.loadExportTree(ctx, false)
+	case "backup":
+		tree, err = b.loadBackupTree()
+	default:
+		return nil, fmt.Errorf("cannot use method '%s' with include_ancestors", useMethod)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	found, ancestors := workflowy.FindItemWithAncestors(tree, itemID)
+	if found == nil {
+		return nil, fmt.Errorf("item %s not found", itemID)
+	}
+
+	return workflowy.BuildAncestorSpine(found, ancestors, depth), nil
 }
 
 // fetchItems mirrors the CLI logic: depth >=4 or -1 uses export API; otherwise GET API.
