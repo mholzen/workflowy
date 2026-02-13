@@ -182,3 +182,22 @@ func ValidateWriteAccess(items []*Item, writeRootID, targetID, operation string)
 func ValidateReadAccess(items []*Item, readRootID, targetID, operation string) error {
 	return ValidateAccess(items, readRootID, targetID, "read-root", operation)
 }
+
+// FindItemWithAncestors searches for targetID in the tree and returns the item
+// along with its ancestor chain. ancestors[0] is the top-level parent,
+// ancestors[len-1] is the immediate parent. Returns (nil, nil) if not found.
+func FindItemWithAncestors(items []*Item, targetID string) (*Item, []*Item) {
+	return findItemWithAncestors(items, targetID, nil)
+}
+
+func findItemWithAncestors(items []*Item, targetID string, ancestors []*Item) (*Item, []*Item) {
+	for _, item := range items {
+		if item.ID == targetID {
+			return item, ancestors
+		}
+		if found, chain := findItemWithAncestors(item.Children, targetID, append(ancestors, item)); found != nil {
+			return found, chain
+		}
+	}
+	return nil, nil
+}
