@@ -12,9 +12,14 @@ import (
 func fetchItems(cmd *cli.Command, apiCtx context.Context, client workflowy.Client, itemID string, depth int) (interface{}, error) {
 	method := cmd.String("method")
 	backupFile := cmd.String("backup-file")
+	includeAncestors := cmd.Bool("include-ancestors")
 
 	if method != "" && method != "get" && method != "export" && method != "backup" {
 		return nil, fmt.Errorf("method must be 'get', 'export', or 'backup'")
+	}
+
+	if includeAncestors && method == "get" {
+		return nil, fmt.Errorf("cannot use --include-ancestors with --method=get (requires full tree)")
 	}
 
 	var useMethod string
@@ -22,6 +27,8 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, client workflowy.Clien
 		useMethod = method
 	} else if client == nil {
 		useMethod = "backup"
+	} else if includeAncestors {
+		useMethod = "export"
 	} else {
 		if depth == -1 || depth >= 4 {
 			useMethod = "export"
@@ -34,13 +41,13 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, client workflowy.Clien
 		return nil, fmt.Errorf("cannot use method '%s' without using the API", useMethod)
 	}
 
-	slog.Debug("access method determined", "method", useMethod, "depth", depth)
+	slog.Debug("access method determined", "method", useMethod, "depth", depth, "include_ancestors", includeAncestors)
 
 	var result interface{}
 
 	switch useMethod {
 	case "backup":
-		return fetchFromBackup(backupFile, itemID, depth)
+		return fetchFromBackup(backupFile, itemID, depth, includeAncestors)
 
 	case "export":
 		slog.Debug("using export API", "depth", depth)
@@ -49,7 +56,7 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, client workflowy.Clien
 		if err != nil {
 			if method == "" {
 				slog.Warn("export failed, falling back to backup", "error", err)
-				return fetchFromBackup(backupFile, itemID, depth)
+				return fetchFromBackup(backupFile, itemID, depth, includeAncestors)
 			}
 			return nil, fmt.Errorf("cannot export nodes: %w", err)
 		}
@@ -58,11 +65,19 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, client workflowy.Clien
 		root := workflowy.BuildTreeFromExport(response.Nodes)
 
 		if itemID != "None" {
-			found := workflowy.FindItemInTree(root.Children, itemID, depth)
-			if found == nil {
-				return nil, fmt.Errorf("item %s not found", itemID)
+			if includeAncestors {
+				found, ancestors := workflowy.FindItemWithAncestors(root.Children, itemID)
+				if found == nil {
+					return nil, fmt.Errorf("item %s not found", itemID)
+				}
+				result = workflowy.BuildAncestorSpine(found, ancestors, depth)
+			} else {
+				found := workflowy.FindItemInTree(root.Children, itemID, depth)
+				if found == nil {
+					return nil, fmt.Errorf("item %s not found", itemID)
+				}
+				result = found
 			}
-			result = found
 		} else {
 			if depth >= 0 {
 				slog.Debug("limiting depth for export results", "depth", depth, "item_count", len(root.Children))
@@ -84,7 +99,7 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, client workflowy.Clien
 			if err != nil {
 				if method == "" {
 					slog.Warn("get API failed, falling back to backup", "error", err)
-					return fetchFromBackup(backupFile, itemID, depth)
+					return fetchFromBackup(backupFile, itemID, depth, includeAncestors)
 				}
 				return nil, fmt.Errorf("cannot fetch root items: %w", err)
 			}
@@ -94,7 +109,7 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, client workflowy.Clien
 			if err != nil {
 				if method == "" {
 					slog.Warn("get API failed, falling back to backup", "error", err)
-					return fetchFromBackup(backupFile, itemID, depth)
+					return fetchFromBackup(backupFile, itemID, depth, includeAncestors)
 				}
 				return nil, fmt.Errorf("cannot get item: %w", err)
 			}
@@ -104,7 +119,7 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, client workflowy.Clien
 				if err != nil {
 					if method == "" {
 						slog.Warn("get API failed fetching children, falling back to backup", "error", err)
-						return fetchFromBackup(backupFile, itemID, depth)
+						return fetchFromBackup(backupFile, itemID, depth, includeAncestors)
 					}
 					return nil, fmt.Errorf("cannot fetch children: %w", err)
 				}
@@ -120,13 +135,20 @@ func fetchItems(cmd *cli.Command, apiCtx context.Context, client workflowy.Clien
 	return result, nil
 }
 
-func fetchFromBackup(backupFile string, itemID string, depth int) (interface{}, error) {
+func fetchFromBackup(backupFile string, itemID string, depth int, includeAncestors bool) (interface{}, error) {
 	items, err := loadFromBackupProvider(backupFile, workflowy.DefaultBackupProvider)
 	if err != nil {
 		return nil, err
 	}
 
 	if itemID != "None" {
+		if includeAncestors {
+			found, ancestors := workflowy.FindItemWithAncestors(items, itemID)
+			if found == nil {
+				return nil, fmt.Errorf("item %s not found in backup", itemID)
+			}
+			return workflowy.BuildAncestorSpine(found, ancestors, depth), nil
+		}
 		found := workflowy.FindItemInTree(items, itemID, depth)
 		if found == nil {
 			return nil, fmt.Errorf("item %s not found in backup", itemID)

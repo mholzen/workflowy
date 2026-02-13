@@ -45,6 +45,10 @@ func getFetchFlags() []cli.Flag {
 			Value: false,
 			Usage: "Include items with empty names",
 		},
+		&cli.BoolFlag{
+			Name:  "include-ancestors",
+			Usage: "Wrap result in ancestor path from root to target node (requires export or backup method)",
+		},
 	}
 	flags = append(flags, getMethodFlags()...)
 	return flags
