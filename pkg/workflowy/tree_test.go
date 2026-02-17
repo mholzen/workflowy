@@ -161,3 +161,63 @@ func TestBuildAncestorSpine_PreservesMetadata(t *testing.T) {
 	assert.Equal(t, int64(1000), spine.CreatedAt)
 	assert.Equal(t, int64(2000), spine.ModifiedAt)
 }
+
+func TestTruncateAncestors_KeepLastN(t *testing.T) {
+	ancestors := []*Item{
+		{ID: "a", Name: "A"},
+		{ID: "b", Name: "B"},
+		{ID: "c", Name: "C"},
+	}
+
+	result := TruncateAncestors(ancestors, 2)
+	assert.Len(t, result, 2)
+	assert.Equal(t, "b", result[0].ID)
+	assert.Equal(t, "c", result[1].ID)
+}
+
+func TestTruncateAncestors_DepthExceedsLength(t *testing.T) {
+	ancestors := []*Item{
+		{ID: "a", Name: "A"},
+		{ID: "b", Name: "B"},
+	}
+
+	result := TruncateAncestors(ancestors, 5)
+	assert.Len(t, result, 2)
+}
+
+func TestTruncateAncestors_DepthMinusOne(t *testing.T) {
+	ancestors := []*Item{
+		{ID: "a", Name: "A"},
+		{ID: "b", Name: "B"},
+		{ID: "c", Name: "C"},
+	}
+
+	result := TruncateAncestors(ancestors, -1)
+	assert.Len(t, result, 3)
+}
+
+func TestTruncateAncestors_DepthZero(t *testing.T) {
+	ancestors := []*Item{
+		{ID: "a", Name: "A"},
+	}
+
+	result := TruncateAncestors(ancestors, 0)
+	assert.Nil(t, result)
+}
+
+func TestTruncateAncestors_EmptyAncestors(t *testing.T) {
+	result := TruncateAncestors(nil, 3)
+	assert.Nil(t, result)
+}
+
+func TestTruncateAncestors_DepthOne(t *testing.T) {
+	ancestors := []*Item{
+		{ID: "a", Name: "A"},
+		{ID: "b", Name: "B"},
+		{ID: "c", Name: "C"},
+	}
+
+	result := TruncateAncestors(ancestors, 1)
+	assert.Len(t, result, 1)
+	assert.Equal(t, "c", result[0].ID)
+}
