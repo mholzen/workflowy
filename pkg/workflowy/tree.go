@@ -202,6 +202,15 @@ func findItemWithAncestors(items []*Item, targetID string, ancestors []*Item) (*
 	return nil, nil
 }
 
+func SliceAncestorsTo(ancestors []*Item, ancestorID string) ([]*Item, error) {
+	for i, a := range ancestors {
+		if a.ID == ancestorID {
+			return ancestors[i:], nil
+		}
+	}
+	return nil, fmt.Errorf("ancestor %s not found in ancestor chain", ancestorID)
+}
+
 func TruncateAncestors(ancestors []*Item, depth int) []*Item {
 	if depth == 0 {
 		return nil
