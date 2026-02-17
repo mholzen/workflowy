@@ -49,6 +49,14 @@ func getFetchFlags() []cli.Flag {
 			Name:  "include-ancestors",
 			Usage: "Wrap result in ancestor path from root to target node (requires export or backup method)",
 		},
+		&cli.IntFlag{
+			Name:  "ancestor-depth",
+			Usage: "Include N levels of ancestors (-1 for all, 0 for none; requires export or backup method)",
+		},
+		&cli.StringFlag{
+			Name:  "to-ancestor",
+			Usage: "Include ancestors up to and including this node ID (requires export or backup method)",
+		},
 	}
 	flags = append(flags, getMethodFlags()...)
 	return flags

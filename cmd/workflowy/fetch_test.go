@@ -70,7 +70,7 @@ func TestFetchItems_IncludeAncestors_WithGetMethod_ReturnsError(t *testing.T) {
 		Action: func(ctx context.Context, c *cli.Command) error {
 			_, err := fetchItems(c, ctx, nil, "some-id", 2)
 			assert.Error(t, err)
-			assert.Contains(t, err.Error(), "cannot use --include-ancestors with --method=get")
+			assert.Contains(t, err.Error(), "cannot use ancestor options with --method=get")
 			return nil
 		},
 	}
