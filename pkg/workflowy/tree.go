@@ -202,6 +202,19 @@ func findItemWithAncestors(items []*Item, targetID string, ancestors []*Item) (*
 	return nil, nil
 }
 
+func TruncateAncestors(ancestors []*Item, depth int) []*Item {
+	if depth == 0 {
+		return nil
+	}
+	if ancestors == nil {
+		return nil
+	}
+	if depth < 0 || depth >= len(ancestors) {
+		return ancestors
+	}
+	return ancestors[len(ancestors)-depth:]
+}
+
 // BuildAncestorSpine creates a spine tree from ancestors and target.
 // Each ancestor is shallow-copied with only the path child in its Children.
 // The target keeps its children, depth-limited by maxDepth.
