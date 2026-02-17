@@ -221,3 +221,59 @@ func TestTruncateAncestors_DepthOne(t *testing.T) {
 	assert.Len(t, result, 1)
 	assert.Equal(t, "c", result[0].ID)
 }
+
+func TestSliceAncestorsTo_MiddleAncestor(t *testing.T) {
+	ancestors := []*Item{
+		{ID: "a", Name: "A"},
+		{ID: "b", Name: "B"},
+		{ID: "c", Name: "C"},
+	}
+
+	result, err := SliceAncestorsTo(ancestors, "b")
+	assert.NoError(t, err)
+	assert.Len(t, result, 2)
+	assert.Equal(t, "b", result[0].ID)
+	assert.Equal(t, "c", result[1].ID)
+}
+
+func TestSliceAncestorsTo_FirstAncestor(t *testing.T) {
+	ancestors := []*Item{
+		{ID: "a", Name: "A"},
+		{ID: "b", Name: "B"},
+	}
+
+	result, err := SliceAncestorsTo(ancestors, "a")
+	assert.NoError(t, err)
+	assert.Len(t, result, 2)
+	assert.Equal(t, "a", result[0].ID)
+}
+
+func TestSliceAncestorsTo_LastAncestor(t *testing.T) {
+	ancestors := []*Item{
+		{ID: "a", Name: "A"},
+		{ID: "b", Name: "B"},
+		{ID: "c", Name: "C"},
+	}
+
+	result, err := SliceAncestorsTo(ancestors, "c")
+	assert.NoError(t, err)
+	assert.Len(t, result, 1)
+	assert.Equal(t, "c", result[0].ID)
+}
+
+func TestSliceAncestorsTo_NotFound(t *testing.T) {
+	ancestors := []*Item{
+		{ID: "a", Name: "A"},
+		{ID: "b", Name: "B"},
+	}
+
+	_, err := SliceAncestorsTo(ancestors, "z")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ancestor z not found")
+}
+
+func TestSliceAncestorsTo_EmptyAncestors(t *testing.T) {
+	_, err := SliceAncestorsTo(nil, "a")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ancestor a not found")
+}
