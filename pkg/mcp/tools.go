@@ -268,6 +268,13 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 				mcptypes.Description("Wrap result in ancestor path from root to target node (requires export or backup method)"),
 				mcptypes.DefaultBool(false),
 			),
+			mcptypes.WithNumber("ancestor_depth",
+				mcptypes.Description("Include N levels of ancestors (-1 for all, 0 for none; requires export or backup method)"),
+				mcptypes.DefaultNumber(0),
+			),
+			mcptypes.WithString("to_ancestor",
+				mcptypes.Description("Include ancestors up to and including this node ID (requires export or backup method)"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := b.defaultReadID(req.GetString("id", "None"))
@@ -275,9 +282,32 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 			includeEmpty := req.GetBool("include_empty_names", false)
 			method := req.GetString("method", "")
 			includeAncestors := req.GetBool("include_ancestors", false)
+			ancestorDepth := req.GetInt("ancestor_depth", 0)
+			toAncestor := req.GetString("to_ancestor", "")
 
-			if includeAncestors && b.resolveMethod(method) == "get" {
-				return mcptypes.NewToolResultError("cannot use include_ancestors with method=get (requires full tree)"), nil
+			// Validate conflict
+			optCount := 0
+			if includeAncestors {
+				optCount++
+			}
+			if ancestorDepth != 0 {
+				optCount++
+			}
+			if toAncestor != "" {
+				optCount++
+			}
+			if optCount > 1 {
+				return mcptypes.NewToolResultError("cannot combine ancestor options: use only one of include_ancestors, ancestor_depth, or to_ancestor"), nil
+			}
+
+			// Resolve ancestor mode
+			ancestorsEnabled := includeAncestors || ancestorDepth != 0 || toAncestor != ""
+			if includeAncestors {
+				ancestorDepth = -1
+			}
+
+			if ancestorsEnabled && b.resolveMethod(method) == "get" {
+				return mcptypes.NewToolResultError("cannot use ancestor options with method=get (requires full tree)"), nil
 			}
 
 			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
@@ -289,8 +319,8 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
 
-			if includeAncestors {
-				result, err := b.fetchItemWithAncestors(ctx, itemID, depth, method)
+			if ancestorsEnabled {
+				result, err := b.fetchItemWithAncestors(ctx, itemID, depth, method, ancestorDepth, toAncestor)
 				if err != nil {
 					return mcptypes.NewToolResultErrorFromErr("cannot get item with ancestors", err), nil
 				}
@@ -1481,7 +1511,7 @@ func (b ToolBuilder) handleGroupTransform(ctx context.Context, req mcptypes.Call
 }
 
 // fetchItemWithAncestors loads the full tree and returns the target wrapped in its ancestor spine.
-func (b ToolBuilder) fetchItemWithAncestors(ctx context.Context, itemID string, depth int, method string) (*workflowy.Item, error) {
+func (b ToolBuilder) fetchItemWithAncestors(ctx context.Context, itemID string, depth int, method string, ancestorDepth int, toAncestorID string) (*workflowy.Item, error) {
 	useMethod := b.resolveMethod(method)
 	if useMethod == "" || useMethod == "get" {
 		useMethod = "export"
@@ -1496,7 +1526,7 @@ func (b ToolBuilder) fetchItemWithAncestors(ctx context.Context, itemID string, 
 	case "backup":
 		tree, err = b.loadBackupTree()
 	default:
-		return nil, fmt.Errorf("cannot use method '%s' with include_ancestors", useMethod)
+		return nil, fmt.Errorf("cannot use method '%s' with ancestor options", useMethod)
 	}
 	if err != nil {
 		return nil, err
@@ -1505,6 +1535,15 @@ func (b ToolBuilder) fetchItemWithAncestors(ctx context.Context, itemID string, 
 	found, ancestors := workflowy.FindItemWithAncestors(tree, itemID)
 	if found == nil {
 		return nil, fmt.Errorf("item %s not found", itemID)
+	}
+
+	if toAncestorID != "" {
+		ancestors, err = workflowy.SliceAncestorsTo(ancestors, toAncestorID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		ancestors = workflowy.TruncateAncestors(ancestors, ancestorDepth)
 	}
 
 	return workflowy.BuildAncestorSpine(found, ancestors, depth), nil
