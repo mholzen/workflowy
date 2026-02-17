@@ -77,3 +77,59 @@ func TestFetchItems_IncludeAncestors_WithGetMethod_ReturnsError(t *testing.T) {
 	err := cmd.Run(context.Background(), []string{"test", "--method=get", "--include-ancestors"})
 	assert.NoError(t, err)
 }
+
+func TestFetchItems_AncestorDepth_WithGetMethod_ReturnsError(t *testing.T) {
+	cmd := &cli.Command{
+		Flags: getFetchFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			_, err := fetchItems(c, ctx, nil, "some-id", 2)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "cannot use ancestor options with --method=get")
+			return nil
+		},
+	}
+	err := cmd.Run(context.Background(), []string{"test", "--method=get", "--ancestor-depth=2"})
+	assert.NoError(t, err)
+}
+
+func TestFetchItems_ToAncestor_WithGetMethod_ReturnsError(t *testing.T) {
+	cmd := &cli.Command{
+		Flags: getFetchFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			_, err := fetchItems(c, ctx, nil, "some-id", 2)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "cannot use ancestor options with --method=get")
+			return nil
+		},
+	}
+	err := cmd.Run(context.Background(), []string{"test", "--method=get", "--to-ancestor=abc"})
+	assert.NoError(t, err)
+}
+
+func TestFetchItems_ConflictingAncestorOptions_ReturnsError(t *testing.T) {
+	cmd := &cli.Command{
+		Flags: getFetchFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			_, err := fetchItems(c, ctx, nil, "some-id", 2)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "cannot combine ancestor options")
+			return nil
+		},
+	}
+	err := cmd.Run(context.Background(), []string{"test", "--include-ancestors", "--ancestor-depth=2"})
+	assert.NoError(t, err)
+}
+
+func TestFetchItems_ConflictingAncestorAndToAncestor_ReturnsError(t *testing.T) {
+	cmd := &cli.Command{
+		Flags: getFetchFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			_, err := fetchItems(c, ctx, nil, "some-id", 2)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "cannot combine ancestor options")
+			return nil
+		},
+	}
+	err := cmd.Run(context.Background(), []string{"test", "--include-ancestors", "--to-ancestor=abc"})
+	assert.NoError(t, err)
+}
