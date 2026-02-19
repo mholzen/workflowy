@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.0] - Ancestor Retrieval
+
+### Added
+- `--include-ancestors` flag for `get` and `list`: wrap result in ancestor path from root to target node
+- `--ancestor-depth` flag for `get` and `list`: include N levels of ancestors (-1 for all, 0 for none)
+- `--to-ancestor` flag for `get` and `list`: include ancestors up to and including a specific node ID
+- MCP `workflowy_get` tool now supports `include_ancestors`, `ancestor_depth`, and `to_ancestor` parameters
+- `FindItemWithAncestors` tree traversal function
+- `BuildAncestorSpine` for wrapping nodes in ancestor path
+- `TruncateAncestors` for limiting ancestor depth
+- `SliceAncestorsTo` for slicing ancestor chain to a specific node
+
+### Documentation
+- Updated CLI.md with ancestor retrieval options and examples
+- Updated MCP.md with ancestor retrieval parameters
+
 ## [0.8.1] - Group Transform and MCP Access Methods
 
 ### Added

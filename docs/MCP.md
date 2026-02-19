@@ -135,9 +135,17 @@ Get a node and its descendants as a tree structure.
 | `item_id` | string | Node ID or target name | root |
 | `depth` | number | Recursion depth (-1 for all) | `2` |
 | `include_empty_names` | boolean | Include empty-named items | `false` |
+| `include_ancestors` | boolean | Wrap result in ancestor path from root to target node (requires export or backup method) | `false` |
+| `ancestor_depth` | number | Include N levels of ancestors (-1 for all, 0 for none; requires export or backup method) | `0` |
+| `to_ancestor` | string | Include ancestors up to and including this node ID (requires export or backup method) | - |
 | `method` | string | Access method: get, export, or backup | auto |
 
-**Example prompt:** "Show me the contents of my Projects folder"
+Only one ancestor parameter may be used at a time. When used, `include_ancestors` is equivalent to `ancestor_depth=-1`.
+
+**Example prompts:**
+- "Show me the contents of my Projects folder"
+- "Get the Meeting Notes node and show me where it lives in my hierarchy"
+- "Show me the Tasks node with 2 levels of parent context"
 
 ---
 

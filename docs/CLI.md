@@ -214,10 +214,28 @@ workflowy get <item-id> --method=backup
 | `--depth <n>` | Recursion depth | `2` |
 | `--all` | Get all descendants (`--depth=-1`) | `false` |
 | `--include-empty-names` | Include items with empty names | `false` |
+| `--include-ancestors` | Wrap result in ancestor path from root to target node | `false` |
+| `--ancestor-depth <n>` | Include N levels of ancestors (-1 for all, 0 for none) | `0` |
+| `--to-ancestor <id>` | Include ancestors up to and including this node ID | - |
 
 **Smart API Selection:**
 - Depth 1-3: Uses GET API (efficient for shallow fetches)
 - Depth 4+ or `--all`: Uses Export API (efficient for deep fetches)
+
+**Ancestor Retrieval:**
+
+Use ancestor options to see where a node lives in your hierarchy. Only one ancestor option may be used at a time, and they require `--method=export` or `--method=backup`.
+
+```bash
+# Get a node wrapped in its full ancestor path from root
+workflowy get <item-id> --include-ancestors
+
+# Get a node with 2 levels of ancestors
+workflowy get <item-id> --ancestor-depth 2
+
+# Get a node with ancestors up to a specific parent
+workflowy get <item-id> --to-ancestor <parent-id>
+```
 
 ---
 
