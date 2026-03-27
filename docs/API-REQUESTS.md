@@ -1,16 +1,19 @@
 # Workflowy API Feature Requests
 
-## Mirror Node Resolution
+## [Mirror Node Resolution](https://community.workflowy.com/t/mirror-nodes-in-api-responses/1047)
 
 **Request:** Return mirror nodes with a reference to their original node (source ID and name), rather than as empty-name nodes with only their own ID. Additionally, include mirror relationship metadata (the `mirrors` array) in API responses, not just in backup files.
 
 **Benefit:** API calls would return accurate content for every node, including mirrors. MCP servers and agents would see real content instead of blank entries. Tooling could analyze mirror usage patterns — e.g., nodes mirrored in many places may indicate organizational ambiguity.
 
-## Short ID Lookup
+## [Short ID Lookup](https://community.workflowy.com/t/short-id-to-full-uuid-lookup-in-the-api/1151)
 
 **Request:** Add a query parameter (e.g., `short_id=xxxx`) to the List or Get endpoint that resolves a short hex ID (the 12-character suffix visible in Workflowy internal links) to its full 32-character UUID.
 
 **Benefit:** Users could copy an internal link (`Cmd+Shift+L`), paste it into a script or CLI command, and immediately operate on that node. Currently this requires downloading and searching a full export, which is slow and rate-limited. Server-side resolution would make "pick a node in the UI → run code against it" instant.
+
+
+
 
 ## Image and Attachment Access
 
