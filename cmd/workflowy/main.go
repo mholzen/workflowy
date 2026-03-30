@@ -17,6 +17,7 @@ var (
 func main() {
 	cmd := &cli.Command{
 		Name:                  "workflowy",
+		Version:               version,
 		Usage:                 "Interact with Workflowy API",
 		UseShortOptionHandling: true,
 		Description: `Retieve, create and update nodes.  Generate usage reports and upload them to Workflowy.
