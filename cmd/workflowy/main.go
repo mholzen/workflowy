@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -14,10 +16,15 @@ var (
 	date    = "unknown"
 )
 
-func main() {
-	cmd := &cli.Command{
-		Name:                  "workflowy",
-		Usage:                 "Interact with Workflowy API",
+func newRootCommand() *cli.Command {
+	cli.VersionPrinter = func(cmd *cli.Command) {
+		printVersionInfo(cmd.Root().Writer)
+	}
+
+	return &cli.Command{
+		Name:                   "workflowy",
+		Usage:                  "Interact with Workflowy API",
+		Version:                version,
 		UseShortOptionHandling: true,
 		Description: `Retieve, create and update nodes.  Generate usage reports and upload them to Workflowy.
 
@@ -61,7 +68,16 @@ Examples:
 		},
 		Commands: getCommands(),
 	}
+}
 
+func printVersionInfo(w io.Writer) {
+	fmt.Fprintf(w, "workflowy version %s\n", version)
+	fmt.Fprintf(w, "commit: %s\n", commit)
+	fmt.Fprintf(w, "built: %s\n", date)
+}
+
+func main() {
+	cmd := newRootCommand()
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		slog.Error("cannot run command", "error", err)
 		os.Exit(1)

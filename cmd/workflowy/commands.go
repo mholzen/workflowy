@@ -9,10 +9,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mholzen/workflowy/pkg/search"
 	"github.com/mholzen/workflowy/pkg/mcp"
 	"github.com/mholzen/workflowy/pkg/mirror"
 	"github.com/mholzen/workflowy/pkg/reports"
+	"github.com/mholzen/workflowy/pkg/search"
 	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
 )
@@ -1122,9 +1122,7 @@ func getVersionCommand() *cli.Command {
 		Usage:     "Show version information",
 		UsageText: "workflowy version",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			fmt.Printf("workflowy version %s\n", version)
-			fmt.Printf("commit: %s\n", commit)
-			fmt.Printf("built: %s\n", date)
+			printVersionInfo(cmd.Root().Writer)
 			return nil
 		},
 	}
