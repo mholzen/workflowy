@@ -9,32 +9,31 @@ import (
 )
 
 func TestRootCommand_VersionFlagMatchesVersionCommand(t *testing.T) {
-	cmd := newRootCommand()
-
-	cmd.Writer = &bytes.Buffer{}
-	cmd.ErrWriter = &bytes.Buffer{}
-
 	version = "1.2.3"
 	commit = "abc123"
 	date = "2026-04-02T00:00:00Z"
+
+	cmd := newRootCommand()
+	cmd.Writer = &bytes.Buffer{}
+	cmd.ErrWriter = &bytes.Buffer{}
 
 	err := cmd.Run(context.Background(), []string{"workflowy", "--version"})
 	assert.NoError(t, err)
+	assert.Equal(t, "1.2.3\n", cmd.Writer.(*bytes.Buffer).String())
+}
 
-	versionFlagOutput := cmd.Writer.(*bytes.Buffer).String()
-
-	cmd = newRootCommand()
-	cmd.Writer = &bytes.Buffer{}
-	cmd.ErrWriter = &bytes.Buffer{}
-
+func TestVersionCommand_PrintsDetailedVersionInfo(t *testing.T) {
 	version = "1.2.3"
 	commit = "abc123"
 	date = "2026-04-02T00:00:00Z"
 
-	err = cmd.Run(context.Background(), []string{"workflowy", "version"})
-	assert.NoError(t, err)
+	cmd := newRootCommand()
+	cmd.Writer = &bytes.Buffer{}
+	cmd.ErrWriter = &bytes.Buffer{}
 
-	assert.Equal(t, cmd.Writer.(*bytes.Buffer).String(), versionFlagOutput)
+	err := cmd.Run(context.Background(), []string{"workflowy", "version"})
+	assert.NoError(t, err)
+	assert.Equal(t, "workflowy version 1.2.3\ncommit: abc123\nbuilt: 2026-04-02T00:00:00Z\n", cmd.Writer.(*bytes.Buffer).String())
 }
 
 func TestRootCommand_VersionFlagIsTopLevelOnly(t *testing.T) {

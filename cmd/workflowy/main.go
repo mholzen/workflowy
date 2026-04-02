@@ -18,7 +18,7 @@ var (
 
 func newRootCommand() *cli.Command {
 	cli.VersionPrinter = func(cmd *cli.Command) {
-		printVersionInfo(cmd.Root().Writer)
+		fmt.Fprintln(cmd.Root().Writer, version)
 	}
 
 	return &cli.Command{
