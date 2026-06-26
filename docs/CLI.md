@@ -15,6 +15,7 @@ Complete command-line reference for the Workflowy CLI tool.
 - [Available Commands](#available-commands)
   - [get](#workflowy-get)
   - [list](#workflowy-list)
+  - [children](#workflowy-children)
   - [create](#workflowy-create)
   - [update](#workflowy-update)
   - [delete](#workflowy-delete)
@@ -258,6 +259,40 @@ workflowy list --all --format=json
 ```
 
 **Options:** Same as `workflowy get`
+
+---
+
+### workflowy children
+
+List only direct children of a node in stable outline order, with pagination. This command is intended for large nodes where `get` or `list` would return too much data.
+
+```bash
+# First page of root children
+workflowy children --format=json
+
+# Page through a large inbox
+workflowy children inbox --limit 50 --offset 0 --format=json
+workflowy children inbox --limit 50 --offset 50 --format=json
+
+# Filter direct children before pagination
+workflowy children <item-id> --name-filter '^A' --ignore-case --format=json
+
+# Return full node metadata, but still omit nested descendants
+workflowy children <item-id> --full --format=json
+```
+
+**Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--limit <n>` | Maximum direct children to return (max 200) | `50` |
+| `--offset <n>` | Number of matching direct children to skip | `0` |
+| `--full` | Return full node fields instead of compact child objects | `false` |
+| `--name-filter <regex>` | Regex matched against direct child names before pagination | - |
+| `--ignore-case` | Apply `--name-filter` case-insensitively | `false` |
+| `--method <get\|export\|backup>` | Data access method | `get` |
+
+The JSON response includes `items`, `total`, `limit`, `offset`, `has_more`, and `next_offset` when another page exists.
 
 ---
 

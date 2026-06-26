@@ -11,6 +11,7 @@ Connect AI assistants like Claude, ChatGPT, and other MCP-compatible clients to 
 - [Workflowy MCP Tools](#workflowy-mcp-tools)
   - [workflowy_get](#workflowy_get)
   - [workflowy_list](#workflowy_list)
+  - [workflowy_children](#workflowy_children)
   - [workflowy_search](#workflowy_search)
   - [workflowy_targets](#workflowy_targets)
   - [workflowy_create](#workflowy_create)
@@ -162,6 +163,32 @@ List descendants as a flat list.
 | `method` | string | Access method: get, export, or backup | auto |
 
 **Example prompt:** "List all items in my inbox"
+
+---
+
+#### workflowy_children
+
+List only the direct children of a node with stable ordering and pagination. This is the recommended tool for triaging large inboxes or folders because it does not include nested descendants.
+
+**Parameters:**
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `id` | string | Parent node ID or target name | root |
+| `limit` | number | Maximum direct children to return (max 200) | `50` |
+| `offset` | number | Number of matching direct children to skip | `0` |
+| `compact` | boolean | Return compact child objects | `true` |
+| `name_filter` | string | Optional regex matched against direct child names before pagination | - |
+| `ignore_case` | boolean | Apply `name_filter` case-insensitively | `false` |
+| `method` | string | Access method: get, export, or backup | get |
+
+**Returns:**
+- `items`: Direct children only. Compact items include `id`, `name`, `layoutMode` when present, `completed`, and `has_children` when known.
+- `total`: Count of matching direct children before pagination.
+- `limit`, `offset`: Page parameters used.
+- `has_more`: Whether another page exists.
+- `next_offset`: Offset for the next page, omitted on the last page.
+
+**Example prompt:** "List the first 50 direct children of my Dropbox node, then continue with the next page."
 
 ---
 

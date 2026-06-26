@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+- MCP `workflowy_children` tool for paginated, compact, direct-children-only listing.
+- `workflowy children` CLI command with `--limit`, `--offset`, `--name-filter`, `--ignore-case`, and `--full`.
+- Shared direct-child pagination and compact projection helpers.
+
 ## [0.9.0] - Ancestor Retrieval
 
 ### Added
@@ -189,4 +196,3 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Unified client creation code to single function
 - Unified error and log messaging for consistency
-

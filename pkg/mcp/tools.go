@@ -21,6 +21,7 @@ import (
 const (
 	ToolGet            = "workflowy_get"
 	ToolList           = "workflowy_list"
+	ToolChildren       = "workflowy_children"
 	ToolSearch         = "workflowy_search"
 	ToolTargets        = "workflowy_targets"
 	ToolID             = "workflowy_id"
@@ -215,6 +216,7 @@ func (b ToolBuilder) BuildTools(toolNames []string) ([]mcpserver.ServerTool, err
 	factories := map[string]func() mcpserver.ServerTool{
 		ToolGet:            b.buildGetTool,
 		ToolList:           b.buildListTool,
+		ToolChildren:       b.buildChildrenTool,
 		ToolSearch:         b.buildSearchTool,
 		ToolTargets:        b.buildTargetsTool,
 		ToolID:             b.buildIDTool,
@@ -398,6 +400,75 @@ func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
 			}
 
 			return mcptypes.NewToolResultJSON(map[string]any{"items": flattened.Items})
+		},
+	}
+}
+
+func (b ToolBuilder) buildChildrenTool() mcpserver.ServerTool {
+	return mcpserver.ServerTool{
+		Tool: mcptypes.NewTool(
+			ToolChildren,
+			mcptypes.WithDescription("List direct children with compact paginated output"+b.readRestrictionNote()),
+			mcptypes.WithReadOnlyHintAnnotation(true),
+			mcptypes.WithDestructiveHintAnnotation(false),
+			mcptypes.WithIdempotentHintAnnotation(true),
+			mcptypes.WithString("id",
+				mcptypes.Description("Parent ID (default: root)"),
+				mcptypes.DefaultString("None"),
+			),
+			mcptypes.WithNumber("limit",
+				mcptypes.Description("Maximum number of direct children to return (default 50, max 200)"),
+				mcptypes.DefaultNumber(workflowy.DefaultChildrenLimit),
+			),
+			mcptypes.WithNumber("offset",
+				mcptypes.Description("Number of matching direct children to skip before returning results"),
+				mcptypes.DefaultNumber(0),
+			),
+			mcptypes.WithBoolean("compact",
+				mcptypes.Description("Return compact child objects with id, name, layoutMode, and completed"),
+				mcptypes.DefaultBool(true),
+			),
+			mcptypes.WithString("name_filter",
+				mcptypes.Description("Optional regular expression matched against direct child names before pagination"),
+			),
+			mcptypes.WithBoolean("ignore_case",
+				mcptypes.Description("Apply name_filter case-insensitively"),
+				mcptypes.DefaultBool(false),
+			),
+			mcptypes.WithString("method",
+				mcptypes.Description("Access method: get, export, or backup (default: get direct-children API)"),
+			),
+		),
+		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+			rawItemID := b.defaultReadID(req.GetString("id", "None"))
+			method := req.GetString("method", "")
+
+			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
+			}
+
+			if err := b.validateReadTarget(ctx, itemID, "children", method); err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
+
+			children, err := b.fetchDirectChildren(ctx, itemID, method)
+			if err != nil {
+				return mcptypes.NewToolResultErrorFromErr("cannot list children", err), nil
+			}
+
+			page, err := workflowy.NewChildrenPage(children, workflowy.ChildrenPageOptions{
+				Limit:      req.GetInt("limit", workflowy.DefaultChildrenLimit),
+				Offset:     req.GetInt("offset", 0),
+				Compact:    req.GetBool("compact", true),
+				NameFilter: req.GetString("name_filter", ""),
+				IgnoreCase: req.GetBool("ignore_case", false),
+			})
+			if err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
+
+			return mcptypes.NewToolResultJSON(page)
 		},
 	}
 }
@@ -1547,6 +1618,53 @@ func (b ToolBuilder) fetchItemWithAncestors(ctx context.Context, itemID string, 
 	}
 
 	return workflowy.BuildAncestorSpine(found, ancestors, depth), nil
+}
+
+func (b ToolBuilder) fetchDirectChildren(ctx context.Context, itemID string, method string) ([]*workflowy.Item, error) {
+	useMethod := b.resolveMethod(method)
+	if useMethod == "" {
+		useMethod = "get"
+	}
+
+	switch useMethod {
+	case "get":
+		resp, err := b.client.ListChildren(ctx, itemID)
+		if err != nil {
+			return nil, err
+		}
+		return resp.Items, nil
+
+	case "export":
+		tree, err := b.loadExportTree(ctx, false)
+		if err != nil {
+			return nil, err
+		}
+		if itemID == "None" {
+			return tree, nil
+		}
+		found := workflowy.FindItemByID(tree, itemID)
+		if found == nil {
+			return nil, fmt.Errorf("item %s not found", itemID)
+		}
+		return found.Children, nil
+
+	case "backup":
+		tree, err := b.loadBackupTree()
+		if err != nil {
+			return nil, err
+		}
+		if itemID == "None" {
+			return tree, nil
+		}
+		found := workflowy.FindItemByID(tree, itemID)
+		if found == nil {
+			return nil, fmt.Errorf("item %s not found in backup", itemID)
+		}
+		return found.Children, nil
+
+	default:
+		return nil, fmt.Errorf("unknown method %s", useMethod)
+	}
 }
 
 // fetchItems mirrors the CLI logic: depth >=4 or -1 uses export API; otherwise GET API.

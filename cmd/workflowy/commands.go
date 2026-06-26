@@ -21,6 +21,7 @@ func getCommands() []*cli.Command {
 	return []*cli.Command{
 		getGetCommand(),
 		getListCommand(),
+		getChildrenCommand(),
 		getCreateCommand(),
 		getUpdateCommand(),
 		getMoveCommand(),
@@ -111,6 +112,55 @@ func getListCommand() *cli.Command {
 			flatList := flattenTree(treeResult)
 
 			printOutput(flatList, params.format, cmd.Bool("include-empty-names"))
+			return nil
+		}),
+	}
+}
+
+func getChildrenCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "children",
+		Usage:     "List direct children with pagination",
+		UsageText: "workflowy children [<id>] [options]",
+		Arguments: getFetchArguments(),
+		Flags:     getChildrenFlags(),
+		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+			format := cmd.String("format")
+			if err := validateFormat(format); err != nil {
+				return err
+			}
+
+			readGuard, err := NewReadGuard(ctx, client, getReadRootID(cmd))
+			if err != nil {
+				return err
+			}
+
+			itemID, err := workflowy.ResolveNodeID(ctx, client, readGuard.DefaultID(cmd.StringArg("id")))
+			if err != nil {
+				return fmt.Errorf("cannot resolve ID: %w", err)
+			}
+
+			if err := readGuard.ValidateTarget(itemID, "children"); err != nil {
+				return err
+			}
+
+			children, err := fetchDirectChildren(cmd, ctx, client, itemID)
+			if err != nil {
+				return err
+			}
+
+			page, err := workflowy.NewChildrenPage(children, workflowy.ChildrenPageOptions{
+				Limit:      cmd.Int("limit"),
+				Offset:     cmd.Int("offset"),
+				Compact:    !cmd.Bool("full"),
+				NameFilter: cmd.String("name-filter"),
+				IgnoreCase: cmd.Bool("ignore-case"),
+			})
+			if err != nil {
+				return err
+			}
+
+			printOutput(page, format, true)
 			return nil
 		}),
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
 )
 
@@ -57,6 +58,31 @@ func getFetchFlags() []cli.Flag {
 			Name:  "to-ancestor",
 			Usage: "Include ancestors up to and including this node ID (requires export or backup method)",
 		},
+	}
+	flags = append(flags, getMethodFlags()...)
+	return flags
+}
+
+func getChildrenFlags() []cli.Flag {
+	flags := []cli.Flag{
+		&cli.IntFlag{
+			Name:  "limit",
+			Value: workflowy.DefaultChildrenLimit,
+			Usage: "Maximum number of direct children to return (max 200)",
+		},
+		&cli.IntFlag{
+			Name:  "offset",
+			Usage: "Number of matching direct children to skip before returning results",
+		},
+		&cli.BoolFlag{
+			Name:  "full",
+			Usage: "Return full node fields instead of compact child objects",
+		},
+		&cli.StringFlag{
+			Name:  "name-filter",
+			Usage: "Regular expression matched against direct child names before pagination",
+		},
+		getIgnoreCaseFlag(),
 	}
 	flags = append(flags, getMethodFlags()...)
 	return flags
@@ -310,4 +336,3 @@ func getReadRootIdFlag() cli.Flag {
 func getReadRootID(cmd *cli.Command) string {
 	return cmd.String("read-root-id")
 }
-

@@ -160,6 +160,7 @@ var (
 	allTools = []string{
 		ToolGet,
 		ToolList,
+		ToolChildren,
 		ToolSearch,
 		ToolTargets,
 		ToolID,
@@ -181,6 +182,7 @@ var (
 	readTools = []string{
 		ToolGet,
 		ToolList,
+		ToolChildren,
 		ToolSearch,
 		ToolTargets,
 		ToolID,
@@ -211,6 +213,7 @@ var (
 	aliasMap = map[string]string{
 		"get":             ToolGet,
 		"list":            ToolList,
+		"children":        ToolChildren,
 		"search":          ToolSearch,
 		"targets":         ToolTargets,
 		"id":              ToolID,
