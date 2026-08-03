@@ -1133,7 +1133,7 @@ func createClient(apiKeyFile string) (*workflowy.WorkflowyClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	return workflowy.NewWorkflowyClient(option), nil
+	return workflowy.NewWorkflowyClient(workflowy.ProductionAPI, option)
 }
 
 type ClientActionFunc func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error

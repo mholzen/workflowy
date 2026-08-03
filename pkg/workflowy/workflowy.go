@@ -205,13 +205,33 @@ func ResolveAPIKey(apiKeyFile, defaultAPIKeyFile string) (client.Option, error) 
 // WorkflowyClient wraps the generic Client with Workflowy-specific methods
 type WorkflowyClient struct {
 	*client.Client
-	opts []client.Option
+	opts            []client.Option
+	exportCachePath string
 }
 
 // NewWorkflowyClient creates a new Workflowy API client
-func NewWorkflowyClient(opts ...client.Option) *WorkflowyClient {
-	c := client.New("https://workflowy.com/api/v1", opts...)
-	return &WorkflowyClient{Client: c, opts: opts}
+func NewWorkflowyClient(deployment APIDeployment, opts ...client.Option) (*WorkflowyClient, error) {
+	baseURL, err := deployment.BaseURL()
+	if err != nil {
+		return nil, err
+	}
+
+	cacheFile, err := deployment.exportCacheFile()
+	if err != nil {
+		return nil, err
+	}
+
+	exportCachePath, err := cache.GetCachePath(cacheFile)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Debug("creating Workflowy client", "api", deployment, "base_url", baseURL, "export_cache_path", exportCachePath)
+	return &WorkflowyClient{
+		Client:          client.New(baseURL, opts...),
+		opts:            opts,
+		exportCachePath: exportCachePath,
+	}, nil
 }
 
 // Item represents a Workflowy item with all its properties
@@ -702,7 +722,7 @@ func sortItemsByPriorityRecursive(item *Item) {
 // forceRefresh bypasses cache and fetches fresh data
 func (wc *WorkflowyClient) ExportNodesWithCache(ctx context.Context, forceRefresh bool) (*ExportNodesResponse, error) {
 	// Try to read cache first
-	cachedData, err := cache.ReadExportCache()
+	cachedData, err := cache.ReadExportCache(wc.exportCachePath)
 	if err != nil {
 		slog.Warn("cannot read cache, will fetch from API", "error", err)
 	}
@@ -748,7 +768,7 @@ func (wc *WorkflowyClient) ExportNodesWithCache(ctx context.Context, forceRefres
 	}
 
 	// Write to cache
-	if err := cache.WriteExportCache(resp); err != nil {
+	if err := cache.WriteExportCache(wc.exportCachePath, resp); err != nil {
 		slog.Warn("cannot write cache (continuing anyway)", "error", err)
 	}
 

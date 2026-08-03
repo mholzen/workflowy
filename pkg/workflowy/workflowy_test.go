@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,6 +13,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNewWorkflowyClientForAPI(t *testing.T) {
+	homeDirectory := t.TempDir()
+	t.Setenv("HOME", homeDirectory)
+
+	productionClient, err := NewWorkflowyClient(ProductionAPI)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(homeDirectory, ".workflowy/export-cache.json"), productionClient.exportCachePath)
+
+	betaClient, err := NewWorkflowyClient(BetaAPI)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(homeDirectory, ".workflowy/export-cache-beta.json"), betaClient.exportCachePath)
+}
 
 func TestWorkflowyClient_GetItem(t *testing.T) {
 	tests := []struct {

@@ -41,7 +41,10 @@ func RunServer(ctx context.Context, cfg Config) error {
 		return fmt.Errorf("cannot load API key: %w", err)
 	}
 
-	client := workflowy.NewWorkflowyClient(option)
+	client, err := workflowy.NewWorkflowyClient(workflowy.ProductionAPI, option)
+	if err != nil {
+		return err
+	}
 
 	// Resolve write-root-id if provided (supports short IDs, target keys)
 	writeRootID := cfg.WriteRootID
