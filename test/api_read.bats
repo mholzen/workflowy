@@ -40,6 +40,20 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "get root from production API" {
+    require_jq
+    run run_workflowy get --api=production --method=get --depth=0 --format=json --log=error
+    [ "$status" -eq 0 ]
+    assert_valid_json "$output"
+}
+
+@test "get root from beta API" {
+    require_jq
+    run run_workflowy get --api=beta --method=get --depth=0 --format=json --log=error
+    [ "$status" -eq 0 ]
+    assert_valid_json "$output"
+}
+
 # List Command Tests
 
 @test "list returns flat list of items" {

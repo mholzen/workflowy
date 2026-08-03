@@ -11,6 +11,7 @@ Complete command-line reference for the Workflowy CLI tool.
 - [Setup](#setup)
   - [Get Your API Key](#get-your-api-key)
 - [Global Options](#global-options)
+- [API Selection](#api-selection)
 - [Full and Short IDs](#full-and-short-ids)
 - [Available Commands](#available-commands)
   - [get](#workflowy-get)
@@ -25,6 +26,7 @@ Complete command-line reference for the Workflowy CLI tool.
   - [search](#workflowy-search)
   - [replace](#workflowy-replace)
   - [targets](#workflowy-targets)
+  - [id](#workflowy-id)
   - [report](#report-commands)
   - [mcp](#mcp-server)
 - [Data Access Methods](#data-access-methods)
@@ -79,6 +81,18 @@ These options apply to all commands:
 | `--force-refresh` | Bypass cache (for `--method=export`) | `false` |
 | `--write-root-id <id>` | Restrict write operations to this node and descendants | - |
 | `--read-root-id <id>` | Restrict all operations to this node and descendants | - |
+
+## API Selection
+
+Commands that can construct a Workflowy client accept the command-local option `--api <production|beta>`. It defaults to `production`, rejects every other value, and appears after the subcommand:
+
+```bash
+workflowy get --api=beta
+workflowy create "Beta node" --api=beta
+workflowy mcp --api=beta
+```
+
+The option is available on `get`, `list`, `create`, `update`, `move`, `delete`, `complete`, `uncomplete`, `targets`, `search`, `replace`, `transform`, `id`, `mcp`, and every `report` subcommand. It is intentionally absent from the local-only `version` command. `workflowy --api=beta get` is not supported because this is not a global option.
 
 ### Read Restrictions
 
@@ -217,6 +231,7 @@ workflowy get <item-id> --method=backup
 | `--include-ancestors` | Wrap result in ancestor path from root to target node | `false` |
 | `--ancestor-depth <n>` | Include N levels of ancestors (-1 for all, 0 for none) | `0` |
 | `--to-ancestor <id>` | Include ancestors up to and including this node ID | - |
+| `--api <production\|beta>` | Workflowy API deployment | `production` |
 
 **Smart API Selection:**
 - Depth 1-3: Uses GET API (efficient for shallow fetches)
@@ -287,6 +302,7 @@ workflowy create --parent-id <parent-id> --position top "New item"
 | `--note <text>` | Note content | - |
 | `--position <top\|bottom>` | Position in parent | `bottom` |
 | `--layout-mode <mode>` | Layout: bullets, todo, h1, h2, h3 | `bullets` |
+| `--api <production\|beta>` | Workflowy API deployment | `production` |
 
 ---
 
@@ -312,6 +328,7 @@ workflowy update <item-id> --name "new title" --note "new note"
 | `--name <text>` | New node name |
 | `--note <text>` | New note content |
 | `--layout-mode <mode>` | Layout: bullets, todo, h1, h2, h3 |
+| `--api <production\|beta>` | Workflowy API deployment (default: `production`) |
 
 ---
 
@@ -326,6 +343,8 @@ workflowy delete <item-id>
 workflowy delete <item-id> --format json
 ```
 
+**API option:** `--api <production|beta>` (default: `production`)
+
 ---
 
 ### workflowy complete
@@ -336,6 +355,8 @@ Mark a node as complete.
 workflowy complete <item-id>
 ```
 
+**API option:** `--api <production|beta>` (default: `production`)
+
 ---
 
 ### workflowy uncomplete
@@ -345,6 +366,8 @@ Mark a node as incomplete.
 ```bash
 workflowy uncomplete <item-id>
 ```
+
+**API option:** `--api <production|beta>` (default: `production`)
 
 ---
 
@@ -368,6 +391,7 @@ workflowy move <item-id> inbox
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--position <top\|bottom>` | Position in new parent | `top` |
+| `--api <production\|beta>` | Workflowy API deployment | `production` |
 
 ---
 
@@ -432,6 +456,7 @@ workflowy transform <item-id> uppercase --interactive
 | `-b, --by` | Group by: modified, created, modified.<unit>, created.<unit> | `created.day` |
 | `-o, --order` | Group sort: +modified, -modified, +created, -created | `-modified` |
 | `--as-child` | Insert result as child node | `false` |
+| `--api <production\|beta>` | Workflowy API deployment | `production` |
 
 ---
 
@@ -460,6 +485,45 @@ workflowy create --parent-id=inbox "New task"
 # Get contents of a shortcut
 workflowy get home
 ```
+
+**API option:** `--api <production|beta>` (default: `production`)
+
+---
+
+### workflowy id
+
+Resolve a short ID or target key to its full UUID using the selected deployment.
+
+```bash
+workflowy id 7ae1be810d4f
+workflowy id inbox --api=beta
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--api <production\|beta>` | Workflowy API deployment | `production` |
+| `--api-key-file <path>` | API key file location | `~/.workflowy/api.key` |
+
+---
+
+### MCP Server
+
+Start the stdio MCP server.
+
+```bash
+workflowy mcp
+workflowy mcp --expose=all --api=beta
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--api <production\|beta>` | Default Workflowy API deployment | `production` |
+| `--expose <tools>` | `read`, `write`, `all`, or comma-separated tools | `read` |
+| `--method <get\|export\|backup>` | Default access method | auto |
+| `--backup-file <path>` | Backup used by backup method | latest backup |
+| `--read-root-id <id>` | Restrict reads and writes to a subtree | root |
+| `--write-root-id <id>` | Restrict writes to a subtree | root |
+| `--api-key-file <path>` | API key file location | `~/.workflowy/api.key` |
 
 ---
 
@@ -522,6 +586,7 @@ workflowy search "meeting" --format json
 | `-g, --group-by <mode>` | Group results: `parent`, `path`, `tree`, `modified.<unit>`, `created.<unit>` | - |
 | `--path-max-length <n>` | Max chars per path segment when using `--group-by=path` | `20` |
 | `-o, --order-by <field>` | Sort by: `match`, `parent`, `path`, `modified`, `created` (prefix `+`/`-` for asc/desc) | - |
+| `--api <production\|beta>` | Workflowy API deployment | `production` |
 
 **Group-by units:** `year`, `month`, `day`, or a Go time format string.
 
@@ -568,6 +633,7 @@ workflowy replace --parent-id abc-123-def --depth 3 "pattern" "replacement"
 | `--interactive` | Confirm each replacement | `false` |
 | `--parent-id <id>` | Limit to subtree | root |
 | `--depth <n>` | Traversal depth (-1 unlimited) | `-1` |
+| `--api <production\|beta>` | Workflowy API deployment | `production` |
 
 **Substitution syntax:** `$1`, `$2` or `${1}`, `${2}` for capture groups.
 
@@ -582,6 +648,7 @@ All report commands support these upload options:
 | `--upload` | Upload to Workflowy instead of printing | `false` |
 | `--parent-id <id>` | Parent for uploaded report | root |
 | `--position <top\|bottom>` | Position in parent | `top` |
+| `--api <production\|beta>` | Workflowy API deployment | `production` |
 
 ### workflowy report count
 
@@ -695,6 +762,20 @@ workflowy report mirrors --top-n 10
 
 ## Data Access Methods
 
+### API Deployment vs. Access Method
+
+`--api` chooses the Workflowy deployment. `--method` independently chooses whether reads and validation use direct GET requests, the export endpoint, or a local backup.
+
+```bash
+# Read directly from beta
+workflowy get --api=beta --method=get --depth=0
+
+# Read and validate offline, then upload the report through beta
+workflowy report count --api=beta --method=backup --upload
+```
+
+A read-only backup command remains offline. A backup-backed write, transform, replacement, or report upload uses the deployment selected by `--api` for its mutation.
+
 ### GET API (`--method=get`)
 
 - **When used**: Default for depth 1-3
@@ -705,7 +786,8 @@ workflowy report mirrors --top-n 10
 
 - **When used**: Default for depth ≥4 or `--all`
 - **Characteristics**: Single API call, cached locally
-- **Cache location**: `~/.workflowy/export-cache.json`
+- **Production cache**: `~/.workflowy/export-cache.json`
+- **Beta cache**: `~/.workflowy/export-cache-beta.json`
 - **Best for**: Full tree access, deep fetches
 
 ```bash

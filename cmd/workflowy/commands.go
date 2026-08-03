@@ -1062,7 +1062,7 @@ Examples:
   workflowy mcp --expose=read,write  # Explicit groups
   workflowy mcp --expose=get,list    # Specific tools only
   workflowy mcp --method=export      # Force export method for all operations
-  workflowy mcp --method=backup      # Use local backup file (no API needed)`,
+  workflowy mcp --method=backup      # Use local backup for reads and validation`,
 		Flags: []cli.Flag{
 			getAPIKeyFlag(),
 			getAPIFlag(),
