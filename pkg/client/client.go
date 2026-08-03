@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -63,6 +64,8 @@ func (c *Client) Do(ctx context.Context, method, path string, in any, out any) e
 	}
 
 	c.auth(req)
+
+	slog.Debug("http request", "method", method, "path", path)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
