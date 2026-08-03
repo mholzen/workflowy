@@ -8,7 +8,7 @@ This change selects the Workflowy deployment only. It does not normalize the dif
 
 ## Motivation
 
-The Workflowy production and beta deployments expose the same endpoint paths under different hosts, but their response contracts differ. For example, the production retrieve response documents `parent_id` and `completed`, while the beta retrieve response omits them. Users need an explicit way to run the CLI and MCP tools against either deployment while the beta contract evolves.
+The Workflowy production and beta deployments expose the same endpoint paths under different hosts, but their capabilities and response contracts differ. Most notably, the beta API supports mirrors and exposes `data.mirror.origin_id` when retrieving a mirror node, while the current production API does not. Users need an explicit way to run the CLI and MCP tools against either deployment while the beta contract evolves.
 
 References:
 
@@ -67,7 +67,7 @@ The argument is present on `workflowy_get`, `workflowy_list`, `workflowy_search`
 - `api` chooses the Workflowy deployment: `production` or `beta`.
 - `method` chooses the data access mechanism: `get`, `export`, or `backup`.
 
-When `method=backup`, no network request occurs and the selected API has no effect. This combination remains valid so global CLI and MCP defaults do not require special casing.
+`method=backup` selects the local source for reading and access validation; it does not imply that the entire command is read-only. A read-only backup invocation can remain fully offline, while a mutation, transform application, replacement, or report upload still sends writes through the API selected by `api`. The combination remains valid, and `api` is meaningful whenever any part of the invocation performs a network request.
 
 ## Domain Model
 
@@ -101,7 +101,7 @@ Workflowy client construction accepts a validated deployment and authentication 
 
 The CLI validates its `--api` value before constructing one client for the command. MCP retains clients for both deployments, using the same resolved API key, because any tool invocation may override the server default. Client construction performs no network request.
 
-At the start of an MCP invocation, the tool builder resolves the requested deployment and uses that client throughout the invocation. Selection must happen before ID resolution and read/write guard checks so every network request in one invocation goes to the same deployment.
+At the start of an MCP invocation, the tool builder resolves the requested deployment and selects the corresponding client for any network work. Selection must happen before network-backed ID resolution and read/write guard checks so every network request in one invocation goes to the same deployment. Local backup reads continue to use the backup provider.
 
 The deployment value must be passed explicitly through this seam. It must not be stored in a mutable global or hidden in a context value.
 
@@ -109,11 +109,15 @@ CLI command construction and the MCP tool builder accept an internal client fact
 
 ### MCP Restriction Roots
 
-`read_root_id` and `write_root_id` are deployment-relative inputs when they are target keys or short IDs. Resolving either value once with the server default and reusing the result after a tool-level override would violate the promise that the complete invocation uses one deployment.
+`read_root_id` and `write_root_id` must be resolved against the same source used for access validation. Resolving either value once with the server default and reusing the result after a tool-level override would violate the promise that all network activity in an invocation uses one deployment. Always resolving through a network client would also break offline backup reads.
 
-The MCP server therefore retains the raw configured root values. After selecting the effective client for a tool call, it resolves both active roots with that same client before performing ID resolution, access validation, or the requested operation. The resulting UUIDs exist only for that invocation and are never reused by an invocation selecting the other deployment.
+The MCP server therefore retains the raw configured root values and resolves the effective access method before resolving roots:
 
-Resolution errors identify both the root value and the selected deployment. A root that resolves in production but not beta prevents only beta-selected invocations; it does not prevent an otherwise production-configured MCP server from starting. Export caching already limits repeated short-ID resolution requests, and additional root memoization is outside this feature until measurements show it is needed.
+- With `get` or `export`, root target keys and short IDs resolve through the selected deployment and are verified against the selected deployment's export tree.
+- With `backup`, full UUIDs are verified in the backup tree and short IDs are resolved by matching that tree. This path performs no network request.
+- A target-key restriction cannot be resolved from the current backup format. A backup invocation using one fails contextually and instructs the user to configure the restriction with a full or short node ID. It does not silently contact either API.
+
+The resulting UUIDs exist only for that invocation and are never reused by an invocation selecting a different deployment or validation source. Resolution errors identify the root value and either the selected deployment or backup file. A root that resolves in production but not beta prevents only beta-selected invocations; it does not prevent an otherwise production-configured MCP server from starting. Export caching already limits repeated network-based short-ID resolution requests, and additional root memoization is outside this feature until measurements show it is needed.
 
 ### Export Cache Isolation
 
@@ -146,11 +150,11 @@ Backup-file access is deployment-independent and remains unchanged.
 1. Parse and validate the server's `--api` during startup, defaulting to `production`.
 2. Construct authenticated clients for production and beta.
 3. Retain configured read and write root values without resolving them against either deployment.
-4. For each tool call, read the optional `api` argument.
-5. Resolve the effective deployment using the documented precedence.
-6. Select the corresponding client.
-7. Resolve active read and write roots with that client.
-8. Use that client and those per-invocation roots for every ID resolution, validation, and network operation made by the tool call.
+4. For each tool call, read the optional `api` and `method` arguments.
+5. Resolve the effective deployment and access method using their documented precedence rules.
+6. Select the corresponding client and the validation source for the effective method.
+7. Resolve active read and write roots against that validation source.
+8. Use those per-invocation roots for validation and the selected client for every network operation made by the tool call.
 
 ## Validation and Error Handling
 
@@ -168,6 +172,12 @@ An MCP restriction root that cannot be resolved returns a contextual tool error 
 Cannot resolve read root "inbox" using Workflowy API "beta": <cause>
 ```
 
+A target-key root requested with backup remains offline and reports the corrective action:
+
+```text
+Cannot resolve read root "inbox" from backup "<path>": target keys require an API; configure read_root_id with a full or short node ID
+```
+
 Network errors continue to use the existing operation-specific wrapping. Debug logging includes the selected deployment and request path, but authentication material is never logged.
 
 ## Testing
@@ -181,13 +191,16 @@ Unit tests cover:
 - CLI commands send requests to the selected test server adapter;
 - MCP uses its server default when a tool omits `api`;
 - an MCP tool argument overrides the server default;
-- all requests within an MCP invocation, including ID resolution and access validation, use the selected client;
-- read and write roots are resolved with the effective per-invocation client;
+- all network requests within an MCP invocation, including network-backed ID resolution and access validation, use the selected client;
+- read and write roots are resolved with the effective per-invocation validation source;
 - a root-resolution failure in beta does not prevent production invocations or MCP startup;
+- full and short restriction IDs resolve locally when validation uses a backup;
+- a target-key restriction with backup fails contextually without making a network request;
 - production and beta exports use different cache files;
 - the production cache retains its existing path;
 - two clients in the same process cannot read or write each other's cache entries;
-- `method=backup` performs no network request regardless of API selection.
+- a read-only backup invocation using locally resolvable IDs performs no network request regardless of API selection;
+- writes and report uploads use the selected deployment even when their read or validation source is a backup.
 
 Existing production-default tests must continue to pass. Test coverage must not decrease.
 
