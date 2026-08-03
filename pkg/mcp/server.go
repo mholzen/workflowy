@@ -9,11 +9,13 @@ import (
 
 	mcptypes "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
+	genericclient "github.com/mholzen/workflowy/pkg/client"
 	"github.com/mholzen/workflowy/pkg/workflowy"
 )
 
 // Config controls MCP server startup.
 type Config struct {
+	API               string
 	APIKeyFile        string
 	DefaultAPIKeyFile string
 	Expose            string
@@ -22,6 +24,44 @@ type Config struct {
 	ReadRootID        string
 	Method            string // "get", "export", "backup", or "" for auto
 	BackupFile        string // Path to backup file (for backup method)
+}
+
+type credentialResolver func(string, string) (genericclient.Option, error)
+
+type workflowyClientFactory func(workflowy.APIDeployment, ...genericclient.Option) (workflowy.Client, error)
+
+func createWorkflowyClient(deployment workflowy.APIDeployment, options ...genericclient.Option) (workflowy.Client, error) {
+	return workflowy.NewWorkflowyClient(deployment, options...)
+}
+
+func buildToolBuilder(cfg Config, resolveCredential credentialResolver, factory workflowyClientFactory) (ToolBuilder, error) {
+	defaultDeployment, err := workflowy.ParseAPIDeployment(cfg.API)
+	if err != nil {
+		return ToolBuilder{}, err
+	}
+
+	option, err := resolveCredential(cfg.APIKeyFile, cfg.DefaultAPIKeyFile)
+	if err != nil {
+		return ToolBuilder{}, fmt.Errorf("Cannot load Workflowy API key: %w", err)
+	}
+
+	clients := make(map[workflowy.APIDeployment]workflowy.Client, 2)
+	for _, deployment := range []workflowy.APIDeployment{workflowy.ProductionAPI, workflowy.BetaAPI} {
+		apiClient, err := factory(deployment, option)
+		if err != nil {
+			return ToolBuilder{}, fmt.Errorf("Cannot create %s Workflowy API client: %w", deployment, err)
+		}
+		clients[deployment] = apiClient
+	}
+
+	return NewToolBuilder(
+		clients,
+		defaultDeployment,
+		cfg.WriteRootID,
+		cfg.ReadRootID,
+		cfg.Method,
+		cfg.BackupFile,
+	), nil
 }
 
 // RunServer starts the MCP stdio server with the requested tool set.
@@ -36,39 +76,10 @@ func RunServer(ctx context.Context, cfg Config) error {
 		return err
 	}
 
-	option, err := workflowy.ResolveAPIKey(cfg.APIKeyFile, cfg.DefaultAPIKeyFile)
-	if err != nil {
-		return fmt.Errorf("cannot load API key: %w", err)
-	}
-
-	client, err := workflowy.NewWorkflowyClient(workflowy.ProductionAPI, option)
+	builder, err := buildToolBuilder(cfg, workflowy.ResolveAPIKey, createWorkflowyClient)
 	if err != nil {
 		return err
 	}
-
-	// Resolve write-root-id if provided (supports short IDs, target keys)
-	writeRootID := cfg.WriteRootID
-	if workflowy.IsWriteRestricted(writeRootID) {
-		resolvedID, err := workflowy.ResolveNodeIDToUUID(ctx, client, writeRootID)
-		if err != nil {
-			return fmt.Errorf("cannot resolve write-root-id: %w", err)
-		}
-		writeRootID = resolvedID
-		slog.Info("write restrictions enabled", "write_root_id", writeRootID)
-	}
-
-	// Resolve read-root-id if provided
-	readRootID := cfg.ReadRootID
-	if workflowy.IsRestricted(readRootID) {
-		resolvedID, err := workflowy.ResolveNodeIDToUUID(ctx, client, readRootID)
-		if err != nil {
-			return fmt.Errorf("cannot resolve read-root-id: %w", err)
-		}
-		readRootID = resolvedID
-		slog.Info("read restrictions enabled", "read_root_id", readRootID)
-	}
-
-	builder := NewToolBuilder(client, writeRootID, readRootID, cfg.Method, cfg.BackupFile)
 	serverTools, err := builder.BuildTools(toolsToEnable)
 	if err != nil {
 		return err

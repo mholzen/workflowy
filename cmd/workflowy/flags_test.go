@@ -35,6 +35,7 @@ func TestCommandsExposeAPIFlag(t *testing.T) {
 		"replace",
 		"transform",
 		"id",
+		"mcp",
 		"report count",
 		"report children",
 		"report created",
@@ -60,7 +61,6 @@ func TestCommandsWithoutAPIFlag(t *testing.T) {
 		commands[command.Name] = command
 	}
 
-	assert.Nil(t, findStringFlag(commands["mcp"].Flags, "api"), "mcp is added atomically with MCP config")
 	assert.Nil(t, findStringFlag(commands["version"].Flags, "api"))
 }
 

@@ -41,19 +41,38 @@ const (
 
 // ToolBuilder wires Workflowy operations into MCP tool handlers.
 type ToolBuilder struct {
-	client      workflowy.Client
-	writeRootID string
-	readRootID  string
-	method      string // "get", "export", "backup", or "" for auto-select based on depth
-	backupFile  string // Path to backup file (for backup method)
+	clients               map[workflowy.APIDeployment]workflowy.Client
+	defaultDeployment     workflowy.APIDeployment
+	deployment            workflowy.APIDeployment
+	client                workflowy.Client
+	rawWriteRootID        string
+	rawReadRootID         string
+	writeRootID           string
+	readRootID            string
+	method                string // "get", "export", "backup", or "" for auto-select based on depth
+	backupFile            string // Path to backup file (for backup method)
+	backupProvider        workflowy.BackupProvider
+	invocationTree        []*workflowy.Item
+	invocationSourceLabel string
 }
 
-// NewToolBuilder creates a builder bound to the provided Workflowy client.
-// If writeRootID is set, write operations are restricted to that node and its descendants.
-// If readRootID is set, all operations are restricted to that node and its descendants.
-// If method is set, it forces all operations to use that method (get, export, or backup).
-func NewToolBuilder(client workflowy.Client, writeRootID, readRootID, method, backupFile string) ToolBuilder {
-	return ToolBuilder{client: client, writeRootID: writeRootID, readRootID: readRootID, method: method, backupFile: backupFile}
+// NewToolBuilder creates a builder with per-deployment clients and unresolved restriction roots.
+func NewToolBuilder(
+	clients map[workflowy.APIDeployment]workflowy.Client,
+	defaultDeployment workflowy.APIDeployment,
+	writeRootID, readRootID, method, backupFile string,
+) ToolBuilder {
+	return ToolBuilder{
+		clients:           clients,
+		defaultDeployment: defaultDeployment,
+		rawWriteRootID:    writeRootID,
+		rawReadRootID:     readRootID,
+		writeRootID:       writeRootID,
+		readRootID:        readRootID,
+		method:            method,
+		backupFile:        backupFile,
+		backupProvider:    workflowy.DefaultBackupProvider,
+	}
 }
 
 // isRestricted returns true if write restrictions are in effect.
@@ -113,7 +132,7 @@ func (b ToolBuilder) validateReadTarget(ctx context.Context, targetID, operation
 	if !b.isReadRestricted() {
 		return nil
 	}
-	resolvedID, err := workflowy.ResolveNodeIDToUUID(ctx, b.client, targetID)
+	resolvedID, err := b.resolveNodeIDToUUID(ctx, targetID)
 	if err != nil {
 		slog.Warn("read access denied: target outside read-root scope",
 			"operation", operation, "target", targetID, "read_root", b.readRootID)
@@ -150,7 +169,7 @@ func (b ToolBuilder) validateWriteTarget(ctx context.Context, targetID, operatio
 	if !b.isRestricted() {
 		return nil
 	}
-	resolvedID, err := workflowy.ResolveNodeIDToUUID(ctx, b.client, targetID)
+	resolvedID, err := b.resolveNodeIDToUUID(ctx, targetID)
 	if err != nil {
 		slog.Warn("write access denied: target outside write-root scope",
 			"operation", operation, "target", targetID, "write_root", b.writeRootID)
@@ -174,7 +193,7 @@ func (b ToolBuilder) validateWriteParent(ctx context.Context, parentID, operatio
 			"write_root", b.writeRootID, "error", err)
 		return err
 	}
-	resolvedID, err := workflowy.ResolveNodeIDToUUID(ctx, b.client, parentID)
+	resolvedID, err := b.resolveNodeIDToUUID(ctx, parentID)
 	if err != nil {
 		slog.Warn("write parent access denied: target outside write-root scope",
 			"operation", operation, "parent", parentID, "write_root", b.writeRootID)
@@ -212,36 +231,204 @@ func (b ToolBuilder) writeRestrictionNote() string {
 
 // BuildTools constructs the requested tools in the order provided.
 func (b ToolBuilder) BuildTools(toolNames []string) ([]mcpserver.ServerTool, error) {
-	factories := map[string]func() mcpserver.ServerTool{
-		ToolGet:            b.buildGetTool,
-		ToolList:           b.buildListTool,
-		ToolSearch:         b.buildSearchTool,
-		ToolTargets:        b.buildTargetsTool,
-		ToolID:             b.buildIDTool,
-		ToolCreate:         b.buildCreateTool,
-		ToolUpdate:         b.buildUpdateTool,
-		ToolMove:           b.buildMoveTool,
-		ToolDelete:         b.buildDeleteTool,
-		ToolComplete:       b.buildCompleteTool,
-		ToolUncomplete:     b.buildUncompleteTool,
-		ToolReportCount:    b.buildReportCountTool,
-		ToolReportChildren: b.buildReportChildrenTool,
-		ToolReportCreated:  b.buildReportCreatedTool,
-		ToolReportModified: b.buildReportModifiedTool,
-		ToolReportMirrors:  b.buildReportMirrorsTool,
-		ToolReplace:        b.buildReplaceTool,
-		ToolTransform:      b.buildTransformTool,
-	}
-
 	var tools []mcpserver.ServerTool
 	for _, name := range toolNames {
-		factory, ok := factories[name]
+		factory, ok := toolFactories[name]
 		if !ok {
 			return nil, fmt.Errorf("unknown tool: %s", name)
 		}
-		tools = append(tools, factory())
+
+		tool := factory(b)
+		if _, ok := networkToolNames[name]; ok {
+			apiToolOption()(&tool.Tool)
+			tool.Handler = b.selectAPIHandler(factory)
+		} else if name == ToolReportMirrors {
+			tool.Handler = b.backupInvocationHandler(factory)
+		}
+		tools = append(tools, tool)
 	}
 	return tools, nil
+}
+
+type toolFactory func(ToolBuilder) mcpserver.ServerTool
+
+var toolFactories = map[string]toolFactory{
+	ToolGet:            ToolBuilder.buildGetTool,
+	ToolList:           ToolBuilder.buildListTool,
+	ToolSearch:         ToolBuilder.buildSearchTool,
+	ToolTargets:        ToolBuilder.buildTargetsTool,
+	ToolID:             ToolBuilder.buildIDTool,
+	ToolCreate:         ToolBuilder.buildCreateTool,
+	ToolUpdate:         ToolBuilder.buildUpdateTool,
+	ToolMove:           ToolBuilder.buildMoveTool,
+	ToolDelete:         ToolBuilder.buildDeleteTool,
+	ToolComplete:       ToolBuilder.buildCompleteTool,
+	ToolUncomplete:     ToolBuilder.buildUncompleteTool,
+	ToolReportCount:    ToolBuilder.buildReportCountTool,
+	ToolReportChildren: ToolBuilder.buildReportChildrenTool,
+	ToolReportCreated:  ToolBuilder.buildReportCreatedTool,
+	ToolReportModified: ToolBuilder.buildReportModifiedTool,
+	ToolReportMirrors:  ToolBuilder.buildReportMirrorsTool,
+	ToolReplace:        ToolBuilder.buildReplaceTool,
+	ToolTransform:      ToolBuilder.buildTransformTool,
+}
+
+var networkToolNames = map[string]struct{}{
+	ToolGet:            {},
+	ToolList:           {},
+	ToolSearch:         {},
+	ToolTargets:        {},
+	ToolID:             {},
+	ToolCreate:         {},
+	ToolUpdate:         {},
+	ToolMove:           {},
+	ToolDelete:         {},
+	ToolComplete:       {},
+	ToolUncomplete:     {},
+	ToolReportCount:    {},
+	ToolReportChildren: {},
+	ToolReportCreated:  {},
+	ToolReportModified: {},
+	ToolReplace:        {},
+	ToolTransform:      {},
+}
+
+func apiToolOption() mcptypes.ToolOption {
+	return mcptypes.WithString(
+		"api",
+		mcptypes.Description("Workflowy API deployment: production or beta"),
+		mcptypes.Enum(string(workflowy.ProductionAPI), string(workflowy.BetaAPI)),
+	)
+}
+
+func (b ToolBuilder) selectAPIHandler(factory toolFactory) mcpserver.ToolHandlerFunc {
+	return func(ctx context.Context, request mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+		deployment, err := workflowy.ParseAPIDeployment(request.GetString("api", string(b.defaultDeployment)))
+		if err != nil {
+			return mcptypes.NewToolResultError(err.Error()), nil
+		}
+
+		selectedClient, ok := b.clients[deployment]
+		if !ok {
+			return mcptypes.NewToolResultErrorf("Cannot select Workflowy API %q: client is not configured", deployment), nil
+		}
+
+		selectedBuilder := b
+		selectedBuilder.deployment = deployment
+		selectedBuilder.client = selectedClient
+		slog.Debug("selected Workflowy API", "api", deployment, "tool", request.Params.Name)
+
+		preparedBuilder, err := selectedBuilder.prepareInvocation(ctx, request, false)
+		if err != nil {
+			return mcptypes.NewToolResultError(err.Error()), nil
+		}
+		return factory(preparedBuilder).Handler(ctx, request)
+	}
+}
+
+func (b ToolBuilder) backupInvocationHandler(factory toolFactory) mcpserver.ToolHandlerFunc {
+	return func(ctx context.Context, request mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+		preparedBuilder, err := b.prepareInvocation(ctx, request, true)
+		if err != nil {
+			return mcptypes.NewToolResultError(err.Error()), nil
+		}
+		return factory(preparedBuilder).Handler(ctx, request)
+	}
+}
+
+func (b ToolBuilder) prepareInvocation(ctx context.Context, request mcptypes.CallToolRequest, forceBackup bool) (ToolBuilder, error) {
+	useBackup := forceBackup || b.resolveMethod(request.GetString("method", "")) == "backup"
+	if useBackup {
+		items, source, err := b.readInvocationBackup()
+		if err != nil {
+			return ToolBuilder{}, err
+		}
+		b.invocationTree = items
+		b.invocationSourceLabel = source
+	}
+
+	var restrictionTree []*workflowy.Item
+	if b.invocationSourceLabel == "" && (workflowy.IsRestricted(b.rawWriteRootID) || workflowy.IsRestricted(b.rawReadRootID)) {
+		items, err := b.loadExportTree(ctx, false)
+		if err != nil {
+			return ToolBuilder{}, fmt.Errorf("Cannot load export tree for restriction roots using Workflowy API %q: %w", b.deployment, err)
+		}
+		restrictionTree = items
+	}
+
+	writeRootID, err := b.resolveRestrictionRoot(ctx, b.rawWriteRootID, "write", restrictionTree)
+	if err != nil {
+		return ToolBuilder{}, err
+	}
+	readRootID, err := b.resolveRestrictionRoot(ctx, b.rawReadRootID, "read", restrictionTree)
+	if err != nil {
+		return ToolBuilder{}, err
+	}
+
+	b.writeRootID = writeRootID
+	b.readRootID = readRootID
+	return b, nil
+}
+
+func (b ToolBuilder) readInvocationBackup() ([]*workflowy.Item, string, error) {
+	if b.backupFile != "" {
+		items, err := b.backupProvider.ReadBackupFile(b.backupFile)
+		if err != nil {
+			return nil, "", fmt.Errorf("Cannot read Workflowy backup %q: %w", b.backupFile, err)
+		}
+		return items, b.backupFile, nil
+	}
+
+	items, err := b.backupProvider.ReadLatestBackup()
+	if err != nil {
+		return nil, "", fmt.Errorf("Cannot read latest Workflowy backup: %w", err)
+	}
+	return items, "latest Workflowy backup", nil
+}
+
+func (b ToolBuilder) resolveRestrictionRoot(ctx context.Context, rawRootID, rootName string, restrictionTree []*workflowy.Item) (string, error) {
+	if !workflowy.IsRestricted(rawRootID) {
+		return rawRootID, nil
+	}
+
+	if b.invocationSourceLabel != "" {
+		resolvedID, err := workflowy.ResolveNodeIDFromTree(b.invocationTree, rawRootID)
+		if err == nil {
+			return resolvedID, nil
+		}
+		if !workflowy.IsShortID(rawRootID) && !workflowy.IsFullNodeID(rawRootID) {
+			return "", fmt.Errorf("Cannot resolve %s root %q from backup %q: target keys require an API; configure %s_root_id with a full or short node ID", rootName, rawRootID, b.invocationSourceLabel, rootName)
+		}
+		return "", fmt.Errorf("Cannot resolve %s root %q from backup %q: %w", rootName, rawRootID, b.invocationSourceLabel, err)
+	}
+
+	resolvedID, err := workflowy.ResolveNodeIDToUUID(ctx, b.client, rawRootID)
+	if err != nil {
+		return "", fmt.Errorf("Cannot resolve %s root %q using Workflowy API %q: %w", rootName, rawRootID, b.deployment, err)
+	}
+	if workflowy.FindItemByID(restrictionTree, resolvedID) == nil {
+		return "", fmt.Errorf("Cannot resolve %s root %q using Workflowy API %q: node was not found in export", rootName, rawRootID, b.deployment)
+	}
+	return resolvedID, nil
+}
+
+func (b ToolBuilder) resolveNodeID(ctx context.Context, rawID string) (string, error) {
+	if b.invocationSourceLabel == "" {
+		return workflowy.ResolveNodeID(ctx, b.client, rawID)
+	}
+
+	resolvedID, err := workflowy.ResolveNodeIDFromTree(b.invocationTree, rawID)
+	if err != nil {
+		return "", fmt.Errorf("Cannot resolve Workflowy node %q from backup %q: %w", rawID, b.invocationSourceLabel, err)
+	}
+	return resolvedID, nil
+}
+
+func (b ToolBuilder) resolveNodeIDToUUID(ctx context.Context, rawID string) (string, error) {
+	if b.invocationSourceLabel == "" {
+		return workflowy.ResolveNodeIDToUUID(ctx, b.client, rawID)
+	}
+	return b.resolveNodeID(ctx, rawID)
 }
 
 func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
@@ -310,9 +497,15 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultError("cannot use ancestor options with method=get (requires full tree)"), nil
 			}
 
-			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			itemID, err := b.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
+			}
+			if toAncestor != "" {
+				toAncestor, err = b.resolveNodeID(ctx, toAncestor)
+				if err != nil {
+					return mcptypes.NewToolResultErrorFromErr("cannot resolve to_ancestor", err), nil
+				}
 			}
 
 			if err := b.validateReadTarget(ctx, itemID, "get", method); err != nil {
@@ -378,7 +571,7 @@ func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
 			includeEmpty := req.GetBool("include_empty_names", false)
 			method := req.GetString("method", "")
 
-			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			itemID, err := b.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
@@ -452,7 +645,7 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 			includeCompleted := req.GetBool("include_completed", false)
 			method := req.GetString("method", "")
 
-			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			itemID, err := b.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
@@ -580,7 +773,7 @@ func (b ToolBuilder) buildIDTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultError("id is required"), nil
 			}
 
-			fullID, err := workflowy.ResolveNodeID(ctx, b.client, rawID)
+			fullID, err := b.resolveNodeID(ctx, rawID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
@@ -629,7 +822,7 @@ func (b ToolBuilder) buildCreateTool() mcpserver.ServerTool {
 			// Default parent to write-root-id or read-root-id if not specified
 			rawParentID := b.defaultCreateParent(req.GetString("parent_id", "None"))
 
-			parentID, err := workflowy.ResolveNodeID(ctx, b.client, rawParentID)
+			parentID, err := b.resolveNodeID(ctx, rawParentID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve parent ID", err), nil
 			}
@@ -694,7 +887,7 @@ func (b ToolBuilder) buildUpdateTool() mcpserver.ServerTool {
 			}
 			method := req.GetString("method", "")
 
-			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			itemID, err := b.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
@@ -768,12 +961,12 @@ func (b ToolBuilder) buildMoveTool() mcpserver.ServerTool {
 			}
 			method := req.GetString("method", "")
 
-			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			itemID, err := b.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
 
-			parentID, err := workflowy.ResolveNodeID(ctx, b.client, rawParentID)
+			parentID, err := b.resolveNodeID(ctx, rawParentID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve parent ID", err), nil
 			}
@@ -828,7 +1021,7 @@ func (b ToolBuilder) buildDeleteTool() mcpserver.ServerTool {
 			}
 			method := req.GetString("method", "")
 
-			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			itemID, err := b.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
@@ -870,7 +1063,7 @@ func (b ToolBuilder) buildCompleteTool() mcpserver.ServerTool {
 			}
 			method := req.GetString("method", "")
 
-			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			itemID, err := b.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
@@ -912,7 +1105,7 @@ func (b ToolBuilder) buildUncompleteTool() mcpserver.ServerTool {
 			}
 			method := req.GetString("method", "")
 
-			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			itemID, err := b.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
@@ -960,7 +1153,7 @@ func (b ToolBuilder) buildReportCountTool() mcpserver.ServerTool {
 			threshold := req.GetFloat("threshold", 0.01)
 			method := req.GetString("method", "")
 
-			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			itemID, err := b.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
@@ -1017,7 +1210,7 @@ func (b ToolBuilder) buildReportChildrenTool() mcpserver.ServerTool {
 			topN := req.GetInt("top_n", 20)
 			method := req.GetString("method", "")
 
-			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			itemID, err := b.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
@@ -1071,7 +1264,7 @@ func (b ToolBuilder) buildReportCreatedTool() mcpserver.ServerTool {
 			topN := req.GetInt("top_n", 20)
 			method := req.GetString("method", "")
 
-			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			itemID, err := b.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
@@ -1125,7 +1318,7 @@ func (b ToolBuilder) buildReportModifiedTool() mcpserver.ServerTool {
 			topN := req.GetInt("top_n", 20)
 			method := req.GetString("method", "")
 
-			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			itemID, err := b.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
@@ -1167,12 +1360,16 @@ func (b ToolBuilder) buildReportMirrorsTool() mcpserver.ServerTool {
 				mcptypes.DefaultBool(false),
 			),
 		),
-		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
+		Handler: func(_ context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			topN := req.GetInt("top_n", 20)
 
-			items, err := workflowy.ReadLatestBackup()
-			if err != nil {
-				return mcptypes.NewToolResultErrorFromErr("cannot load backup file (mirror data requires backup)", err), nil
+			items := b.invocationTree
+			if b.isReadRestricted() {
+				root := workflowy.FindItemByID(items, b.readRootID)
+				if root == nil {
+					return mcptypes.NewToolResultErrorf("Cannot scope mirror report to read root %q in backup %q: node was not found", b.readRootID, b.invocationSourceLabel), nil
+				}
+				items = []*workflowy.Item{root}
 			}
 
 			infos := mirror.CollectMirrorInfos(items)
@@ -1246,7 +1443,7 @@ func (b ToolBuilder) buildReplaceTool() mcpserver.ServerTool {
 			dryRun := req.GetBool("dry_run", true)
 			method := req.GetString("method", "")
 
-			parentID, err := workflowy.ResolveNodeID(ctx, b.client, rawParentID)
+			parentID, err := b.resolveNodeID(ctx, rawParentID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve parent ID", err), nil
 			}
@@ -1372,7 +1569,7 @@ func (b ToolBuilder) buildTransformTool() mcpserver.ServerTool {
 			}
 			method := req.GetString("method", "")
 
-			itemID, err := workflowy.ResolveNodeID(ctx, b.client, rawItemID)
+			itemID, err := b.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return mcptypes.NewToolResultErrorFromErr("cannot resolve ID", err), nil
 			}
@@ -1633,6 +1830,9 @@ func (b ToolBuilder) fetchItems(ctx context.Context, itemID string, depth int, m
 }
 
 func (b ToolBuilder) loadExportTree(ctx context.Context, force bool) ([]*workflowy.Item, error) {
+	if b.invocationSourceLabel != "" {
+		return b.invocationTree, nil
+	}
 	resp, err := b.client.ExportNodesWithCache(ctx, force)
 	if err != nil {
 		return nil, err
@@ -1642,10 +1842,13 @@ func (b ToolBuilder) loadExportTree(ctx context.Context, force bool) ([]*workflo
 }
 
 func (b ToolBuilder) loadBackupTree() ([]*workflowy.Item, error) {
-	if b.backupFile != "" {
-		return workflowy.ReadBackupFile(b.backupFile)
+	if b.invocationSourceLabel != "" {
+		return b.invocationTree, nil
 	}
-	return workflowy.ReadLatestBackup()
+	if b.backupFile != "" {
+		return b.backupProvider.ReadBackupFile(b.backupFile)
+	}
+	return b.backupProvider.ReadLatestBackup()
 }
 
 // resolveMethod returns the per-request method if provided, otherwise falls back to the builder's default.

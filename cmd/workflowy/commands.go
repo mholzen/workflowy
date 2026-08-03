@@ -1037,6 +1037,12 @@ Examples:
 }
 
 func getMcpCommand() *cli.Command {
+	return getMcpCommandWithRunner(mcp.RunServer)
+}
+
+type mcpRunner func(context.Context, mcp.Config) error
+
+func getMcpCommandWithRunner(runServer mcpRunner) *cli.Command {
 	return &cli.Command{
 		Name:      "mcp",
 		Usage:     "Run as MCP server (stdio transport)",
@@ -1059,6 +1065,7 @@ Examples:
   workflowy mcp --method=backup      # Use local backup file (no API needed)`,
 		Flags: []cli.Flag{
 			getAPIKeyFlag(),
+			getAPIFlag(),
 			&cli.StringFlag{
 				Name:  "expose",
 				Value: "read",
@@ -1077,6 +1084,7 @@ Examples:
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			serverConfig := mcp.Config{
+				API:               cmd.String("api"),
 				APIKeyFile:        cmd.String("api-key-file"),
 				DefaultAPIKeyFile: defaultAPIKeyFile,
 				Expose:            cmd.String("expose"),
@@ -1086,7 +1094,7 @@ Examples:
 				Method:            cmd.String("method"),
 				BackupFile:        cmd.String("backup-file"),
 			}
-			return mcp.RunServer(ctx, serverConfig)
+			return runServer(ctx, serverConfig)
 		},
 	}
 }
