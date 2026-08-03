@@ -36,11 +36,13 @@ workflowy mcp --api=beta
 
 The flag follows the existing command-local flag convention, so it can appear after the subcommand. Commands that are entirely local and never construct a Workflowy client do not need the flag.
 
+The flag is present on `get`, `list`, `create`, `update`, `move`, `delete`, `complete`, `uncomplete`, `targets`, `search`, `replace`, `transform`, `id`, `mcp`, and every `report` subcommand. Reports receive it because they may load data from the API or upload their result, even when a particular invocation reads its input from a backup. `version` is the only current command that does not receive it.
+
 ### MCP
 
 The MCP server accepts `--api=production|beta`. This establishes the default deployment for all tools hosted by that process.
 
-Every MCP tool that can make a Workflowy network request accepts an optional string argument:
+Every MCP tool that can make a Workflowy network request accepts an optional string argument constrained by its schema to the enum values `production` and `beta`:
 
 ```json
 {
@@ -55,6 +57,8 @@ tool api argument > MCP server --api flag > production
 ```
 
 Tools that exclusively read a local backup, such as the current mirror report, do not expose a meaningless per-tool `api` argument. The MCP server may still be started with `--api` when those tools are enabled alongside network-capable tools.
+
+The argument is present on `workflowy_get`, `workflowy_list`, `workflowy_search`, `workflowy_targets`, `workflowy_id`, `workflowy_create`, `workflowy_update`, `workflowy_move`, `workflowy_delete`, `workflowy_complete`, `workflowy_uncomplete`, `workflowy_report_count`, `workflowy_report_children`, `workflowy_report_created`, `workflowy_report_modified`, `workflowy_replace`, and `workflowy_transform`. It is absent only from the current backup-only `workflowy_report_mirrors` tool.
 
 ### Relationship to Access Method
 
@@ -101,18 +105,28 @@ At the start of an MCP invocation, the tool builder resolves the requested deplo
 
 The deployment value must be passed explicitly through this seam. It must not be stored in a mutable global or hidden in a context value.
 
+CLI command construction and the MCP tool builder accept an internal client factory whose interface maps a validated deployment to a `workflowy.Client`. The production adapter constructs clients from the fixed deployment mapping. Tests replace the adapter with recording clients or local HTTP clients, so they can verify selection without DNS changes or real network requests. This is an internal testing seam, not a user-facing custom-host option.
+
+### MCP Restriction Roots
+
+`read_root_id` and `write_root_id` are deployment-relative inputs when they are target keys or short IDs. Resolving either value once with the server default and reusing the result after a tool-level override would violate the promise that the complete invocation uses one deployment.
+
+The MCP server therefore retains the raw configured root values. After selecting the effective client for a tool call, it resolves both active roots with that same client before performing ID resolution, access validation, or the requested operation. The resulting UUIDs exist only for that invocation and are never reused by an invocation selecting the other deployment.
+
+Resolution errors identify both the root value and the selected deployment. A root that resolves in production but not beta prevents only beta-selected invocations; it does not prevent an otherwise production-configured MCP server from starting. Export caching already limits repeated short-ID resolution requests, and additional root memoization is outside this feature until measurements show it is needed.
+
 ### Export Cache Isolation
 
 Production and beta export responses must not share a cache entry. Otherwise a beta request could return production data without making a request, or the reverse.
 
-The cache module therefore selects its cache file by deployment:
+Each Workflowy client owns an explicit export-cache path selected when that client is constructed:
 
 | Deployment | Cache file |
 | --- | --- |
 | `production` | `~/.workflowy/export-cache.json` |
 | `beta` | `~/.workflowy/export-cache-beta.json` |
 
-Keeping the existing path for production preserves current behavior and existing caches. Beta receives a new isolated path. Cache reads, stale-cache fallback, writes, and export rate-limit timing all use the selected deployment's file.
+Keeping the existing path for production preserves current behavior and existing caches. Beta receives a new isolated path. The cache module's read and write interfaces accept the path explicitly; they do not consult package-global deployment state. Cache reads, stale-cache fallback, writes, and export rate-limit timing all use the path owned by the selected client. Tests supply temporary paths to verify isolation without touching the user's cache.
 
 Backup-file access is deployment-independent and remains unchanged.
 
@@ -131,10 +145,12 @@ Backup-file access is deployment-independent and remains unchanged.
 
 1. Parse and validate the server's `--api` during startup, defaulting to `production`.
 2. Construct authenticated clients for production and beta.
-3. For each tool call, read the optional `api` argument.
-4. Resolve the effective deployment using the documented precedence.
-5. Select the corresponding client before any ID resolution or validation.
-6. Use that client for every network operation made by the tool call.
+3. Retain configured read and write root values without resolving them against either deployment.
+4. For each tool call, read the optional `api` argument.
+5. Resolve the effective deployment using the documented precedence.
+6. Select the corresponding client.
+7. Resolve active read and write roots with that client.
+8. Use that client and those per-invocation roots for every ID resolution, validation, and network operation made by the tool call.
 
 ## Validation and Error Handling
 
@@ -145,6 +161,12 @@ Cannot select Workflowy API "staging": expected "production" or "beta"
 ```
 
 CLI validation returns the error from the command. An invalid MCP server default prevents startup. An invalid per-tool override returns an MCP tool error and leaves the server running.
+
+An MCP restriction root that cannot be resolved returns a contextual tool error such as:
+
+```text
+Cannot resolve read root "inbox" using Workflowy API "beta": <cause>
+```
 
 Network errors continue to use the existing operation-specific wrapping. Debug logging includes the selected deployment and request path, but authentication material is never logged.
 
@@ -160,8 +182,11 @@ Unit tests cover:
 - MCP uses its server default when a tool omits `api`;
 - an MCP tool argument overrides the server default;
 - all requests within an MCP invocation, including ID resolution and access validation, use the selected client;
+- read and write roots are resolved with the effective per-invocation client;
+- a root-resolution failure in beta does not prevent production invocations or MCP startup;
 - production and beta exports use different cache files;
 - the production cache retains its existing path;
+- two clients in the same process cannot read or write each other's cache entries;
 - `method=backup` performs no network request regardless of API selection.
 
 Existing production-default tests must continue to pass. Test coverage must not decrease.
