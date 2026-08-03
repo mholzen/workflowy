@@ -789,6 +789,16 @@ workflowy report count --method=backup
 
 ## Troubleshooting
 
+### HTTP Request Logging
+
+Use debug logging to show the HTTP method and path for every API request:
+
+```bash
+workflowy get <id> --log=debug
+```
+
+HTTP debug logs never include the API key, authorization header, or request body.
+
 ### Rate Limiting
 
 If you encounter rate limit errors:
