@@ -123,7 +123,7 @@ Under `docs/CLI.md` → `Troubleshooting`, document that `workflowy get <id> --l
 Under `docs/MCP.md` → `Logging and Debugging`, add this example and the same safety statement:
 
 ```text
-DEBUG: http request (method='GET', path='/nodes/example')
+DEBUG: http request (method='GET' path='/nodes/example')
 ```
 
 - [ ] **Step 3: Commit documentation parity**

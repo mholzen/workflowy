@@ -772,7 +772,7 @@ workflowy mcp --log=debug --log-file=/tmp/workflowy-mcp.log
 At debug level, every Workflowy API request logs its HTTP method and path:
 
 ```text
-DEBUG: http request (method='GET', path='/nodes/example')
+DEBUG: http request (method='GET' path='/nodes/example')
 ```
 
 HTTP debug logs never include the API key, authorization header, or request body.

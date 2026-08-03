@@ -13,7 +13,7 @@ The current uncommitted implementation enables HTTP request logging through a co
 `Client.Do` emits this structured record immediately before sending every successfully constructed HTTP request:
 
 ```text
-DEBUG: http request (method='GET', path='/nodes/example')
+DEBUG: http request (method='GET' path='/nodes/example')
 ```
 
 The call to `slog.Debug` is unconditional. The configured logging handler decides whether the record is emitted:

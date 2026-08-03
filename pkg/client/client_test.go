@@ -15,7 +15,7 @@ import (
 
 func TestClientDo_LogsHTTPRequestsAtDebugLevel(t *testing.T) {
 	output := captureLogs(t, slog.LevelDebug)
-	c := newSuccessfulTestClient()
+	c := newTestClient(http.StatusOK, `{}`)
 
 	for _, method := range []string{"GET", "POST", "DELETE"} {
 		output.Reset()
@@ -32,7 +32,7 @@ func TestClientDo_LogsHTTPRequestsAtDebugLevel(t *testing.T) {
 
 func TestClientDo_DoesNotLogHTTPRequestsAtInfoLevel(t *testing.T) {
 	output := captureLogs(t, slog.LevelInfo)
-	c := newSuccessfulTestClient()
+	c := newTestClient(http.StatusOK, `{}`)
 
 	for _, method := range []string{"GET", "POST", "DELETE"} {
 		output.Reset()
@@ -42,6 +42,33 @@ func TestClientDo_DoesNotLogHTTPRequestsAtInfoLevel(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotContains(t, strings.TrimSpace(output.String()), "msg=\"http request\"")
 	}
+}
+
+func TestClientDo_LogsAndDecodesSuccessfulResponse(t *testing.T) {
+	output := captureLogs(t, slog.LevelDebug)
+	c := newTestClient(http.StatusOK, `{"status":"ok"}`)
+	var response struct {
+		Status string `json:"status"`
+	}
+
+	err := c.Do(context.Background(), "GET", "/nodes/test-id", nil, &response)
+
+	require.NoError(t, err)
+	assert.Equal(t, "ok", response.Status)
+	assert.Contains(t, output.String(), "msg=\"http request\"")
+}
+
+func TestClientDo_LogsRequestReturningAPIError(t *testing.T) {
+	output := captureLogs(t, slog.LevelDebug)
+	c := newTestClient(http.StatusBadRequest, `{"error":"invalid request"}`)
+
+	err := c.Do(context.Background(), "POST", "/nodes/test-id", nil, nil)
+
+	var apiError *APIError
+	require.ErrorAs(t, err, &apiError)
+	assert.Equal(t, http.StatusBadRequest, apiError.Status)
+	assert.Equal(t, `{"error":"invalid request"}`, apiError.Body)
+	assert.Contains(t, output.String(), "msg=\"http request\"")
 }
 
 func captureLogs(t *testing.T, level slog.Level) *bytes.Buffer {
@@ -57,12 +84,12 @@ func captureLogs(t *testing.T, level slog.Level) *bytes.Buffer {
 	return &output
 }
 
-func newSuccessfulTestClient() *Client {
+func newTestClient(statusCode int, responseBody string) *Client {
 	c := New("https://api.example.com")
 	c.http = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{}`)),
+			StatusCode: statusCode,
+			Body:       io.NopCloser(strings.NewReader(responseBody)),
 			Header:     make(http.Header),
 		}, nil
 	})}
