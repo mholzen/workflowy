@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	genericclient "github.com/mholzen/workflowy/pkg/client"
 	"github.com/mholzen/workflowy/pkg/mcp"
 	"github.com/mholzen/workflowy/pkg/mirror"
 	"github.com/mholzen/workflowy/pkg/reports"
@@ -39,13 +40,17 @@ func getCommands() []*cli.Command {
 }
 
 func getGetCommand() *cli.Command {
+	return getGetCommandWithClientProvider(withOptionalClient)
+}
+
+func getGetCommandWithClientProvider(clientProvider ClientProvider) *cli.Command {
 	return &cli.Command{
 		Name:      "get",
 		Usage:     "Get node and descendants",
 		UsageText: "workflowy get [<id>] [options]",
 		Arguments: getFetchArguments(),
 		Flags:     getFetchFlags(),
-		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+		Action: clientProvider(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			params, err := getAndValidateFetchParams(cmd)
 			if err != nil {
 				return err
@@ -360,6 +365,7 @@ func getMoveCommand() *cli.Command {
 		},
 		Flags: []cli.Flag{
 			getAPIKeyFlag(),
+			getAPIFlag(),
 			&cli.StringFlag{
 				Name:  "position",
 				Usage: "Position in new parent: top or bottom (default: top)",
@@ -1098,6 +1104,7 @@ func getIDCommand() *cli.Command {
 		},
 		Flags: []cli.Flag{
 			getAPIKeyFlag(),
+			getAPIFlag(),
 		},
 		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			rawID := cmd.StringArg("id")
@@ -1128,35 +1135,46 @@ func getVersionCommand() *cli.Command {
 	}
 }
 
-func createClient(apiKeyFile string) (*workflowy.WorkflowyClient, error) {
-	option, err := workflowy.ResolveAPIKey(apiKeyFile, defaultAPIKeyFile)
-	if err != nil {
-		return nil, err
-	}
-	return workflowy.NewWorkflowyClient(workflowy.ProductionAPI, option)
-}
-
 type ClientActionFunc func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error
 
 type ClientProvider func(ClientActionFunc) cli.ActionFunc
 
-func withClient(fn ClientActionFunc) cli.ActionFunc {
-	return func(ctx context.Context, cmd *cli.Command) error {
-		client, err := createClient(cmd.String("api-key-file"))
-		if err != nil {
-			return err
+type workflowyClientFactory func(workflowy.APIDeployment, ...genericclient.Option) (workflowy.Client, error)
+
+func createWorkflowyClient(deployment workflowy.APIDeployment, options ...genericclient.Option) (workflowy.Client, error) {
+	return workflowy.NewWorkflowyClient(deployment, options...)
+}
+
+func newClientProvider(factory workflowyClientFactory, allowBackupFallback bool) ClientProvider {
+	return func(fn ClientActionFunc) cli.ActionFunc {
+		return func(ctx context.Context, cmd *cli.Command) error {
+			deployment, err := workflowy.ParseAPIDeployment(cmd.String("api"))
+			if err != nil {
+				return err
+			}
+
+			option, err := workflowy.ResolveAPIKey(cmd.String("api-key-file"), defaultAPIKeyFile)
+			if err != nil {
+				if allowBackupFallback {
+					slog.Warn("cannot create API client -- using backup method", "error", err)
+					return fn(ctx, cmd, nil)
+				}
+				return err
+			}
+
+			client, err := factory(deployment, option)
+			if err != nil {
+				return err
+			}
+			return fn(ctx, cmd, client)
 		}
-		return fn(ctx, cmd, client)
 	}
 }
 
+func withClient(fn ClientActionFunc) cli.ActionFunc {
+	return newClientProvider(createWorkflowyClient, false)(fn)
+}
+
 func withOptionalClient(fn ClientActionFunc) cli.ActionFunc {
-	return func(ctx context.Context, cmd *cli.Command) error {
-		client, err := createClient(cmd.String("api-key-file"))
-		if err != nil {
-			slog.Warn("cannot create API client -- using backup method", "error", err)
-			return fn(ctx, cmd, nil)
-		}
-		return fn(ctx, cmd, client)
-	}
+	return newClientProvider(createWorkflowyClient, true)(fn)
 }
