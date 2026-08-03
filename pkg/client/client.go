@@ -13,9 +13,10 @@ import (
 )
 
 type Client struct {
-	baseURL string
-	http    *http.Client
-	auth    func(r *http.Request) // injects auth headers
+	baseURL       string
+	http          *http.Client
+	auth          func(r *http.Request) // injects auth headers
+	logAttributes []slog.Attr
 }
 
 // SetAuth allows setting the auth function after client creation
@@ -24,6 +25,13 @@ func (c *Client) SetAuth(authFunc func(r *http.Request)) {
 }
 
 type Option func(*Client)
+
+// WithLogAttributes adds stable context to every HTTP request log record.
+func WithLogAttributes(attributes ...slog.Attr) Option {
+	return func(client *Client) {
+		client.logAttributes = append(client.logAttributes, attributes...)
+	}
+}
 
 func New(base string, opts ...Option) *Client {
 	c := &Client{
@@ -65,7 +73,12 @@ func (c *Client) Do(ctx context.Context, method, path string, in any, out any) e
 
 	c.auth(req)
 
-	slog.Debug("http request", "method", method, "path", path)
+	attributes := []slog.Attr{
+		slog.String("method", method),
+		slog.String("path", path),
+	}
+	attributes = append(attributes, c.logAttributes...)
+	slog.LogAttrs(ctx, slog.LevelDebug, "http request", attributes...)
 
 	resp, err := c.http.Do(req)
 	if err != nil {

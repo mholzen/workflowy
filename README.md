@@ -44,10 +44,10 @@ Get your API key at https://workflowy.com/api-key/
 
 ```bash
 # Get the top-level nodes from production (default)
-workflowy get --depth=0
+workflowy get --depth=1
 
 # Read from Workflowy's beta deployment
-workflowy get --depth=0 --api=beta
+workflowy get --depth=1 --api=beta
 
 # Generate a report showing where most of your nodes are
 workflowy report count | pbcopy   # paste directly into Workflowy!

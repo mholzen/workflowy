@@ -30,6 +30,17 @@ func TestClientDo_LogsHTTPRequestsAtDebugLevel(t *testing.T) {
 	}
 }
 
+func TestClientDo_LogsConfiguredRequestAttributes(t *testing.T) {
+	output := captureLogs(t, slog.LevelDebug)
+	c := newTestClientWithOptions(http.StatusOK, `{}`, WithLogAttributes(slog.String("api", "beta")))
+
+	err := c.Do(context.Background(), "GET", "/nodes/test-id", nil, nil)
+
+	require.NoError(t, err)
+	assert.Contains(t, output.String(), "api=beta")
+	assert.Contains(t, output.String(), "path=/nodes/test-id")
+}
+
 func TestClientDo_DoesNotLogHTTPRequestsAtInfoLevel(t *testing.T) {
 	output := captureLogs(t, slog.LevelInfo)
 	c := newTestClient(http.StatusOK, `{}`)
@@ -85,7 +96,11 @@ func captureLogs(t *testing.T, level slog.Level) *bytes.Buffer {
 }
 
 func newTestClient(statusCode int, responseBody string) *Client {
-	c := New("https://api.example.com")
+	return newTestClientWithOptions(statusCode, responseBody)
+}
+
+func newTestClientWithOptions(statusCode int, responseBody string, options ...Option) *Client {
+	c := New("https://api.example.com", options...)
 	c.http = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: statusCode,

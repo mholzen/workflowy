@@ -49,6 +49,20 @@ func NewWriteGuard(ctx context.Context, client workflowy.Client, writeRootID str
 	return guard, nil
 }
 
+func newWriteGuardFromTree(items []*workflowy.Item, writeRootID string) (*WriteGuard, error) {
+	guard := &WriteGuard{writeRootID: writeRootID, tree: items}
+	if !workflowy.IsWriteRestricted(writeRootID) {
+		return guard, nil
+	}
+
+	resolvedID, err := workflowy.ResolveNodeIDFromTree(items, writeRootID)
+	if err != nil {
+		return nil, fmt.Errorf("Cannot resolve write-root-id %q from backup: %w", writeRootID, err)
+	}
+	guard.writeRootID = resolvedID
+	return guard, nil
+}
+
 // IsRestricted returns true if write restrictions are in effect.
 func (g *WriteGuard) IsRestricted() bool {
 	return workflowy.IsWriteRestricted(g.writeRootID)

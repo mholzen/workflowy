@@ -50,7 +50,7 @@ func SanitizeNodeID(id string) string {
 	if id == "" || id == "None" {
 		return id
 	}
-	id = strings.TrimPrefix(id, "https://workflowy.com/#/")
+	id = nodeIDFromURL(id)
 	var result strings.Builder
 	for _, r := range id {
 		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F') || r == '-' {
@@ -227,8 +227,10 @@ func NewWorkflowyClient(deployment APIDeployment, opts ...client.Option) (*Workf
 	}
 
 	slog.Debug("creating Workflowy client", "api", deployment, "base_url", baseURL, "export_cache_path", exportCachePath)
+	clientOptions := append([]client.Option(nil), opts...)
+	clientOptions = append(clientOptions, client.WithLogAttributes(slog.String("api", string(deployment))))
 	return &WorkflowyClient{
-		Client:          client.New(baseURL, opts...),
+		Client:          client.New(baseURL, clientOptions...),
 		opts:            opts,
 		exportCachePath: exportCachePath,
 	}, nil

@@ -14,14 +14,17 @@ import (
 type recordingBackupProvider struct {
 	filename string
 	items    []*workflowy.Item
+	calls    int
 }
 
 func (provider *recordingBackupProvider) ReadBackupFile(filename string) ([]*workflowy.Item, error) {
+	provider.calls++
 	provider.filename = filename
 	return provider.items, nil
 }
 
 func (provider *recordingBackupProvider) ReadLatestBackup() ([]*workflowy.Item, error) {
+	provider.calls++
 	return provider.items, nil
 }
 
@@ -59,6 +62,7 @@ func TestCountReportBackupUploadUsesSelectedAPI(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "fixture.json", backupProvider.filename)
+	assert.Equal(t, 1, backupProvider.calls)
 	assert.Equal(t, workflowy.BetaAPI, selected)
 	assert.NotEmpty(t, betaClient.CreatedNodes)
 }

@@ -768,7 +768,7 @@ workflowy report mirrors --top-n 10
 
 ```bash
 # Read directly from beta
-workflowy get --api=beta --method=get --depth=0
+workflowy get --api=beta --method=get --depth=1
 
 # Read and validate offline, then upload the report through beta
 workflowy report count --api=beta --method=backup --upload

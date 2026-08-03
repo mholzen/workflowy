@@ -553,3 +553,9 @@ func TestSanitizeNodeID(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizeNodeIDStripsBetaWorkflowyURL(t *testing.T) {
+	const nodeID = "12345678-1234-1234-1234-123456789abc"
+
+	assert.Equal(t, nodeID, SanitizeNodeID("https://beta.workflowy.com/#/"+nodeID))
+}

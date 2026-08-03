@@ -56,12 +56,17 @@ func getGetCommandWithClientProvider(clientProvider ClientProvider) *cli.Command
 				return err
 			}
 
-			readGuard, err := NewReadGuard(ctx, client, getReadRootID(cmd))
+			invocation, err := newCommandInvocation(cmd, client, workflowy.DefaultBackupProvider)
 			if err != nil {
 				return err
 			}
 
-			itemID, err := workflowy.ResolveNodeID(ctx, client, readGuard.DefaultID(params.itemID))
+			readGuard, err := invocation.newReadGuard(ctx, getReadRootID(cmd))
+			if err != nil {
+				return err
+			}
+
+			itemID, err := invocation.resolveNodeID(ctx, readGuard.DefaultID(params.itemID))
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
@@ -70,7 +75,7 @@ func getGetCommandWithClientProvider(clientProvider ClientProvider) *cli.Command
 				return err
 			}
 
-			result, err := fetchItems(cmd, ctx, client, itemID, params.depth)
+			result, err := invocation.fetchItems(ctx, cmd, itemID, params.depth)
 			if err != nil {
 				return err
 			}
@@ -94,12 +99,17 @@ func getListCommand() *cli.Command {
 				return err
 			}
 
-			readGuard, err := NewReadGuard(ctx, client, getReadRootID(cmd))
+			invocation, err := newCommandInvocation(cmd, client, workflowy.DefaultBackupProvider)
 			if err != nil {
 				return err
 			}
 
-			itemID, err := workflowy.ResolveNodeID(ctx, client, readGuard.DefaultID(params.itemID))
+			readGuard, err := invocation.newReadGuard(ctx, getReadRootID(cmd))
+			if err != nil {
+				return err
+			}
+
+			itemID, err := invocation.resolveNodeID(ctx, readGuard.DefaultID(params.itemID))
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
@@ -108,7 +118,7 @@ func getListCommand() *cli.Command {
 				return err
 			}
 
-			treeResult, err := fetchItems(cmd, ctx, client, itemID, params.depth)
+			treeResult, err := invocation.fetchItems(ctx, cmd, itemID, params.depth)
 			if err != nil {
 				return err
 			}
@@ -435,6 +445,10 @@ func getMoveCommand() *cli.Command {
 }
 
 func getDeleteCommand() *cli.Command {
+	return getDeleteCommandWithClientProvider(withClient)
+}
+
+func getDeleteCommandWithClientProvider(clientProvider ClientProvider) *cli.Command {
 	return &cli.Command{
 		Name:      "delete",
 		Usage:     "Permanently delete a node",
@@ -446,14 +460,18 @@ func getDeleteCommand() *cli.Command {
 			},
 		},
 		Flags: getMethodFlags(),
-		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+		Action: clientProvider(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
 			}
 
-			// Initialize write guard for access control
-			guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
+			invocation, err := newCommandInvocation(cmd, client, workflowy.DefaultBackupProvider)
+			if err != nil {
+				return err
+			}
+
+			guard, err := invocation.newWriteGuard(ctx, getWriteRootID(cmd))
 			if err != nil {
 				return err
 			}
@@ -463,7 +481,7 @@ func getDeleteCommand() *cli.Command {
 				return fmt.Errorf("id is required")
 			}
 
-			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
+			itemID, err := invocation.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
@@ -491,11 +509,11 @@ func getDeleteCommand() *cli.Command {
 }
 
 func getCompleteCommand() *cli.Command {
-	return getCompletionCommand("complete", "Mark a node as complete", "completing")
+	return getCompletionCommandWithClientProvider("complete", "Mark a node as complete", "completing", withClient)
 }
 
 func getUncompleteCommand() *cli.Command {
-	return getCompletionCommand("uncomplete", "Mark a node as uncomplete", "uncompleting")
+	return getCompletionCommandWithClientProvider("uncomplete", "Mark a node as uncomplete", "uncompleting", withClient)
 }
 
 func getTargetsCommand() *cli.Command {
@@ -522,7 +540,7 @@ func getTargetsCommand() *cli.Command {
 	}
 }
 
-func getCompletionCommand(commandName, usage, action string) *cli.Command {
+func getCompletionCommandWithClientProvider(commandName, usage, action string, clientProvider ClientProvider) *cli.Command {
 	return &cli.Command{
 		Name:      commandName,
 		Usage:     usage,
@@ -534,14 +552,18 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 			},
 		},
 		Flags: getMethodFlags(),
-		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+		Action: clientProvider(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
 			}
 
-			// Initialize write guard for access control
-			guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
+			invocation, err := newCommandInvocation(cmd, client, workflowy.DefaultBackupProvider)
+			if err != nil {
+				return err
+			}
+
+			guard, err := invocation.newWriteGuard(ctx, getWriteRootID(cmd))
 			if err != nil {
 				return err
 			}
@@ -551,7 +573,7 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 				return fmt.Errorf("id is required")
 			}
 
-			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
+			itemID, err := invocation.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
@@ -760,18 +782,23 @@ func getSearchCommand() *cli.Command {
 				return fmt.Errorf("cannot search using the GET method")
 			}
 
-			readGuard, err := NewReadGuard(ctx, client, getReadRootID(cmd))
+			invocation, err := newCommandInvocation(cmd, client, workflowy.DefaultBackupProvider)
 			if err != nil {
 				return err
 			}
 
-			items, err := loadTree(ctx, cmd, client)
+			readGuard, err := invocation.newReadGuard(ctx, getReadRootID(cmd))
+			if err != nil {
+				return err
+			}
+
+			items, err := invocation.loadTree(ctx, cmd)
 			if err != nil {
 				return err
 			}
 
 			rawID := readGuard.DefaultID(getID(cmd))
-			itemID, err := workflowy.ResolveNodeID(ctx, client, rawID)
+			itemID, err := invocation.resolveNodeID(ctx, rawID)
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
@@ -851,6 +878,10 @@ func getSearchCommand() *cli.Command {
 }
 
 func getReplaceCommand() *cli.Command {
+	return getReplaceCommandWithClientProvider(withClient)
+}
+
+func getReplaceCommandWithClientProvider(clientProvider ClientProvider) *cli.Command {
 	return &cli.Command{
 		Name:      "replace",
 		Usage:     "Search and replace text in node names using regular expressions",
@@ -894,14 +925,18 @@ Examples:
 			},
 		},
 		Flags: getReplaceFlags(),
-		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+		Action: clientProvider(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
 			}
 
-			// Initialize write guard for access control
-			guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
+			invocation, err := newCommandInvocation(cmd, client, workflowy.DefaultBackupProvider)
+			if err != nil {
+				return err
+			}
+
+			guard, err := invocation.newWriteGuard(ctx, getWriteRootID(cmd))
 			if err != nil {
 				return err
 			}
@@ -922,12 +957,12 @@ Examples:
 				return fmt.Errorf("invalid regular expression: %w", err)
 			}
 
-			items, err := loadTree(ctx, cmd, client)
+			items, err := invocation.loadTree(ctx, cmd)
 			if err != nil {
 				return err
 			}
 
-			parentID, err := workflowy.ResolveNodeID(ctx, client, getParentID(cmd))
+			parentID, err := invocation.resolveNodeID(ctx, getParentID(cmd))
 			if err != nil {
 				return fmt.Errorf("cannot resolve parent ID: %w", err)
 			}

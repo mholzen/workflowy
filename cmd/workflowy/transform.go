@@ -14,6 +14,10 @@ import (
 )
 
 func getTransformCommand() *cli.Command {
+	return getTransformCommandWithClientProvider(withClient)
+}
+
+func getTransformCommandWithClientProvider(clientProvider ClientProvider) *cli.Command {
 	return &cli.Command{
 		Name:      "transform",
 		Usage:     "Transform node names and/or notes using built-in or shell transformations",
@@ -50,7 +54,7 @@ Examples:
 			},
 		},
 		Flags: getTransformFlags(),
-		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+		Action: clientProvider(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			return runTransform(ctx, cmd, client)
 		}),
 	}
@@ -132,7 +136,12 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 		return fmt.Errorf("id is required")
 	}
 
-	itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
+	invocation, err := newCommandInvocation(cmd, client, workflowy.DefaultBackupProvider)
+	if err != nil {
+		return err
+	}
+
+	itemID, err := invocation.resolveNodeID(ctx, rawItemID)
 	if err != nil {
 		return fmt.Errorf("cannot resolve ID: %w", err)
 	}
@@ -140,7 +149,7 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 	// Validate write-root scope only if restriction is in effect
 	writeRootID := getWriteRootID(cmd)
 	if workflowy.IsWriteRestricted(writeRootID) {
-		guard, err := NewWriteGuard(ctx, client, writeRootID)
+		guard, err := invocation.newWriteGuard(ctx, writeRootID)
 		if err != nil {
 			return err
 		}
@@ -156,7 +165,7 @@ func runTransform(ctx context.Context, cmd *cli.Command, client workflowy.Client
 	}
 
 	// Use the same fetch logic as get command
-	result, err := fetchItems(cmd, ctx, client, itemID, depth)
+	result, err := invocation.fetchItems(ctx, cmd, itemID, depth)
 	if err != nil {
 		return err
 	}
