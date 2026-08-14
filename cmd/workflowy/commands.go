@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	genericclient "github.com/mholzen/workflowy/pkg/client"
 	"github.com/mholzen/workflowy/pkg/mcp"
 	"github.com/mholzen/workflowy/pkg/mirror"
 	"github.com/mholzen/workflowy/pkg/reports"
@@ -39,24 +40,33 @@ func getCommands() []*cli.Command {
 }
 
 func getGetCommand() *cli.Command {
+	return getGetCommandWithClientProvider(withOptionalClient)
+}
+
+func getGetCommandWithClientProvider(clientProvider ClientProvider) *cli.Command {
 	return &cli.Command{
 		Name:      "get",
 		Usage:     "Get node and descendants",
 		UsageText: "workflowy get [<id>] [options]",
 		Arguments: getFetchArguments(),
 		Flags:     getFetchFlags(),
-		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+		Action: clientProvider(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			params, err := getAndValidateFetchParams(cmd)
 			if err != nil {
 				return err
 			}
 
-			readGuard, err := NewReadGuard(ctx, client, getReadRootID(cmd))
+			invocation, err := newCommandInvocation(cmd, client, workflowy.DefaultBackupProvider)
 			if err != nil {
 				return err
 			}
 
-			itemID, err := workflowy.ResolveNodeID(ctx, client, readGuard.DefaultID(params.itemID))
+			readGuard, err := invocation.newReadGuard(ctx, getReadRootID(cmd))
+			if err != nil {
+				return err
+			}
+
+			itemID, err := invocation.resolveNodeID(ctx, readGuard.DefaultID(params.itemID))
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
@@ -65,7 +75,7 @@ func getGetCommand() *cli.Command {
 				return err
 			}
 
-			result, err := fetchItems(cmd, ctx, client, itemID, params.depth)
+			result, err := invocation.fetchItems(ctx, cmd, itemID, params.depth)
 			if err != nil {
 				return err
 			}
@@ -89,12 +99,17 @@ func getListCommand() *cli.Command {
 				return err
 			}
 
-			readGuard, err := NewReadGuard(ctx, client, getReadRootID(cmd))
+			invocation, err := newCommandInvocation(cmd, client, workflowy.DefaultBackupProvider)
 			if err != nil {
 				return err
 			}
 
-			itemID, err := workflowy.ResolveNodeID(ctx, client, readGuard.DefaultID(params.itemID))
+			readGuard, err := invocation.newReadGuard(ctx, getReadRootID(cmd))
+			if err != nil {
+				return err
+			}
+
+			itemID, err := invocation.resolveNodeID(ctx, readGuard.DefaultID(params.itemID))
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
@@ -103,7 +118,7 @@ func getListCommand() *cli.Command {
 				return err
 			}
 
-			treeResult, err := fetchItems(cmd, ctx, client, itemID, params.depth)
+			treeResult, err := invocation.fetchItems(ctx, cmd, itemID, params.depth)
 			if err != nil {
 				return err
 			}
@@ -360,6 +375,7 @@ func getMoveCommand() *cli.Command {
 		},
 		Flags: []cli.Flag{
 			getAPIKeyFlag(),
+			getAPIFlag(),
 			&cli.StringFlag{
 				Name:  "position",
 				Usage: "Position in new parent: top or bottom (default: top)",
@@ -429,6 +445,10 @@ func getMoveCommand() *cli.Command {
 }
 
 func getDeleteCommand() *cli.Command {
+	return getDeleteCommandWithClientProvider(withClient)
+}
+
+func getDeleteCommandWithClientProvider(clientProvider ClientProvider) *cli.Command {
 	return &cli.Command{
 		Name:      "delete",
 		Usage:     "Permanently delete a node",
@@ -440,14 +460,18 @@ func getDeleteCommand() *cli.Command {
 			},
 		},
 		Flags: getMethodFlags(),
-		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+		Action: clientProvider(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
 			}
 
-			// Initialize write guard for access control
-			guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
+			invocation, err := newCommandInvocation(cmd, client, workflowy.DefaultBackupProvider)
+			if err != nil {
+				return err
+			}
+
+			guard, err := invocation.newWriteGuard(ctx, getWriteRootID(cmd))
 			if err != nil {
 				return err
 			}
@@ -457,7 +481,7 @@ func getDeleteCommand() *cli.Command {
 				return fmt.Errorf("id is required")
 			}
 
-			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
+			itemID, err := invocation.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
@@ -485,11 +509,11 @@ func getDeleteCommand() *cli.Command {
 }
 
 func getCompleteCommand() *cli.Command {
-	return getCompletionCommand("complete", "Mark a node as complete", "completing")
+	return getCompletionCommandWithClientProvider("complete", "Mark a node as complete", "completing", withClient)
 }
 
 func getUncompleteCommand() *cli.Command {
-	return getCompletionCommand("uncomplete", "Mark a node as uncomplete", "uncompleting")
+	return getCompletionCommandWithClientProvider("uncomplete", "Mark a node as uncomplete", "uncompleting", withClient)
 }
 
 func getTargetsCommand() *cli.Command {
@@ -516,7 +540,7 @@ func getTargetsCommand() *cli.Command {
 	}
 }
 
-func getCompletionCommand(commandName, usage, action string) *cli.Command {
+func getCompletionCommandWithClientProvider(commandName, usage, action string, clientProvider ClientProvider) *cli.Command {
 	return &cli.Command{
 		Name:      commandName,
 		Usage:     usage,
@@ -528,14 +552,18 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 			},
 		},
 		Flags: getMethodFlags(),
-		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+		Action: clientProvider(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
 			}
 
-			// Initialize write guard for access control
-			guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
+			invocation, err := newCommandInvocation(cmd, client, workflowy.DefaultBackupProvider)
+			if err != nil {
+				return err
+			}
+
+			guard, err := invocation.newWriteGuard(ctx, getWriteRootID(cmd))
 			if err != nil {
 				return err
 			}
@@ -545,7 +573,7 @@ func getCompletionCommand(commandName, usage, action string) *cli.Command {
 				return fmt.Errorf("id is required")
 			}
 
-			itemID, err := workflowy.ResolveNodeID(ctx, client, rawItemID)
+			itemID, err := invocation.resolveNodeID(ctx, rawItemID)
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
@@ -754,18 +782,23 @@ func getSearchCommand() *cli.Command {
 				return fmt.Errorf("cannot search using the GET method")
 			}
 
-			readGuard, err := NewReadGuard(ctx, client, getReadRootID(cmd))
+			invocation, err := newCommandInvocation(cmd, client, workflowy.DefaultBackupProvider)
 			if err != nil {
 				return err
 			}
 
-			items, err := loadTree(ctx, cmd, client)
+			readGuard, err := invocation.newReadGuard(ctx, getReadRootID(cmd))
+			if err != nil {
+				return err
+			}
+
+			items, err := invocation.loadTree(ctx, cmd)
 			if err != nil {
 				return err
 			}
 
 			rawID := readGuard.DefaultID(getID(cmd))
-			itemID, err := workflowy.ResolveNodeID(ctx, client, rawID)
+			itemID, err := invocation.resolveNodeID(ctx, rawID)
 			if err != nil {
 				return fmt.Errorf("cannot resolve ID: %w", err)
 			}
@@ -845,6 +878,10 @@ func getSearchCommand() *cli.Command {
 }
 
 func getReplaceCommand() *cli.Command {
+	return getReplaceCommandWithClientProvider(withClient)
+}
+
+func getReplaceCommandWithClientProvider(clientProvider ClientProvider) *cli.Command {
 	return &cli.Command{
 		Name:      "replace",
 		Usage:     "Search and replace text in node names using regular expressions",
@@ -888,14 +925,18 @@ Examples:
 			},
 		},
 		Flags: getReplaceFlags(),
-		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
+		Action: clientProvider(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			format := cmd.String("format")
 			if err := validateFormat(format); err != nil {
 				return err
 			}
 
-			// Initialize write guard for access control
-			guard, err := NewWriteGuard(ctx, client, getWriteRootID(cmd))
+			invocation, err := newCommandInvocation(cmd, client, workflowy.DefaultBackupProvider)
+			if err != nil {
+				return err
+			}
+
+			guard, err := invocation.newWriteGuard(ctx, getWriteRootID(cmd))
 			if err != nil {
 				return err
 			}
@@ -916,12 +957,12 @@ Examples:
 				return fmt.Errorf("invalid regular expression: %w", err)
 			}
 
-			items, err := loadTree(ctx, cmd, client)
+			items, err := invocation.loadTree(ctx, cmd)
 			if err != nil {
 				return err
 			}
 
-			parentID, err := workflowy.ResolveNodeID(ctx, client, getParentID(cmd))
+			parentID, err := invocation.resolveNodeID(ctx, getParentID(cmd))
 			if err != nil {
 				return fmt.Errorf("cannot resolve parent ID: %w", err)
 			}
@@ -1031,6 +1072,12 @@ Examples:
 }
 
 func getMcpCommand() *cli.Command {
+	return getMcpCommandWithRunner(mcp.RunServer)
+}
+
+type mcpRunner func(context.Context, mcp.Config) error
+
+func getMcpCommandWithRunner(runServer mcpRunner) *cli.Command {
 	return &cli.Command{
 		Name:      "mcp",
 		Usage:     "Run as MCP server (stdio transport)",
@@ -1050,9 +1097,10 @@ Examples:
   workflowy mcp --expose=read,write  # Explicit groups
   workflowy mcp --expose=get,list    # Specific tools only
   workflowy mcp --method=export      # Force export method for all operations
-  workflowy mcp --method=backup      # Use local backup file (no API needed)`,
+  workflowy mcp --method=backup      # Use local backup for reads and validation`,
 		Flags: []cli.Flag{
 			getAPIKeyFlag(),
+			getAPIFlag(),
 			&cli.StringFlag{
 				Name:  "expose",
 				Value: "read",
@@ -1071,6 +1119,7 @@ Examples:
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			serverConfig := mcp.Config{
+				API:               cmd.String("api"),
 				APIKeyFile:        cmd.String("api-key-file"),
 				DefaultAPIKeyFile: defaultAPIKeyFile,
 				Expose:            cmd.String("expose"),
@@ -1080,7 +1129,7 @@ Examples:
 				Method:            cmd.String("method"),
 				BackupFile:        cmd.String("backup-file"),
 			}
-			return mcp.RunServer(ctx, serverConfig)
+			return runServer(ctx, serverConfig)
 		},
 	}
 }
@@ -1098,6 +1147,7 @@ func getIDCommand() *cli.Command {
 		},
 		Flags: []cli.Flag{
 			getAPIKeyFlag(),
+			getAPIFlag(),
 		},
 		Action: withClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
 			rawID := cmd.StringArg("id")
@@ -1128,35 +1178,46 @@ func getVersionCommand() *cli.Command {
 	}
 }
 
-func createClient(apiKeyFile string) (*workflowy.WorkflowyClient, error) {
-	option, err := workflowy.ResolveAPIKey(apiKeyFile, defaultAPIKeyFile)
-	if err != nil {
-		return nil, err
-	}
-	return workflowy.NewWorkflowyClient(option), nil
-}
-
 type ClientActionFunc func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error
 
 type ClientProvider func(ClientActionFunc) cli.ActionFunc
 
-func withClient(fn ClientActionFunc) cli.ActionFunc {
-	return func(ctx context.Context, cmd *cli.Command) error {
-		client, err := createClient(cmd.String("api-key-file"))
-		if err != nil {
-			return err
+type workflowyClientFactory func(workflowy.APIDeployment, ...genericclient.Option) (workflowy.Client, error)
+
+func createWorkflowyClient(deployment workflowy.APIDeployment, options ...genericclient.Option) (workflowy.Client, error) {
+	return workflowy.NewWorkflowyClient(deployment, options...)
+}
+
+func newClientProvider(factory workflowyClientFactory, allowBackupFallback bool) ClientProvider {
+	return func(fn ClientActionFunc) cli.ActionFunc {
+		return func(ctx context.Context, cmd *cli.Command) error {
+			deployment, err := workflowy.ParseAPIDeployment(cmd.String("api"))
+			if err != nil {
+				return err
+			}
+
+			option, err := workflowy.ResolveAPIKey(cmd.String("api-key-file"), defaultAPIKeyFile)
+			if err != nil {
+				if allowBackupFallback {
+					slog.Warn("cannot create API client -- using backup method", "error", err)
+					return fn(ctx, cmd, nil)
+				}
+				return err
+			}
+
+			client, err := factory(deployment, option)
+			if err != nil {
+				return err
+			}
+			return fn(ctx, cmd, client)
 		}
-		return fn(ctx, cmd, client)
 	}
 }
 
+func withClient(fn ClientActionFunc) cli.ActionFunc {
+	return newClientProvider(createWorkflowyClient, false)(fn)
+}
+
 func withOptionalClient(fn ClientActionFunc) cli.ActionFunc {
-	return func(ctx context.Context, cmd *cli.Command) error {
-		client, err := createClient(cmd.String("api-key-file"))
-		if err != nil {
-			slog.Warn("cannot create API client -- using backup method", "error", err)
-			return fn(ctx, cmd, nil)
-		}
-		return fn(ctx, cmd, client)
-	}
+	return newClientProvider(createWorkflowyClient, true)(fn)
 }

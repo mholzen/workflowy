@@ -6,9 +6,73 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 )
+
+func TestCommandsExposeAPIFlag(t *testing.T) {
+	commands := make(map[string]*cli.Command)
+	for _, command := range getCommands() {
+		commands[command.Name] = command
+		for _, subcommand := range command.Commands {
+			commands[command.Name+" "+subcommand.Name] = subcommand
+		}
+	}
+
+	requiredPaths := []string{
+		"get",
+		"list",
+		"create",
+		"update",
+		"move",
+		"delete",
+		"complete",
+		"uncomplete",
+		"targets",
+		"search",
+		"replace",
+		"transform",
+		"id",
+		"mcp",
+		"report count",
+		"report children",
+		"report created",
+		"report modified",
+		"report mirrors",
+	}
+
+	for _, path := range requiredPaths {
+		t.Run(path, func(t *testing.T) {
+			command := commands[path]
+			require.NotNil(t, command)
+
+			apiFlag := findStringFlag(command.Flags, "api")
+			require.NotNil(t, apiFlag, "%s must expose --api", path)
+			assert.Equal(t, string(workflowy.ProductionAPI), apiFlag.Value)
+		})
+	}
+}
+
+func TestCommandsWithoutAPIFlag(t *testing.T) {
+	commands := make(map[string]*cli.Command)
+	for _, command := range getCommands() {
+		commands[command.Name] = command
+	}
+
+	assert.Nil(t, findStringFlag(commands["version"].Flags, "api"))
+}
+
+func findStringFlag(flags []cli.Flag, name string) *cli.StringFlag {
+	for _, flag := range flags {
+		stringFlag, ok := flag.(*cli.StringFlag)
+		if ok && stringFlag.Name == name {
+			return stringFlag
+		}
+	}
+	return nil
+}
 
 func TestGetWriteFlags_IncludesAPIKeyFile(t *testing.T) {
 	flags := getWriteFlags()

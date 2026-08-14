@@ -13,6 +13,7 @@ Connect AI assistants like Claude, ChatGPT, and other MCP-compatible clients to 
   - [workflowy_list](#workflowy_list)
   - [workflowy_search](#workflowy_search)
   - [workflowy_targets](#workflowy_targets)
+  - [workflowy_id](#workflowy_id)
   - [workflowy_create](#workflowy_create)
   - [workflowy_update](#workflowy_update)
   - [workflowy_move](#workflowy_move)
@@ -27,6 +28,8 @@ Connect AI assistants like Claude, ChatGPT, and other MCP-compatible clients to 
   - [workflowy_report_modified](#workflowy_report_modified)
   - [workflowy_report_mirrors](#workflowy_report_mirrors)
 - [Exposure Modes](#exposure-modes)
+- [API Deployment](#api-deployment)
+- [Access Method](#access-method)
 - [Sandboxed Access](#sandboxed-access)
 - [Example Conversations](#example-conversations)
   - [Finding Information](#finding-information)
@@ -113,6 +116,9 @@ The server uses stdio transport. Start it with:
 
 ```bash
 workflowy mcp --expose=all
+
+# Make beta the server-wide default
+workflowy mcp --expose=all --api=beta
 ```
 
 Configure your MCP client to run this command and communicate via stdin/stdout.
@@ -138,6 +144,7 @@ Get a node and its descendants as a tree structure.
 | `include_ancestors` | boolean | Wrap result in ancestor path from root to target node (requires export or backup method) | `false` |
 | `ancestor_depth` | number | Include N levels of ancestors (-1 for all, 0 for none; requires export or backup method) | `0` |
 | `to_ancestor` | string | Include ancestors up to and including this node ID (requires export or backup method) | - |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method: get, export, or backup | auto |
 
 Only one ancestor parameter may be used at a time. When used, `include_ancestors` is equivalent to `ancestor_depth=-1`.
@@ -159,6 +166,7 @@ List descendants as a flat list.
 | `item_id` | string | Node ID or target name | root |
 | `depth` | number | Recursion depth (-1 for all) | `2` |
 | `include_empty_names` | boolean | Include empty-named items | `false` |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method: get, export, or backup | auto |
 
 **Example prompt:** "List all items in my inbox"
@@ -180,6 +188,7 @@ Search nodes by text or regex pattern. Completed nodes (and their descendants) a
 | `group_by` | string | Group results: `parent`, `path`, `tree`, `modified.<unit>`, `created.<unit>` | - |
 | `path_max_length` | number | Max chars per path segment when using `group_by=path` | `20` |
 | `order_by` | string | Sort by: `match`, `parent`, `path`, `modified`, `created` (prefix `+`/`-` for asc/desc) | - |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method: get, export, or backup | export |
 
 **Group-by units:** `year`, `month`, `day`, or a Go time format string.
@@ -199,6 +208,7 @@ List available shortcuts and system targets. Also returns write restriction info
 **Parameters:**
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method for resolving root names | auto |
 
 **Returns:**
@@ -206,6 +216,20 @@ List available shortcuts and system targets. Also returns write restriction info
 - `write_root`: (optional) Object with `id` and `name` of the write-restricted area
 
 **Example prompt:** "What shortcuts do I have in Workflowy?"
+
+---
+
+#### workflowy_id
+
+Resolve a short ID or target key to a full UUID using the selected deployment.
+
+**Parameters:**
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `id` | string | ID or target key to resolve | required |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
+
+**Example prompt:** "Resolve this Workflowy short ID using beta"
 
 ---
 
@@ -219,6 +243,7 @@ Generate a descendant count report showing where most content lives.
 | `item_id` | string | Root node for report | root |
 | `threshold` | number | Minimum ratio (0.0-1.0) | `0.01` |
 | `preserve_tags` | boolean | Keep HTML tags | `false` |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method: get, export, or backup | export |
 
 **Example prompt:** "Where is most of my content in Workflowy?"
@@ -235,6 +260,7 @@ Rank nodes by immediate children count.
 | `item_id` | string | Root node for report | root |
 | `top_n` | number | Number of results | `20` |
 | `preserve_tags` | boolean | Keep HTML tags | `false` |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method: get, export, or backup | export |
 
 **Example prompt:** "Which nodes have the most children?"
@@ -251,6 +277,7 @@ Rank nodes by creation date (oldest first).
 | `item_id` | string | Root node for report | root |
 | `top_n` | number | Number of results | `20` |
 | `preserve_tags` | boolean | Keep HTML tags | `false` |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method: get, export, or backup | export |
 
 **Example prompt:** "What are my oldest notes?"
@@ -267,6 +294,7 @@ Rank nodes by modification date (oldest first).
 | `item_id` | string | Root node for report | root |
 | `top_n` | number | Number of results | `20` |
 | `preserve_tags` | boolean | Keep HTML tags | `false` |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method: get, export, or backup | export |
 
 **Example prompt:** "Find notes I haven't touched in a while"
@@ -276,6 +304,8 @@ Rank nodes by modification date (oldest first).
 #### workflowy_report_mirrors
 
 Rank nodes by mirror count (most mirrored first). Uses backup file as mirror data is only available there.
+
+This backup-only tool intentionally has no `api` parameter and makes no API request.
 
 **Parameters:**
 | Parameter | Type | Description | Default |
@@ -303,6 +333,7 @@ Create a new node.
 | `note` | string | Note content | - |
 | `position` | string | `top` or `bottom` | `bottom` |
 | `layout_mode` | string | bullets, todo, h1, h2, h3 | `bullets` |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method for validation (writes use API) | auto |
 
 **Example prompts:**
@@ -322,6 +353,7 @@ Update an existing node.
 | `name` | string | New name | - |
 | `note` | string | New note | - |
 | `layout_mode` | string | bullets, todo, h1, h2, h3 | - |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method for validation (writes use API) | auto |
 
 **Example prompt:** "Update the note on that item to include today's date"
@@ -338,6 +370,7 @@ Move a node to a new parent.
 | `id` | string | Node ID to move | required |
 | `parent_id` | string | Destination parent ID or target | required |
 | `position` | string | `top` or `bottom` | `top` |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method for validation (writes use API) | auto |
 
 **Example prompts:**
@@ -354,6 +387,7 @@ Delete a node and its children.
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | `id` | string | Node ID to delete | required |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method for validation (writes use API) | auto |
 
 **Example prompt:** "Delete that completed task"
@@ -368,6 +402,7 @@ Mark a node as complete.
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | `item_id` | string | Node ID to complete | required |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method for validation (writes use API) | auto |
 
 **Example prompt:** "Mark that task as done"
@@ -382,6 +417,7 @@ Mark a node as incomplete.
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | `item_id` | string | Node ID to uncomplete | required |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method for validation (writes use API) | auto |
 
 **Example prompt:** "Uncheck that task"
@@ -401,6 +437,7 @@ Bulk find-and-replace text in node names.
 | `depth` | number | Traversal depth (-1 unlimited) | `-1` |
 | `ignore_case` | boolean | Case-insensitive | `false` |
 | `dry_run` | boolean | Preview without applying | `true` |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method for reading (writes use API) | export |
 
 **Example prompts:**
@@ -429,6 +466,7 @@ Transform node names and/or notes using built-in or shell transformations.
 | `note` | boolean | Transform node notes | `false` |
 | `dry_run` | boolean | Preview without applying | `true` |
 | `as_child` | boolean | Insert result as child | `false` |
+| `api` | string | Workflowy API deployment: `production` or `beta` | server default |
 | `method` | string | Access method for reading (writes use API) | export |
 
 **Example prompts:**
@@ -466,6 +504,29 @@ workflowy mcp --expose=get,list,search,create
 ```
 
 ---
+
+## API Deployment
+
+The server flag `--api=production|beta` establishes the default deployment. Production is the default when the flag is omitted. Every network-capable tool also accepts an optional `api` argument, with this precedence:
+
+```text
+tool api argument > server --api flag > production
+```
+
+For example, this call uses beta even when the server default is production:
+
+```json
+{"id": "None", "depth": 0, "method": "get", "api": "beta"}
+```
+
+`api` chooses the Workflowy deployment; `method` independently chooses the read and validation source. With `method=backup`, full UUIDs and unique 12-character short IDs resolve from the local tree. Target keys such as `inbox` require an API and therefore cannot be used as restriction roots in offline backup mode. Read-only backup calls remain offline, while writes still use the deployment selected by `api`.
+
+Export caches are isolated:
+
+- Production: `~/.workflowy/export-cache.json`
+- Beta: `~/.workflowy/export-cache-beta.json`
+
+`workflowy_report_mirrors` is the sole backup-only tool and intentionally does not expose `api`.
 
 ## Access Method
 
@@ -768,6 +829,14 @@ tail -f /tmp/workflowy-mcp.log
 ```bash
 workflowy mcp --log=debug --log-file=/tmp/workflowy-mcp.log
 ```
+
+At debug level, every Workflowy API request logs its HTTP method and path:
+
+```text
+DEBUG: http request (method='GET' path='/nodes/example')
+```
+
+HTTP debug logs never include the API key, authorization header, or request body.
 
 ---
 

@@ -187,14 +187,17 @@ func fetchFromBackup(backupFile string, itemID string, depth int, ancestorOpts a
 	if err != nil {
 		return nil, err
 	}
+	return fetchFromTree(items, itemID, depth, ancestorOpts)
+}
 
+func fetchFromTree(items []*workflowy.Item, itemID string, depth int, ancestorOpts ancestorOptions) (interface{}, error) {
 	if itemID != "None" {
 		if ancestorOpts.enabled {
 			found, ancestors := workflowy.FindItemWithAncestors(items, itemID)
 			if found == nil {
 				return nil, fmt.Errorf("item %s not found in backup", itemID)
 			}
-			ancestors, err = applyAncestorOptions(ancestors, ancestorOpts)
+			ancestors, err := applyAncestorOptions(ancestors, ancestorOpts)
 			if err != nil {
 				return nil, err
 			}

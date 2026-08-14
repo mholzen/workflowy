@@ -43,8 +43,11 @@ Get your API key at https://workflowy.com/api-key/
 ### Run Your First Command
 
 ```bash
-# Get the top-level nodes, and nodes two levels deep
-workflowy get
+# Get the top-level nodes from production (default)
+workflowy get --depth=1
+
+# Read from Workflowy's beta deployment
+workflowy get --depth=1 --api=beta
 
 # Generate a report showing where most of your nodes are
 workflowy report count | pbcopy   # paste directly into Workflowy!
@@ -59,6 +62,9 @@ Use `pbcopy` on macOS, `clip` on Windows, `wl-copy` on Linux, or `xclip` for X11
 
 ```bash
 claude mcp add --transport=stdio workflowy -- workflowy mcp --expose=all
+
+# Use beta as the MCP server default
+claude mcp add --transport=stdio workflowy-beta -- workflowy mcp --expose=all --api=beta
 ```
 
 Remove `—expose=all` to limit to read-only tools.
@@ -80,6 +86,8 @@ Add to your configuration file:
   }
 }
 ```
+
+Add `"--api=beta"` to `args` to make beta the server default.
 
 Restart Claude Desktop and start asking Claude to work with your Workflowy!
 
@@ -189,6 +197,12 @@ workflowy report modified --top-n 50
 workflowy report mirrors --top-n 20
 ```
 
+## API Deployment
+
+Use `--api=production|beta` to choose the Workflowy deployment. Production is the default; beta is opt-in. The beta API currently exposes mirror metadata such as `data.mirror.origin_id` that the production API does not expose.
+
+`--api` and `--method` are independent: `--api` chooses the deployment, while `--method=get|export|backup` chooses how data is read or validated. A command can read from a local backup and still use the selected API for writes, such as `workflowy report count --method=backup --upload --api=beta`.
+
 ## Data Access Methods
 
 Choose the best method for your use case:
@@ -200,6 +214,11 @@ Choose the best method for your use case:
 | `--method=backup` | Fastest | Stale | **Yes** | Bulk operations |
 
 *Cached after first fetch
+
+Export caches are isolated by deployment:
+
+- Production: `~/.workflowy/export-cache.json`
+- Beta: `~/.workflowy/export-cache-beta.json`
 
 ### Offline Mode with Dropbox Backup
 

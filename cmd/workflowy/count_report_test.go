@@ -85,6 +85,14 @@ func (m *MockClient) ListChildrenRecursiveWithDepth(ctx context.Context, itemID 
 	return nil, nil
 }
 
+func (m *MockClient) ListChildrenRecursiveWithOptions(ctx context.Context, itemID string, options workflowy.RecursiveFetchOptions) (*workflowy.RecursiveFetchResult, error) {
+	response, err := m.ListChildrenRecursiveWithDepth(ctx, itemID, options.Depth)
+	if err != nil {
+		return nil, err
+	}
+	return &workflowy.RecursiveFetchResult{Response: response}, nil
+}
+
 func (m *MockClient) UpdateNode(ctx context.Context, itemID string, req *workflowy.UpdateNodeRequest) (*workflowy.UpdateNodeResponse, error) {
 	return nil, nil
 }

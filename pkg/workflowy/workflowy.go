@@ -50,7 +50,7 @@ func SanitizeNodeID(id string) string {
 	if id == "" || id == "None" {
 		return id
 	}
-	id = strings.TrimPrefix(id, "https://workflowy.com/#/")
+	id = nodeIDFromURL(id)
 	var result strings.Builder
 	for _, r := range id {
 		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F') || r == '-' {
@@ -205,13 +205,37 @@ func ResolveAPIKey(apiKeyFile, defaultAPIKeyFile string) (client.Option, error) 
 // WorkflowyClient wraps the generic Client with Workflowy-specific methods
 type WorkflowyClient struct {
 	*client.Client
-	opts []client.Option
+	opts            []client.Option
+	exportCachePath string
+	deployment      APIDeployment
 }
 
 // NewWorkflowyClient creates a new Workflowy API client
-func NewWorkflowyClient(opts ...client.Option) *WorkflowyClient {
-	c := client.New("https://workflowy.com/api/v1", opts...)
-	return &WorkflowyClient{Client: c, opts: opts}
+func NewWorkflowyClient(deployment APIDeployment, opts ...client.Option) (*WorkflowyClient, error) {
+	baseURL, err := deployment.BaseURL()
+	if err != nil {
+		return nil, err
+	}
+
+	cacheFile, err := deployment.exportCacheFile()
+	if err != nil {
+		return nil, err
+	}
+
+	exportCachePath, err := cache.GetCachePath(cacheFile)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Debug("creating Workflowy client", "api", deployment, "base_url", baseURL, "export_cache_path", exportCachePath)
+	clientOptions := append([]client.Option(nil), opts...)
+	clientOptions = append(clientOptions, client.WithLogAttributes(slog.String("api", string(deployment))))
+	return &WorkflowyClient{
+		Client:          client.New(baseURL, clientOptions...),
+		opts:            opts,
+		exportCachePath: exportCachePath,
+		deployment:      deployment,
+	}, nil
 }
 
 // Item represents a Workflowy item with all its properties
@@ -331,70 +355,6 @@ func (wc *WorkflowyClient) ListChildren(ctx context.Context, itemID string) (*Li
 	}
 
 	return &resp, nil
-}
-
-// ListChildrenRecursive retrieves children recursively, building a complete tree
-// Use itemID "None" to get the entire outline tree
-// Uses default depth of 5 levels
-func (wc *WorkflowyClient) ListChildrenRecursive(ctx context.Context, itemID string) (*ListChildrenResponse, error) {
-	return wc.ListChildrenRecursiveWithDepth(ctx, itemID, 5)
-}
-
-// ListChildrenRecursiveWithDepth retrieves children recursively up to specified depth
-// Use itemID "None" to get the entire outline tree
-// depth parameter controls how many levels deep to fetch (0 = no children, 1 = direct children only, etc.)
-func (wc *WorkflowyClient) ListChildrenRecursiveWithDepth(ctx context.Context, itemID string, depth int) (*ListChildrenResponse, error) {
-	// If depth is 0, return empty response without making any API calls
-	if depth <= 0 {
-		return &ListChildrenResponse{Items: []*Item{}}, nil
-	}
-
-	resp, err := wc.ListChildren(ctx, itemID)
-	if err != nil {
-		return nil, err
-	}
-
-	// If depth > 1, recursively fetch children for each item
-	if depth > 1 {
-		for _, item := range resp.Items {
-			err := wc.fetchChildrenRecursively(ctx, item, depth-1)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	return resp, nil
-}
-
-// fetchChildrenRecursively is a helper function to recursively populate children
-// depth parameter controls how many more levels deep to fetch
-func (wc *WorkflowyClient) fetchChildrenRecursively(ctx context.Context, item *Item, depth int) error {
-	slog.Debug("fetching children recursively", "item_id", item.ID, "depth", depth)
-
-	// Stop recursion if depth is 0 or negative
-	if depth <= 0 {
-		return nil
-	}
-
-	childrenResp, err := wc.ListChildren(ctx, item.ID)
-	if err != nil {
-		return err
-	}
-
-	if len(childrenResp.Items) > 0 {
-		item.Children = childrenResp.Items
-
-		// Recursively fetch children for each child, reducing depth by 1
-		for _, child := range item.Children {
-			err := wc.fetchChildrenRecursively(ctx, child, depth-1)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
 }
 
 // CreateNode creates a new node in Workflowy
@@ -702,7 +662,7 @@ func sortItemsByPriorityRecursive(item *Item) {
 // forceRefresh bypasses cache and fetches fresh data
 func (wc *WorkflowyClient) ExportNodesWithCache(ctx context.Context, forceRefresh bool) (*ExportNodesResponse, error) {
 	// Try to read cache first
-	cachedData, err := cache.ReadExportCache()
+	cachedData, err := cache.ReadExportCache(wc.exportCachePath)
 	if err != nil {
 		slog.Warn("cannot read cache, will fetch from API", "error", err)
 	}
@@ -748,7 +708,7 @@ func (wc *WorkflowyClient) ExportNodesWithCache(ctx context.Context, forceRefres
 	}
 
 	// Write to cache
-	if err := cache.WriteExportCache(resp); err != nil {
+	if err := cache.WriteExportCache(wc.exportCachePath, resp); err != nil {
 		slog.Warn("cannot write cache (continuing anyway)", "error", err)
 	}
 

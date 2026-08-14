@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,6 +13,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNewWorkflowyClientForAPI(t *testing.T) {
+	homeDirectory := t.TempDir()
+	t.Setenv("HOME", homeDirectory)
+
+	productionClient, err := NewWorkflowyClient(ProductionAPI)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(homeDirectory, ".workflowy/export-cache.json"), productionClient.exportCachePath)
+
+	betaClient, err := NewWorkflowyClient(BetaAPI)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(homeDirectory, ".workflowy/export-cache-beta.json"), betaClient.exportCachePath)
+}
 
 func TestWorkflowyClient_GetItem(t *testing.T) {
 	tests := []struct {
@@ -231,6 +245,12 @@ func TestWorkflowyClient_ListChildrenRecursiveWithDepth(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify it's a GET request
 		assert.Equal(t, "GET", r.Method)
+		if r.URL.Path == "/nodes/root" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(GetItemResponse{Node: Item{ID: "root", Name: "Root"}})
+			return
+		}
 
 		// Extract parent_id from query string
 		parentID := r.URL.Query().Get("parent_id")
@@ -328,6 +348,10 @@ func TestWorkflowyClient_ListChildrenRecursive_DefaultDepth(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		if r.URL.Path == "/nodes/root" {
+			json.NewEncoder(w).Encode(GetItemResponse{Node: Item{ID: "root", Name: "Root"}})
+			return
+		}
 		json.NewEncoder(w).Encode(ListChildrenResponse{
 			Items: []*Item{
 				{ID: "child1", Name: "Child 1"},
@@ -538,4 +562,10 @@ func TestSanitizeNodeID(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestSanitizeNodeIDStripsBetaWorkflowyURL(t *testing.T) {
+	const nodeID = "12345678-1234-1234-1234-123456789abc"
+
+	assert.Equal(t, nodeID, SanitizeNodeID("https://beta.workflowy.com/#/"+nodeID))
 }

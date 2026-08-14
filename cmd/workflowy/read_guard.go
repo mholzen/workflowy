@@ -46,6 +46,20 @@ func NewReadGuard(ctx context.Context, client workflowy.Client, readRootID strin
 	return guard, nil
 }
 
+func newReadGuardFromTree(items []*workflowy.Item, readRootID string) (*ReadGuard, error) {
+	guard := &ReadGuard{readRootID: readRootID, tree: items}
+	if !workflowy.IsRestricted(readRootID) {
+		return guard, nil
+	}
+
+	resolvedID, err := workflowy.ResolveNodeIDFromTree(items, readRootID)
+	if err != nil {
+		return nil, fmt.Errorf("Cannot resolve read-root-id %q from backup: %w", readRootID, err)
+	}
+	guard.readRootID = resolvedID
+	return guard, nil
+}
+
 // IsRestricted returns true if read restrictions are in effect.
 func (g *ReadGuard) IsRestricted() bool {
 	return workflowy.IsRestricted(g.readRootID)

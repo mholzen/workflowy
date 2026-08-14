@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
 )
 
@@ -22,6 +23,7 @@ func getMethodFlags() []cli.Flag {
 			Usage: "Access method: get, export or backup\n\tDefaults to 'get' for depth 1-3, 'export' for depth 4+, 'backup' if no api key provided",
 		},
 		getAPIKeyFlag(),
+		getAPIFlag(),
 		&cli.StringFlag{
 			Name:  "backup-file",
 			Usage: "Path to backup file (default: latest in ~/Dropbox/Apps/Workflowy/Data)",
@@ -65,6 +67,7 @@ func getFetchFlags() []cli.Flag {
 func getWriteFlags(commandFlags ...cli.Flag) []cli.Flag {
 	flags := []cli.Flag{
 		getAPIKeyFlag(),
+		getAPIFlag(),
 		&cli.StringFlag{
 			Name:  "name",
 			Usage: "Update node name/title",
@@ -133,6 +136,7 @@ func getMirrorReportFlags() []cli.Flag {
 			Usage: "Path to backup file (default: latest in ~/Dropbox/Apps/Workflowy/Data)",
 		},
 		getAPIKeyFlag(),
+		getAPIFlag(),
 	}
 	flags = append(flags, getIdFlag("ID to start from (default: root)"))
 	flags = append(flags, getReportOutputFlags()...)
@@ -279,6 +283,14 @@ func getAPIKeyFlag() *cli.StringFlag {
 	}
 }
 
+func getAPIFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:  "api",
+		Value: string(workflowy.ProductionAPI),
+		Usage: "Workflowy API deployment: production or beta",
+	}
+}
+
 func getParentID(cmd *cli.Command) string {
 	return cmd.String("parent-id")
 }
@@ -310,4 +322,3 @@ func getReadRootIdFlag() cli.Flag {
 func getReadRootID(cmd *cli.Command) string {
 	return cmd.String("read-root-id")
 }
-

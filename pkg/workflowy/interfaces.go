@@ -7,6 +7,7 @@ type Client interface {
 	ListChildren(ctx context.Context, itemID string) (*ListChildrenResponse, error)
 	ListChildrenRecursive(ctx context.Context, itemID string) (*ListChildrenResponse, error)
 	ListChildrenRecursiveWithDepth(ctx context.Context, itemID string, depth int) (*ListChildrenResponse, error)
+	ListChildrenRecursiveWithOptions(ctx context.Context, itemID string, options RecursiveFetchOptions) (*RecursiveFetchResult, error)
 	CreateNode(ctx context.Context, req *CreateNodeRequest) (*CreateNodeResponse, error)
 	UpdateNode(ctx context.Context, itemID string, req *UpdateNodeRequest) (*UpdateNodeResponse, error)
 	MoveNode(ctx context.Context, itemID string, req *MoveNodeRequest) (*MoveNodeResponse, error)
