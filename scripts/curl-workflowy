@@ -24,8 +24,6 @@ if [ -z "$api_key" ]; then
 	exit 1
 fi
 
-base_url="https://beta.workflowy.com/api/v1"
+base_url="https://workflowy.com/api/v1"
 
-set -x
-
-exec curl -sS -G -H "Authorization: Bearer $api_key" "$@" "$base_url$path"
+exec curl -sS -H "Authorization: Bearer $api_key" "$@" "$base_url$path"
