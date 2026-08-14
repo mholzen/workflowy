@@ -19,6 +19,10 @@ func (client *getCommandClient) ListChildrenRecursiveWithDepth(context.Context, 
 	return &workflowy.ListChildrenResponse{Items: []*workflowy.Item{}}, nil
 }
 
+func (client *getCommandClient) ListChildrenRecursiveWithOptions(context.Context, string, workflowy.RecursiveFetchOptions) (*workflowy.RecursiveFetchResult, error) {
+	return &workflowy.RecursiveFetchResult{Response: &workflowy.ListChildrenResponse{Items: []*workflowy.Item{}}}, nil
+}
+
 func TestClientProviderSelectsAPI(t *testing.T) {
 	t.Setenv("WORKFLOWY_API_KEY", "test-key")
 

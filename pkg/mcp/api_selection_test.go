@@ -39,6 +39,11 @@ func (client *recordingClient) ListChildrenRecursiveWithDepth(context.Context, s
 	return &workflowy.ListChildrenResponse{Items: []*workflowy.Item{}}, nil
 }
 
+func (client *recordingClient) ListChildrenRecursiveWithOptions(context.Context, string, workflowy.RecursiveFetchOptions) (*workflowy.RecursiveFetchResult, error) {
+	client.record()
+	return &workflowy.RecursiveFetchResult{Response: &workflowy.ListChildrenResponse{Items: []*workflowy.Item{}}}, nil
+}
+
 func (client *recordingClient) CreateNode(context.Context, *workflowy.CreateNodeRequest) (*workflowy.CreateNodeResponse, error) {
 	client.record()
 	return &workflowy.CreateNodeResponse{ItemID: "created"}, nil

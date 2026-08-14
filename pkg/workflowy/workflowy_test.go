@@ -245,6 +245,12 @@ func TestWorkflowyClient_ListChildrenRecursiveWithDepth(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify it's a GET request
 		assert.Equal(t, "GET", r.Method)
+		if r.URL.Path == "/nodes/root" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(GetItemResponse{Node: Item{ID: "root", Name: "Root"}})
+			return
+		}
 
 		// Extract parent_id from query string
 		parentID := r.URL.Query().Get("parent_id")
@@ -342,6 +348,10 @@ func TestWorkflowyClient_ListChildrenRecursive_DefaultDepth(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		if r.URL.Path == "/nodes/root" {
+			json.NewEncoder(w).Encode(GetItemResponse{Node: Item{ID: "root", Name: "Root"}})
+			return
+		}
 		json.NewEncoder(w).Encode(ListChildrenResponse{
 			Items: []*Item{
 				{ID: "child1", Name: "Child 1"},

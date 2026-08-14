@@ -42,6 +42,10 @@ func (client *networkRejectingClient) ExportNodesWithCache(context.Context, bool
 	return nil, client.rejectNetworkCall()
 }
 
+func (client *networkRejectingClient) ListChildrenRecursiveWithOptions(context.Context, string, workflowy.RecursiveFetchOptions) (*workflowy.RecursiveFetchResult, error) {
+	return nil, client.rejectNetworkCall()
+}
+
 func (client *networkRejectingClient) DeleteNode(context.Context, string) (*workflowy.UpdateNodeResponse, error) {
 	client.mutations++
 	return &workflowy.UpdateNodeResponse{}, nil

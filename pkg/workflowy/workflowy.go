@@ -207,6 +207,7 @@ type WorkflowyClient struct {
 	*client.Client
 	opts            []client.Option
 	exportCachePath string
+	deployment      APIDeployment
 }
 
 // NewWorkflowyClient creates a new Workflowy API client
@@ -233,6 +234,7 @@ func NewWorkflowyClient(deployment APIDeployment, opts ...client.Option) (*Workf
 		Client:          client.New(baseURL, clientOptions...),
 		opts:            opts,
 		exportCachePath: exportCachePath,
+		deployment:      deployment,
 	}, nil
 }
 
@@ -353,70 +355,6 @@ func (wc *WorkflowyClient) ListChildren(ctx context.Context, itemID string) (*Li
 	}
 
 	return &resp, nil
-}
-
-// ListChildrenRecursive retrieves children recursively, building a complete tree
-// Use itemID "None" to get the entire outline tree
-// Uses default depth of 5 levels
-func (wc *WorkflowyClient) ListChildrenRecursive(ctx context.Context, itemID string) (*ListChildrenResponse, error) {
-	return wc.ListChildrenRecursiveWithDepth(ctx, itemID, 5)
-}
-
-// ListChildrenRecursiveWithDepth retrieves children recursively up to specified depth
-// Use itemID "None" to get the entire outline tree
-// depth parameter controls how many levels deep to fetch (0 = no children, 1 = direct children only, etc.)
-func (wc *WorkflowyClient) ListChildrenRecursiveWithDepth(ctx context.Context, itemID string, depth int) (*ListChildrenResponse, error) {
-	// If depth is 0, return empty response without making any API calls
-	if depth <= 0 {
-		return &ListChildrenResponse{Items: []*Item{}}, nil
-	}
-
-	resp, err := wc.ListChildren(ctx, itemID)
-	if err != nil {
-		return nil, err
-	}
-
-	// If depth > 1, recursively fetch children for each item
-	if depth > 1 {
-		for _, item := range resp.Items {
-			err := wc.fetchChildrenRecursively(ctx, item, depth-1)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	return resp, nil
-}
-
-// fetchChildrenRecursively is a helper function to recursively populate children
-// depth parameter controls how many more levels deep to fetch
-func (wc *WorkflowyClient) fetchChildrenRecursively(ctx context.Context, item *Item, depth int) error {
-	slog.Debug("fetching children recursively", "item_id", item.ID, "depth", depth)
-
-	// Stop recursion if depth is 0 or negative
-	if depth <= 0 {
-		return nil
-	}
-
-	childrenResp, err := wc.ListChildren(ctx, item.ID)
-	if err != nil {
-		return err
-	}
-
-	if len(childrenResp.Items) > 0 {
-		item.Children = childrenResp.Items
-
-		// Recursively fetch children for each child, reducing depth by 1
-		for _, child := range item.Children {
-			err := wc.fetchChildrenRecursively(ctx, child, depth-1)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
 }
 
 // CreateNode creates a new node in Workflowy
