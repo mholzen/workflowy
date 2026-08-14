@@ -1,0 +1,31 @@
+#!/bin/sh
+
+set -eu
+
+if [ "$#" -lt 1 ]; then
+	echo "usage: $0 PATH [curl args...]" >&2
+	exit 1
+fi
+
+path=$1
+shift
+
+api_key_file="${HOME}/.workflowy/api.key"
+
+if [ ! -f "$api_key_file" ]; then
+	echo "api key file not found: $api_key_file" >&2
+	exit 1
+fi
+
+api_key=$(tr -d '\r\n' < "$api_key_file")
+
+if [ -z "$api_key" ]; then
+	echo "api key file is empty: $api_key_file" >&2
+	exit 1
+fi
+
+base_url="https://beta.workflowy.com/api/v1"
+
+set -x
+
+exec curl -sS -G -H "Authorization: Bearer $api_key" "$@" "$base_url$path"
