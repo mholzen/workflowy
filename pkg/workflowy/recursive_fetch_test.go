@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -47,6 +48,23 @@ func TestRecursiveFetchNilRootRetrievesMirrorBeforeDisabledTraversal(t *testing.
 	require.NoError(t, err)
 	assert.Empty(t, result.Response.Items)
 	assert.Equal(t, []string{"/nodes/mirror"}, requests.snapshot())
+}
+
+func TestRecursiveFetchNilRootRetrievesNodeAtDepthZero(t *testing.T) {
+	root := testItem("root")
+	client, requests := newRecursiveFetchTestClient(t, func(t *testing.T, request *http.Request) interface{} {
+		require.Equal(t, "/nodes/root", request.URL.RequestURI())
+		return GetItemResponse{Node: *root}
+	})
+
+	result, err := client.ListChildrenRecursiveWithOptions(context.Background(), root.ID, RecursiveFetchOptions{
+		Depth:          0,
+		ResolveMirrors: true,
+		Operation:      "get",
+	})
+	require.NoError(t, err)
+	assert.Empty(t, result.Response.Items)
+	assert.Equal(t, []string{"/nodes/root"}, requests.snapshot())
 }
 
 func TestRecursiveFetchRejectsMismatchedRootItem(t *testing.T) {
@@ -188,6 +206,24 @@ func TestRecursiveFetchUsesMetadataForBothDeployments(t *testing.T) {
 	}
 }
 
+func TestRecursiveFetchTreatsEmptyOriginAsMissing(t *testing.T) {
+	mirror := testMirror("mirror", "")
+	client, requests := newRecursiveFetchTestClient(t, func(t *testing.T, request *http.Request) interface{} {
+		require.Equal(t, "/nodes?parent_id=mirror", request.URL.RequestURI())
+		return ListChildrenResponse{}
+	})
+
+	result, err := client.ListChildrenRecursiveWithOptions(context.Background(), mirror.ID, RecursiveFetchOptions{
+		Depth:          1,
+		ResolveMirrors: true,
+		Operation:      "get",
+		RootItem:       mirror,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Summary.MissingOrigin)
+	assert.Equal(t, []string{"/nodes?parent_id=mirror"}, requests.snapshot())
+}
+
 func TestRecursiveFetchReturnsResolutionSummaryAndLogsOneTraversalSummary(t *testing.T) {
 	logs := captureResolvedTreeLogs(t, slog.LevelDebug)
 	success := testMirror("success", "origin")
@@ -213,11 +249,39 @@ func TestRecursiveFetchReturnsResolutionSummaryAndLogsOneTraversalSummary(t *tes
 	})
 	require.NoError(t, err)
 	assert.Equal(t, MirrorResolutionSummary{Resolved: 1, MalformedMetadata: 1}, result.Summary)
-	assert.Len(t, logs.withMessage("Workflowy recursive mirror traversal completed"), 1)
+	completion := logs.requireOne(t, "Workflowy recursive mirror traversal completed")
+	assert.Equal(t, int64(2), completion.attrs["visited_occurrences"])
+	assert.Equal(t, int64(2), completion.attrs["retained_occurrences"])
+	assert.Equal(t, int64(1), completion.attrs["resolved"])
+	assert.Equal(t, int64(1), completion.attrs["malformed_metadata"])
 	malformedLog := logs.requireOne(t, "Workflowy mirror metadata is malformed; using API children")
 	assert.Equal(t, "malformed", malformedLog.attrs["mirror_id"])
 	assert.Equal(t, "list", malformedLog.attrs["operation"])
 	assert.Len(t, logs.withMessage(result.Summary.ThresholdWarning("list", "Workflowy API")), 1)
+}
+
+func TestRecursiveFetchDoesNotWarnBelowFailureThreshold(t *testing.T) {
+	logs := captureResolvedTreeLogs(t, slog.LevelDebug)
+	items := []*Item{
+		testMirror("success-one", "origin-one"),
+		testMirror("success-two", "origin-two"),
+		{ID: "malformed", Data: map[string]interface{}{"mirror": map[string]interface{}{"origin_id": 3}}},
+	}
+	client, _ := newRecursiveFetchTestClient(t, func(t *testing.T, request *http.Request) interface{} {
+		if request.URL.Query().Get("parent_id") == "None" {
+			return ListChildrenResponse{Items: items}
+		}
+		return ListChildrenResponse{}
+	})
+
+	result, err := client.ListChildrenRecursiveWithOptions(context.Background(), "None", RecursiveFetchOptions{
+		Depth:          2,
+		ResolveMirrors: true,
+		Operation:      "list",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, MirrorResolutionSummary{Resolved: 2, MalformedMetadata: 1}, result.Summary)
+	assert.Empty(t, logs.withMessagePrefix("Mirror resolution failures reached"))
 }
 
 func TestRecursiveFetchLogsContextualCycle(t *testing.T) {
@@ -238,6 +302,41 @@ func TestRecursiveFetchLogsContextualCycle(t *testing.T) {
 	assert.Equal(t, "cycle", cycleLog.attrs["mirror_id"])
 	assert.Equal(t, "origin", cycleLog.attrs["origin_id"])
 	assert.Equal(t, "entry/cycle", cycleLog.attrs["path"])
+}
+
+func TestRecursiveFetchWrapsNetworkErrorsWithContext(t *testing.T) {
+	tests := []struct {
+		name     string
+		rootItem *Item
+		failPath string
+	}{
+		{name: "root retrieval", failPath: "/nodes/root"},
+		{name: "child listing", rootItem: testItem("root"), failPath: "/nodes?parent_id=root"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				assert.Equal(t, test.failPath, request.URL.RequestURI())
+				http.Error(writer, "upstream failure", http.StatusBadGateway)
+			}))
+			defer server.Close()
+			client := &WorkflowyClient{Client: workflowyclient.New(server.URL)}
+
+			result, err := client.ListChildrenRecursiveWithOptions(context.Background(), "root", RecursiveFetchOptions{
+				Depth:          1,
+				ResolveMirrors: true,
+				Operation:      "get",
+				RootItem:       test.rootItem,
+			})
+
+			assert.Nil(t, result)
+			require.Error(t, err)
+			assert.True(t, strings.HasPrefix(err.Error(), `Cannot recursively fetch Workflowy node "root"`))
+			assert.ErrorContains(t, err, "Workflowy API")
+			assert.ErrorContains(t, err, "502")
+		})
+	}
 }
 
 type synchronizedRequests struct {

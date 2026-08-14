@@ -32,9 +32,6 @@ type resolutionTracker struct {
 	startedAt           time.Time
 	debugEnabled        bool
 	summary             MirrorResolutionSummary
-	seenEvents          map[string]struct{}
-	seenOccurrences     map[string]struct{}
-	retainedIdentities  map[string]struct{}
 	cycles              map[string]*cycleDiagnostic
 	visitedOccurrences  int
 	retainedOccurrences int
@@ -84,17 +81,14 @@ func readTraversalMemoryStats() traversalMemoryStats {
 
 func newResolutionTracker(tree *ResolvedTree, readScopeID, targetID string, options ResolveOptions) *resolutionTracker {
 	tracker := &resolutionTracker{
-		tree:               tree,
-		options:            options,
-		readScopeID:        readScopeID,
-		targetID:           targetID,
-		startedAt:          time.Now(),
-		debugEnabled:       tree.logger.Enabled(context.Background(), slog.LevelDebug),
-		seenEvents:         make(map[string]struct{}),
-		seenOccurrences:    make(map[string]struct{}),
-		retainedIdentities: make(map[string]struct{}),
-		cycles:             make(map[string]*cycleDiagnostic),
-		nextProgress:       traversalProgressStart,
+		tree:         tree,
+		options:      options,
+		readScopeID:  readScopeID,
+		targetID:     targetID,
+		startedAt:    time.Now(),
+		debugEnabled: tree.logger.Enabled(context.Background(), slog.LevelDebug),
+		cycles:       make(map[string]*cycleDiagnostic),
+		nextProgress: traversalProgressStart,
 	}
 	if tracker.debugEnabled {
 		tracker.logWithMemory(slog.LevelDebug, "Workflowy mirror traversal started")
@@ -103,11 +97,6 @@ func newResolutionTracker(tree *ResolvedTree, readScopeID, targetID string, opti
 }
 
 func (tracker *resolutionTracker) observe(selection nodeSelection) {
-	identity := selection.occurrence.Identity()
-	if _, exists := tracker.seenOccurrences[identity]; exists {
-		return
-	}
-	tracker.seenOccurrences[identity] = struct{}{}
 	tracker.visitedOccurrences++
 	tracker.currentPathDepth = len(selection.occurrence.Ancestors) + 1
 	if tracker.currentPathDepth > tracker.maximumPathDepth {
@@ -119,28 +108,17 @@ func (tracker *resolutionTracker) observe(selection nodeSelection) {
 	}
 }
 
-func (tracker *resolutionTracker) retain(selection nodeSelection) {
-	identity := selection.occurrence.Identity()
-	if _, exists := tracker.retainedIdentities[identity]; exists {
-		return
-	}
-	tracker.retainedIdentities[identity] = struct{}{}
+func (tracker *resolutionTracker) retain() {
 	tracker.retainedOccurrences++
 }
 
 func (tracker *resolutionTracker) record(kind string, selection nodeSelection, reference MirrorReference) {
-	identity := selection.occurrence.Identity()
-	eventKey := kind + "\x00" + identity
-	if _, exists := tracker.seenEvents[eventKey]; exists {
-		return
-	}
-	tracker.seenEvents[eventKey] = struct{}{}
-
 	switch kind {
 	case "resolved":
 		tracker.summary.Resolved++
 	case "missing":
 		tracker.summary.MissingOrigin++
+		identity := selection.occurrence.Identity()
 		tracker.tree.logger.Warn(
 			"Workflowy mirror origin is missing; using source children",
 			"mirror_id", selection.occurrence.Item.ID,
@@ -151,6 +129,7 @@ func (tracker *resolutionTracker) record(kind string, selection nodeSelection, r
 		)
 	case "malformed":
 		tracker.summary.MalformedMetadata++
+		identity := selection.occurrence.Identity()
 		tracker.tree.logger.Warn(
 			"Workflowy mirror metadata is malformed; using source children",
 			"mirror_id", selection.occurrence.Item.ID,
@@ -162,6 +141,7 @@ func (tracker *resolutionTracker) record(kind string, selection nodeSelection, r
 		)
 	case "cycle":
 		tracker.summary.Cycles++
+		identity := selection.occurrence.Identity()
 		key := selection.occurrence.Item.ID + "\x00" + reference.OriginID
 		diagnostic := tracker.cycles[key]
 		if diagnostic == nil {

@@ -109,6 +109,44 @@ func TestResolvedTreeVisitDoesNotGloballySuppressIndependentOccurrences(t *testi
 	assert.Equal(t, 3, visits)
 }
 
+func TestResolvedTreeVisitAllowsLaterPathWithDifferentCycleBoundary(t *testing.T) {
+	backToRoot := testMirror("back-to-root", "root")
+	intermediate := testItem("intermediate", backToRoot)
+	root := testItem("root", intermediate)
+	entry := testMirror("entry", intermediate.ID)
+	tree := NewResolvedTree([]*Item{root, entry}, "test export")
+
+	var identities []string
+	summary, err := tree.Visit("None", "None", resolvedFetchOptions(-1), func(occurrence NodeOccurrence) (OccurrenceVisitResult, error) {
+		identities = append(identities, occurrence.Identity())
+		return OccurrenceVisitResult{}, nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, summary.Cycles)
+	assert.Contains(t, identities, "root/intermediate/back-to-root")
+	assert.NotContains(t, identities, "root/intermediate/back-to-root/intermediate")
+	assert.Contains(t, identities, "entry/back-to-root/intermediate")
+	assert.Contains(t, identities, "entry/back-to-root/intermediate/back-to-root")
+}
+
+func TestResolvedTreeVisitStopsNestedMirrorCycle(t *testing.T) {
+	backToFirst := testMirror("back-to-first", "first")
+	second := testItem("second", backToFirst)
+	toSecond := testMirror("to-second", second.ID)
+	first := testItem("first", toSecond)
+	tree := NewResolvedTree([]*Item{first, second}, "test backup")
+
+	var identities []string
+	summary, err := tree.Visit("first", "None", resolvedFetchOptions(-1), func(occurrence NodeOccurrence) (OccurrenceVisitResult, error) {
+		identities = append(identities, occurrence.Identity())
+		return OccurrenceVisitResult{}, nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, summary.Resolved)
+	assert.Equal(t, 1, summary.Cycles)
+	assert.Equal(t, []string{"first", "first/to-second", "first/to-second/back-to-first"}, identities)
+}
+
 func TestResolvedTreeVisitStopsOnVisitorErrorWithContext(t *testing.T) {
 	tree := NewResolvedTree([]*Item{testItem("root", testItem("child"))}, "test export")
 	want := errors.New("matcher failed")

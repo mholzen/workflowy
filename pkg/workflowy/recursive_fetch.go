@@ -56,11 +56,11 @@ func (wc *WorkflowyClient) ListChildrenRecursiveWithOptions(
 
 	tracker := newRecursiveFetchTracker(wc.recursiveSourceLabel(), itemID, options)
 	defer tracker.finish()
-	if options.Depth <= 0 {
-		return &RecursiveFetchResult{Response: &ListChildrenResponse{}, Summary: tracker.summary}, nil
-	}
 
 	if itemID == "None" {
+		if options.Depth <= 0 {
+			return &RecursiveFetchResult{Response: &ListChildrenResponse{}, Summary: tracker.summary}, nil
+		}
 		response, err := wc.ListChildren(ctx, itemID)
 		if err != nil {
 			return nil, recursiveFetchError(itemID, options.Operation, tracker.source, err)
@@ -69,7 +69,7 @@ func (wc *WorkflowyClient) ListChildrenRecursiveWithOptions(
 			occurrencePath := []string{item.ID}
 			activeIDs := []string{item.ID}
 			tracker.observe(occurrencePath)
-			tracker.retain(occurrencePath)
+			tracker.retain()
 			if options.Depth > 1 {
 				if err := wc.populateRecursiveChildren(ctx, item, options.Depth-1, options, occurrencePath, activeIDs, tracker); err != nil {
 					return nil, err
@@ -97,6 +97,9 @@ func (wc *WorkflowyClient) ListChildrenRecursiveWithOptions(
 	occurrencePath := []string{root.ID}
 	activeIDs := []string{root.ID}
 	tracker.observe(occurrencePath)
+	if options.Depth <= 0 {
+		return &RecursiveFetchResult{Response: &ListChildrenResponse{}, Summary: tracker.summary}, nil
+	}
 	response, err := wc.fetchRecursiveChildren(ctx, root, options.Depth, options, occurrencePath, activeIDs, tracker)
 	if err != nil {
 		return nil, err
@@ -143,11 +146,15 @@ func (wc *WorkflowyClient) fetchRecursiveChildren(
 		case MirrorReferenceMalformed:
 			tracker.recordMalformed(item, reference, occurrencePath)
 		case MirrorReferenceWithOrigin:
+			if reference.OriginID == "" {
+				tracker.recordMissing(item, occurrencePath)
+				break
+			}
 			if containsString(activeIDs, reference.OriginID) {
 				tracker.recordCycle(item, reference, occurrencePath)
 				return &ListChildrenResponse{}, nil
 			}
-			tracker.recordResolved(occurrencePath)
+			tracker.recordResolved()
 			activeIDs = append(activeIDs, reference.OriginID)
 		}
 	}
@@ -160,7 +167,7 @@ func (wc *WorkflowyClient) fetchRecursiveChildren(
 		childOccurrencePath := append(occurrencePath, child.ID)
 		childActiveIDs := append(activeIDs, child.ID)
 		tracker.observe(childOccurrencePath)
-		tracker.retain(childOccurrencePath)
+		tracker.retain()
 		if depth > 1 {
 			if err := wc.populateRecursiveChildren(ctx, child, depth-1, options, childOccurrencePath, childActiveIDs, tracker); err != nil {
 				return nil, err
@@ -196,8 +203,6 @@ type recursiveFetchTracker struct {
 	debugEnabled        bool
 	summary             MirrorResolutionSummary
 	cycles              map[string]*cycleDiagnostic
-	visited             map[string]struct{}
-	retained            map[string]struct{}
 	visitedOccurrences  int
 	retainedOccurrences int
 	currentPathDepth    int
@@ -215,8 +220,6 @@ func newRecursiveFetchTracker(source, targetID string, options RecursiveFetchOpt
 		startedAt:    time.Now(),
 		debugEnabled: logger.Enabled(context.Background(), slog.LevelDebug),
 		cycles:       make(map[string]*cycleDiagnostic),
-		visited:      make(map[string]struct{}),
-		retained:     make(map[string]struct{}),
 		nextProgress: traversalProgressStart,
 	}
 	if tracker.debugEnabled {
@@ -226,11 +229,6 @@ func newRecursiveFetchTracker(source, targetID string, options RecursiveFetchOpt
 }
 
 func (tracker *recursiveFetchTracker) observe(path []string) {
-	identity := strings.Join(path, "/")
-	if _, exists := tracker.visited[identity]; exists {
-		return
-	}
-	tracker.visited[identity] = struct{}{}
 	tracker.visitedOccurrences++
 	tracker.currentPathDepth = len(path)
 	if len(path) > tracker.maximumPathDepth {
@@ -242,18 +240,24 @@ func (tracker *recursiveFetchTracker) observe(path []string) {
 	}
 }
 
-func (tracker *recursiveFetchTracker) retain(path []string) {
-	identity := strings.Join(path, "/")
-	if _, exists := tracker.retained[identity]; exists {
-		return
-	}
-	tracker.retained[identity] = struct{}{}
+func (tracker *recursiveFetchTracker) retain() {
 	tracker.retainedOccurrences++
 }
 
-func (tracker *recursiveFetchTracker) recordResolved(path []string) {
+func (tracker *recursiveFetchTracker) recordResolved() {
 	tracker.summary.Resolved++
-	tracker.observe(path)
+}
+
+func (tracker *recursiveFetchTracker) recordMissing(item *Item, path []string) {
+	tracker.summary.MissingOrigin++
+	tracker.logger.Warn(
+		"Workflowy mirror origin is empty; using API children",
+		"mirror_id", item.ID,
+		"origin_id", "",
+		"path", strings.Join(path, "/"),
+		"source", tracker.source,
+		"operation", tracker.options.Operation,
+	)
 }
 
 func (tracker *recursiveFetchTracker) recordMalformed(item *Item, reference MirrorReference, path []string) {

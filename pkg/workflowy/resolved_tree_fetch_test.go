@@ -119,6 +119,17 @@ func TestResolvedTreeFetchDoesNotTraverseUnrequestedCycles(t *testing.T) {
 	assert.Zero(t, rootResult.Summary.Cycles)
 }
 
+func TestResolvedTreeFetchTreatsEmptyOriginAsMissing(t *testing.T) {
+	sourceChild := testItem("source-child")
+	mirror := testMirror("mirror", "", sourceChild)
+	tree := NewResolvedTree([]*Item{mirror}, "test export")
+
+	result, err := tree.Fetch("None", mirror.ID, resolvedFetchOptions(1))
+	require.NoError(t, err)
+	assert.Equal(t, []string{sourceChild.ID}, itemIDs(result.Item.Children))
+	assert.Equal(t, 1, result.Summary.MissingOrigin)
+}
+
 func TestResolvedTreeFetchPrefersReachableOriginalOccurrence(t *testing.T) {
 	target := testItem("target")
 	origin := testItem("origin", target)

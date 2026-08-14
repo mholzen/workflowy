@@ -3,7 +3,9 @@ package workflowy
 import (
 	"context"
 	"log/slog"
+	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -119,6 +121,20 @@ func TestResolvedTreeDoesNotReadMemoryStatsWhenDebugLoggingIsDisabled(t *testing
 	assert.Zero(t, reads)
 }
 
+func TestResolvedTreeLogsDuplicateSourceIDs(t *testing.T) {
+	logs := captureResolvedTreeLogs(t, slog.LevelDebug)
+	NewResolvedTree([]*Item{
+		testItem("first-parent", testItem("duplicate")),
+		testItem("second-parent", testItem("duplicate")),
+	}, "test export")
+
+	record := logs.requireOne(t, "Cannot index duplicate Workflowy node ID")
+	assert.Equal(t, "duplicate", record.attrs["node_id"])
+	assert.Equal(t, "test export", record.attrs["source"])
+	assert.Equal(t, "first-parent", record.attrs["first_parent_id"])
+	assert.Equal(t, "second-parent", record.attrs["duplicate_parent_id"])
+}
+
 func TestResolvedTreeLogsMirrorTargetWithoutDoubleCounting(t *testing.T) {
 	logs := captureResolvedTreeLogs(t, slog.LevelDebug)
 	child := testItem("child")
@@ -134,6 +150,22 @@ func TestResolvedTreeLogsMirrorTargetWithoutDoubleCounting(t *testing.T) {
 	assert.Equal(t, int64(2), completion.attrs["visited_occurrences"])
 	assert.Equal(t, int64(2), completion.attrs["retained_occurrences"])
 	assert.Equal(t, int64(1), completion.attrs["resolved"])
+}
+
+func TestTraversalTrackersRetainOnlyConsolidatedCycleState(t *testing.T) {
+	assert.Equal(t, []string{"cycles"}, mapFieldNames(reflect.TypeOf(resolutionTracker{})))
+	assert.Equal(t, []string{"cycles"}, mapFieldNames(reflect.TypeOf(recursiveFetchTracker{})))
+}
+
+func mapFieldNames(structType reflect.Type) []string {
+	fields := make([]string, 0)
+	for index := 0; index < structType.NumField(); index++ {
+		field := structType.Field(index)
+		if field.Type.Kind() == reflect.Map {
+			fields = append(fields, field.Name)
+		}
+	}
+	return fields
 }
 
 func assertTraversalContext(t *testing.T, record capturedLogRecord, operation, source, scope, target string, depth int64) {
@@ -205,6 +237,18 @@ func (logs *capturedLogs) withMessage(message string) []capturedLogRecord {
 	matching := make([]capturedLogRecord, 0)
 	for _, record := range logs.records {
 		if record.message == message {
+			matching = append(matching, record)
+		}
+	}
+	return matching
+}
+
+func (logs *capturedLogs) withMessagePrefix(prefix string) []capturedLogRecord {
+	logs.mu.Lock()
+	defer logs.mu.Unlock()
+	matching := make([]capturedLogRecord, 0)
+	for _, record := range logs.records {
+		if strings.HasPrefix(record.message, prefix) {
 			matching = append(matching, record)
 		}
 	}

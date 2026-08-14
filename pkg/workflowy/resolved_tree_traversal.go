@@ -8,6 +8,7 @@ import (
 type nodeSelection struct {
 	occurrence NodeOccurrence
 	activeIDs  []string
+	observed   bool
 }
 
 func (occurrence NodeOccurrence) Identity() string {
@@ -45,7 +46,7 @@ func (tree *ResolvedTree) preferredSelection(
 	options ResolveOptions,
 	tracker *resolutionTracker,
 ) *nodeSelection {
-	if original := tree.reachableOriginalSelection(scope, readScopeID, targetID, options, tracker); original != nil {
+	if original := tree.reachableOriginalSelection(scope, readScopeID, targetID, options); original != nil {
 		return original
 	}
 
@@ -62,7 +63,6 @@ func (tree *ResolvedTree) reachableOriginalSelection(
 	readScopeID string,
 	targetID string,
 	options ResolveOptions,
-	tracker *resolutionTracker,
 ) *nodeSelection {
 	targetNode := tree.index[targetID]
 	if targetNode == nil {
@@ -98,11 +98,9 @@ func (tree *ResolvedTree) reachableOriginalSelection(
 	if len(selection.activeIDs) == 0 {
 		selection.activeIDs = []string{path[0].ID}
 	}
-	tracker.observe(selection)
-
 	for index := 0; index < len(path)-1; index++ {
 		parent := selection.occurrence.Item
-		children, hiddenActive, childViaMirror := tree.resolvedChildren(selection, options, tracker)
+		children, hiddenActive, childViaMirror := tree.resolvedChildren(selection, options, nil)
 		next := path[index+1]
 		if !containsItemPointer(children, next) {
 			return nil
@@ -111,7 +109,6 @@ func (tree *ResolvedTree) reachableOriginalSelection(
 		selection.occurrence.Item = next
 		selection.occurrence.ViaMirror = childViaMirror || MirrorReferenceFromItem(next).IsMirror()
 		selection.activeIDs = append(append([]string(nil), hiddenActive...), next.ID)
-		tracker.observe(selection)
 	}
 
 	if selection.occurrence.ViaMirror {
@@ -167,7 +164,10 @@ func (tree *ResolvedTree) findFirstSelection(
 	options ResolveOptions,
 	tracker *resolutionTracker,
 ) *nodeSelection {
-	tracker.observe(selection)
+	if !selection.observed {
+		tracker.observe(selection)
+		selection.observed = true
+	}
 	if selection.occurrence.Item.ID == targetID {
 		found := selection
 		found.occurrence = selection.occurrence.Snapshot()
@@ -198,9 +198,12 @@ func (tree *ResolvedTree) materialize(
 	options ResolveOptions,
 	tracker *resolutionTracker,
 ) *Item {
-	tracker.observe(selection)
+	if !selection.observed {
+		tracker.observe(selection)
+		selection.observed = true
+	}
 	item := cloneItemWithoutChildren(selection.occurrence.Item)
-	tracker.retain(selection)
+	tracker.retain()
 	if depth == 0 {
 		return item
 	}
@@ -265,7 +268,10 @@ func (tree *ResolvedTree) visitSelection(
 	tracker *resolutionTracker,
 	visitor OccurrenceVisitor,
 ) error {
-	tracker.observe(selection)
+	if !selection.observed {
+		tracker.observe(selection)
+		selection.observed = true
+	}
 	visitResult, err := visitor(selection.occurrence)
 	if err != nil {
 		return fmt.Errorf(
@@ -323,19 +329,33 @@ func (tree *ResolvedTree) resolvedChildren(
 	case MirrorReferenceNullOrigin:
 		return item.Children, selection.activeIDs, true
 	case MirrorReferenceMalformed:
-		tracker.record("malformed", selection, reference)
+		if tracker != nil {
+			tracker.record("malformed", selection, reference)
+		}
 		return item.Children, selection.activeIDs, true
 	case MirrorReferenceWithOrigin:
+		if reference.OriginID == "" {
+			if tracker != nil {
+				tracker.record("missing", selection, reference)
+			}
+			return item.Children, selection.activeIDs, true
+		}
 		origin := tree.index[reference.OriginID]
 		if origin == nil {
-			tracker.record("missing", selection, reference)
+			if tracker != nil {
+				tracker.record("missing", selection, reference)
+			}
 			return item.Children, selection.activeIDs, true
 		}
 		if containsString(selection.activeIDs, reference.OriginID) {
-			tracker.record("cycle", selection, reference)
+			if tracker != nil {
+				tracker.record("cycle", selection, reference)
+			}
 			return nil, selection.activeIDs, true
 		}
-		tracker.record("resolved", selection, reference)
+		if tracker != nil {
+			tracker.record("resolved", selection, reference)
+		}
 		activeIDs := append(selection.activeIDs, reference.OriginID)
 		return origin.item.Children, activeIDs, true
 	default:

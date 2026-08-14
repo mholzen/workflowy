@@ -83,12 +83,27 @@ func (tree *ResolvedTree) indexSource(item *Item, parent *sourceNode) {
 	}
 
 	node := &sourceNode{item: item, parent: parent}
-	if _, exists := tree.index[item.ID]; !exists {
+	if existing, exists := tree.index[item.ID]; exists {
+		tree.logger.Error(
+			"Cannot index duplicate Workflowy node ID",
+			"node_id", item.ID,
+			"source", tree.sourceLabel,
+			"first_parent_id", sourceParentID(existing.parent),
+			"duplicate_parent_id", sourceParentID(parent),
+		)
+	} else {
 		tree.index[item.ID] = node
 	}
 	for _, child := range item.Children {
 		tree.indexSource(child, node)
 	}
+}
+
+func sourceParentID(parent *sourceNode) string {
+	if parent == nil {
+		return "None"
+	}
+	return parent.item.ID
 }
 
 func (tree *ResolvedTree) Fetch(readScopeID, targetID string, options ResolveOptions) (*ResolvedFetch, error) {
