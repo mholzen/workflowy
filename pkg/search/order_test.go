@@ -51,14 +51,9 @@ func TestParseOrderBy(t *testing.T) {
 
 func TestSortResults(t *testing.T) {
 	results := []Result{
-		{Name: "banana", Priority: 2, ModifiedAt: 100, CreatedAt: 300},
-		{Name: "apple", Priority: 3, ModifiedAt: 300, CreatedAt: 100},
-		{Name: "cherry", Priority: 1, ModifiedAt: 200, CreatedAt: 200},
-	}
-
-	SortResults(results, OrderBy{Field: "priority", Ascending: true})
-	if results[0].Name != "cherry" || results[1].Name != "banana" || results[2].Name != "apple" {
-		t.Errorf("priority asc: got %s, %s, %s", results[0].Name, results[1].Name, results[2].Name)
+		{Name: "banana", ModifiedAt: 100, CreatedAt: 300},
+		{Name: "apple", ModifiedAt: 300, CreatedAt: 100},
+		{Name: "cherry", ModifiedAt: 200, CreatedAt: 200},
 	}
 
 	SortResults(results, OrderBy{Field: "match", Ascending: true})
@@ -74,6 +69,39 @@ func TestSortResults(t *testing.T) {
 	SortResults(results, OrderBy{Field: "created", Ascending: true})
 	if results[0].CreatedAt != 100 || results[1].CreatedAt != 200 || results[2].CreatedAt != 300 {
 		t.Errorf("created asc: got %d, %d, %d", results[0].CreatedAt, results[1].CreatedAt, results[2].CreatedAt)
+	}
+}
+
+// Matches are gathered depth-first, so the order they arrive in is the outline
+// order. Sorting them by their sibling index would interleave nodes from
+// unrelated parents, so priority leaves a flat result set alone.
+func TestSortResultsByPriorityKeepsOutlineOrder(t *testing.T) {
+	outline := []Result{{Name: "banana"}, {Name: "apple"}, {Name: "cherry"}}
+
+	results := append([]Result(nil), outline...)
+	SortResults(results, OrderBy{Field: "priority", Ascending: true})
+	if results[0].Name != "banana" || results[1].Name != "apple" || results[2].Name != "cherry" {
+		t.Errorf("priority asc: got %s, %s, %s", results[0].Name, results[1].Name, results[2].Name)
+	}
+
+	results = append([]Result(nil), outline...)
+	SortResults(results, OrderBy{Field: "priority", Ascending: false})
+	if results[0].Name != "cherry" || results[1].Name != "apple" || results[2].Name != "banana" {
+		t.Errorf("priority desc: got %s, %s, %s", results[0].Name, results[1].Name, results[2].Name)
+	}
+}
+
+func TestSortGroupedResultsByPriorityKeepsOutlineOrder(t *testing.T) {
+	groups := []GroupedResult{{GroupLabel: "B"}, {GroupLabel: "A"}, {GroupLabel: "C"}}
+
+	SortGroupedResults(groups, OrderBy{Field: "priority", Ascending: true})
+	if groups[0].GroupLabel != "B" || groups[1].GroupLabel != "A" || groups[2].GroupLabel != "C" {
+		t.Errorf("priority asc: got %s, %s, %s", groups[0].GroupLabel, groups[1].GroupLabel, groups[2].GroupLabel)
+	}
+
+	SortGroupedResults(groups, OrderBy{Field: "priority", Ascending: false})
+	if groups[0].GroupLabel != "C" || groups[1].GroupLabel != "A" || groups[2].GroupLabel != "B" {
+		t.Errorf("priority desc: got %s, %s, %s", groups[0].GroupLabel, groups[1].GroupLabel, groups[2].GroupLabel)
 	}
 }
 

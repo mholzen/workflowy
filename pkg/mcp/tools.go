@@ -251,11 +251,12 @@ func toolPaginationRequested(req mcptypes.CallToolRequest) bool {
 	return limitSet || offsetSet
 }
 
-func newPaginatedToolResult[T any](req mcptypes.CallToolRequest, items []T) (*mcptypes.CallToolResult, error) {
-	page, err := workflowy.NewPage(items, req.GetInt("limit", 0), req.GetInt("offset", 0))
+func newPaginatedToolResult[T any](req mcptypes.CallToolRequest, items []T, node *workflowy.NodeRef) (*mcptypes.CallToolResult, error) {
+	page, err := workflowy.NewPage(items, req.GetInt("limit", workflowy.DefaultPageLimit), req.GetInt("offset", 0))
 	if err != nil {
 		return mcptypes.NewToolResultError(err.Error()), nil
 	}
+	page.Node = node
 	return mcptypes.NewToolResultJSON(page)
 }
 
@@ -387,7 +388,7 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 			workflowy.SortTreeResult(result, order)
 
 			if paginate {
-				return newPaginatedToolResult(req, workflowy.TopLevelItems(result))
+				return newPaginatedToolResult(req, workflowy.TopLevelItems(result), workflowy.NodeRefFor(result))
 			}
 
 			return mcptypes.NewToolResultJSON(result)
@@ -446,18 +447,14 @@ func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot list items", err), nil
 			}
 
-			flattened := workflowy.FlattenTree(data)
-			if !includeEmpty {
-				flattened = workflowy.FilterEmptyList(flattened)
-			}
 			order, err := workflowy.ParseSortOrder(req.GetString("sort", "priority"))
 			if err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
-			workflowy.SortItems(flattened.Items, order, false)
+			flattened := workflowy.SortedFlatList(data, order, includeEmpty)
 
 			if toolPaginationRequested(req) {
-				return newPaginatedToolResult(req, flattened.Items)
+				return newPaginatedToolResult(req, flattened.Items, nil)
 			}
 
 			return mcptypes.NewToolResultJSON(map[string]any{"items": flattened.Items})
@@ -567,7 +564,7 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 					tree := search.SearchItemsTree(searchRoot, pattern, useRegexp, ignoreCase, includeCompleted)
 					search.SortTreeNodes(tree, orderBy)
 					if toolPaginationRequested(req) {
-						return newPaginatedToolResult(req, tree)
+						return newPaginatedToolResult(req, tree, nil)
 					}
 					return mcptypes.NewToolResultJSON(map[string]any{"results": tree})
 				}
@@ -580,7 +577,7 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				grouped := search.SearchItemsGroupedBy(searchRoot, pattern, useRegexp, ignoreCase, includeCompleted, strategy)
 				search.SortGroupedResults(grouped, orderBy)
 				if toolPaginationRequested(req) {
-					return newPaginatedToolResult(req, grouped)
+					return newPaginatedToolResult(req, grouped, nil)
 				}
 				return mcptypes.NewToolResultJSON(map[string]any{"results": grouped})
 			}
@@ -588,7 +585,7 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 			results := search.SearchItems(searchRoot, pattern, useRegexp, ignoreCase, includeCompleted)
 			search.SortResults(results, orderBy)
 			if toolPaginationRequested(req) {
-				return newPaginatedToolResult(req, results)
+				return newPaginatedToolResult(req, results, nil)
 			}
 			return mcptypes.NewToolResultJSON(map[string]any{"results": results})
 		},

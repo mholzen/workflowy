@@ -7,11 +7,15 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Optional `limit` and `offset` pagination for the existing `get`, `list`, and `search` CLI commands and MCP tools.
 - Shared pagination responses with `items`, `total`, `limit`, `offset`, `has_more`, and `next_offset`.
+- Paginated `get` responses also carry `node`, identifying the node whose children the page covers.
 - Shared `sort` option for `get`, `list`, and `search`, defaulting to Workflowy `priority` order.
 
 ### Changed
 - Search's existing `order_by` option remains available as a compatibility alias for `sort`.
 - Existing response shapes are preserved unless `limit` or `offset` is explicitly provided.
+- `priority` is a node's index among its own siblings, so it is applied to sibling groups rather than to a flattened result set: `list` sorts the tree before flattening, and search leaves its depth-first matches in outline order. `name`, `modified`, and `created` continue to rank the whole result set. This keeps the default sort equal to Workflowy's outline order for both commands.
+- Paginated `--format=list` and `--format=markdown` output renders the page as outline content and reports the window on stderr, instead of falling back to JSON.
+- An explicit `limit` of 0 is rejected rather than silently treated as the default of 50.
 
 ## [0.9.0] - Ancestor Retrieval
 

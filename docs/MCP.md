@@ -139,12 +139,12 @@ Get a node and its descendants as a tree structure.
 | `ancestor_depth` | number | Include N levels of ancestors (-1 for all, 0 for none; requires export or backup method) | `0` |
 | `to_ancestor` | string | Include ancestors up to and including this node ID (requires export or backup method) | - |
 | `sort` | string | Sort by `priority`, `name`, `modified`, or `created` (prefix `+`/`-` for direction) | `priority` |
-| `limit` | number | Enable pagination and return at most this many direct children (max 200) | `50` when paginating |
+| `limit` | number | Enable pagination and return at most this many direct children (min 1, max 200) | `50` when paginating |
 | `offset` | number | Enable pagination and skip this many sorted direct children | `0` |
 | `method` | string | Access method: get, export, or backup | auto |
 
 Only one ancestor parameter may be used at a time. When used, `include_ancestors` is equivalent to `ancestor_depth=-1`.
-Pagination cannot be combined with ancestor parameters. When `limit` or `offset` is supplied, `items` contains the node's sorted direct children; each child retains the requested descendant depth.
+Pagination cannot be combined with ancestor parameters. When `limit` or `offset` is supplied, `items` contains the node's sorted direct children and `node` identifies the parent they belong to, so a client can tell what it is paging through. Each child retains the requested descendant depth.
 
 **Example prompts:**
 - "Show me the contents of my Projects folder"
@@ -164,11 +164,15 @@ List descendants as a flat list.
 | `depth` | number | Recursion depth (-1 for all) | `2` |
 | `include_empty_names` | boolean | Include empty-named items | `false` |
 | `sort` | string | Sort by `priority`, `name`, `modified`, or `created` (prefix `+`/`-` for direction) | `priority` |
-| `limit` | number | Enable pagination and return at most this many flat results (max 200) | `50` when paginating |
+| `limit` | number | Enable pagination and return at most this many flat results (min 1, max 200) | `50` when paginating |
 | `offset` | number | Enable pagination and skip this many sorted results | `0` |
 | `method` | string | Access method: get, export, or backup | auto |
 
+`priority` is a node's index among its own siblings, so it is applied to each sibling group before the tree is flattened: `sort=priority` returns the outline order. `name`, `modified`, and `created` rank the whole flat result set, which is what makes paging through them useful.
+
 **Example prompt:** "List all items in my inbox"
+
+---
 
 #### workflowy_search
 
@@ -186,7 +190,7 @@ Search nodes by text or regex pattern. Completed nodes (and their descendants) a
 | `path_max_length` | number | Max chars per path segment when using `group_by=path` | `20` |
 | `sort` | string | Sort by: `priority`, `name`, `match`, `parent`, `path`, `modified`, `created` (prefix `+`/`-` for direction) | `priority` |
 | `order_by` | string | Deprecated compatibility alias for `sort` | - |
-| `limit` | number | Enable pagination and return at most this many results (max 200) | `50` when paginating |
+| `limit` | number | Enable pagination and return at most this many results (min 1, max 200) | `50` when paginating |
 | `offset` | number | Enable pagination and skip this many sorted results | `0` |
 | `method` | string | Access method: get, export, or backup | export |
 
@@ -198,7 +202,9 @@ Search nodes by text or regex pattern. Completed nodes (and their descendants) a
 - "Search for dates in my notes, grouped by parent"
 - "Find all TODOs grouped as a tree"
 
-Without pagination arguments, all three tools retain their existing response shapes. When `limit` or `offset` is supplied, the response contains `items`, `total`, `limit`, `offset`, `has_more`, and `next_offset` when another page exists. For grouped or tree searches, pagination applies to the top-level groups or roots.
+Matches are collected depth-first, so `sort=priority` (the default) returns them in outline order and leaves the result set as found; `-priority` reverses it. The other fields rank matches by a value each node carries. Under `group_by=tree` the results keep their hierarchy, so `priority` there orders real siblings.
+
+Without pagination arguments, all three tools retain their existing response shapes. When `limit` or `offset` is supplied, the response contains `items`, `total`, `limit`, `offset`, `has_more`, and `next_offset` when another page exists, plus `node` for `workflowy_get`. For grouped or tree searches, pagination applies to the top-level groups or roots.
 
 ---
 

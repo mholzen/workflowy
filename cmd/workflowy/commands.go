@@ -86,7 +86,7 @@ func getGetCommand() *cli.Command {
 			workflowy.SortTreeResult(result, order)
 
 			if paginationRequested(cmd) {
-				return printPaginated(cmd, workflowy.TopLevelItems(result), params.format)
+				return printPaginated(cmd, workflowy.TopLevelItems(result), params.format, workflowy.NodeRefFor(result))
 			}
 
 			printOutput(result, params.format, true)
@@ -127,19 +127,14 @@ func getListCommand() *cli.Command {
 				return err
 			}
 
-			flatList := flattenTree(treeResult)
-			if !cmd.Bool("include-empty-names") {
-				flatList = workflowy.FilterEmptyList(flatList)
-			}
-
 			order, err := workflowy.ParseSortOrder(cmd.String("sort"))
 			if err != nil {
 				return err
 			}
-			workflowy.SortItems(flatList.Items, order, false)
+			flatList := workflowy.SortedFlatList(treeResult, order, cmd.Bool("include-empty-names"))
 
 			if paginationRequested(cmd) {
-				return printPaginated(cmd, flatList.Items, params.format)
+				return printPaginated(cmd, flatList.Items, params.format, nil)
 			}
 
 			printOutput(flatList, params.format, true)
@@ -152,13 +147,45 @@ func paginationRequested(cmd *cli.Command) bool {
 	return cmd.IsSet("limit") || cmd.IsSet("offset")
 }
 
-func printPaginated[T any](cmd *cli.Command, items []T, format string) error {
+func printPaginated[T any](cmd *cli.Command, items []T, format string, node *workflowy.NodeRef) error {
 	page, err := workflowy.NewPage(items, cmd.Int("limit"), cmd.Int("offset"))
 	if err != nil {
 		return err
 	}
-	printOutput(page, format, true)
+	page.Node = node
+
+	if format == "json" {
+		printOutput(page, format, true)
+		return nil
+	}
+
+	// list and markdown keep rendering outline content, so the envelope would
+	// only turn them into JSON. Render the window itself and report where it
+	// sits on stderr, leaving piped stdout free of pagination chatter.
+	printOutput(pageContent(page), format, true)
+	fmt.Fprintln(os.Stderr, pageSummary(page))
 	return nil
+}
+
+// pageContent unwraps a page into the shape printOutput renders for the list
+// and markdown formats.
+func pageContent(page *workflowy.Page) any {
+	if items, ok := page.Items.([]*workflowy.Item); ok {
+		return &workflowy.ListChildrenResponse{Items: items}
+	}
+	return page.Items
+}
+
+func pageSummary(page *workflowy.Page) string {
+	first, last := page.Window()
+	if first == 0 {
+		return fmt.Sprintf("# no results at offset %d of %d", page.Offset, page.Total)
+	}
+	summary := fmt.Sprintf("# %d-%d of %d", first, last, page.Total)
+	if page.NextOffset != nil {
+		summary += fmt.Sprintf(" (next offset: %d)", *page.NextOffset)
+	}
+	return summary
 }
 
 func getCreateCommand() *cli.Command {
@@ -847,7 +874,7 @@ func getSearchCommand() *cli.Command {
 					)
 					search.SortTreeNodes(tree, orderBy)
 					if paginationRequested(cmd) {
-						return printPaginated(cmd, tree, format)
+						return printPaginated(cmd, tree, format, nil)
 					}
 					printOutput(tree, format, false)
 				} else {
@@ -865,7 +892,7 @@ func getSearchCommand() *cli.Command {
 					)
 					search.SortGroupedResults(grouped, orderBy)
 					if paginationRequested(cmd) {
-						return printPaginated(cmd, grouped, format)
+						return printPaginated(cmd, grouped, format, nil)
 					}
 					printOutput(grouped, format, false)
 				}
@@ -879,7 +906,7 @@ func getSearchCommand() *cli.Command {
 				)
 				search.SortResults(results, orderBy)
 				if paginationRequested(cmd) {
-					return printPaginated(cmd, results, format)
+					return printPaginated(cmd, results, format, nil)
 				}
 				printOutput(results, format, false)
 			}

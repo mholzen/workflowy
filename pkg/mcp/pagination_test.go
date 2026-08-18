@@ -77,6 +77,71 @@ func TestSearchOrderByRemainsACompatibilityAlias(t *testing.T) {
 	assert.Equal(t, "Charlie", results[1].Name)
 }
 
+func TestPaginatedGetNamesTheNodeItPages(t *testing.T) {
+	builder := NewToolBuilder(nil, "", "", "backup", writeTestBackup(t))
+	tool := mcpToolCase{serverTool: builder.buildGetTool()}
+
+	result := tool.call(t, map[string]any{"id": "c", "depth": 2, "limit": float64(1)})
+
+	page, ok := result.StructuredContent.(*workflowy.Page)
+	require.True(t, ok)
+	require.NotNil(t, page.Node, "a page of children is meaningless without the node it belongs to")
+	assert.Equal(t, "c", page.Node.ID)
+	assert.Equal(t, "Charlie", page.Node.Name)
+}
+
+func TestPaginatedListHasNoNodeToName(t *testing.T) {
+	builder := NewToolBuilder(nil, "", "", "backup", writeTestBackup(t))
+	tool := mcpToolCase{serverTool: builder.buildListTool()}
+
+	result := tool.call(t, map[string]any{"id": "None", "depth": 2, "limit": float64(1)})
+
+	page, ok := result.StructuredContent.(*workflowy.Page)
+	require.True(t, ok)
+	assert.Nil(t, page.Node)
+}
+
+func TestPaginationRejectsAnExplicitZeroLimit(t *testing.T) {
+	builder := NewToolBuilder(nil, "", "", "backup", writeTestBackup(t))
+	tool := mcpToolCase{serverTool: builder.buildListTool()}
+
+	result := tool.call(t, map[string]any{"id": "None", "limit": float64(0)})
+
+	assert.True(t, result.IsError, "zero is an empty page, not a request for the default limit")
+}
+
+func TestPaginationDefaultsToTheDefaultLimitWhenOnlyOffsetIsGiven(t *testing.T) {
+	builder := NewToolBuilder(nil, "", "", "backup", writeTestBackup(t))
+	tool := mcpToolCase{serverTool: builder.buildListTool()}
+
+	result := tool.call(t, map[string]any{"id": "None", "offset": float64(0)})
+
+	page, ok := result.StructuredContent.(*workflowy.Page)
+	require.True(t, ok)
+	assert.Equal(t, workflowy.DefaultPageLimit, page.Limit)
+}
+
+// The default sort is priority, which is a node's index among its own siblings.
+// Search results span many parents, so the default must leave them in the order
+// the outline produced rather than interleave them by sibling index.
+func TestSearchDefaultSortKeepsOutlineOrder(t *testing.T) {
+	builder := NewToolBuilder(nil, "", "", "backup", writeTestBackup(t))
+	tool := mcpToolCase{serverTool: builder.buildSearchTool()}
+
+	result := tool.call(t, map[string]any{"pattern": "a"})
+
+	structured, ok := result.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	results, ok := structured["results"].([]search.Result)
+	require.True(t, ok)
+
+	names := make([]string, len(results))
+	for i, r := range results {
+		names[i] = r.Name
+	}
+	assert.Equal(t, []string{"Charlie", "Charlie child", "Alpha", "Bravo"}, names)
+}
+
 func TestGetPaginationRejectsAncestorOptions(t *testing.T) {
 	builder := NewToolBuilder(nil, "", "", "backup", filepath.Join(t.TempDir(), "unused.json"))
 	tool := mcpToolCase{serverTool: builder.buildGetTool()}

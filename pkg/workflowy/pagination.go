@@ -11,23 +11,30 @@ const (
 	MaxPageLimit     = 200
 )
 
+// NodeRef identifies the node whose children a page covers.
+type NodeRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+	Note string `json:"note,omitempty"`
+}
+
 // Page describes one bounded window over an ordered result set.
 type Page struct {
-	Items      any  `json:"items"`
-	Total      int  `json:"total"`
-	Limit      int  `json:"limit"`
-	Offset     int  `json:"offset"`
-	NextOffset *int `json:"next_offset,omitempty"`
-	HasMore    bool `json:"has_more"`
+	Node       *NodeRef `json:"node,omitempty"`
+	Items      any      `json:"items"`
+	Total      int      `json:"total"`
+	Limit      int      `json:"limit"`
+	Offset     int      `json:"offset"`
+	NextOffset *int     `json:"next_offset,omitempty"`
+	HasMore    bool     `json:"has_more"`
 }
 
 // NewPage validates the requested window and returns pagination metadata.
+// Callers supply DefaultPageLimit themselves when no limit was requested, so
+// that an explicit limit of 0 stays an error instead of silently paging by 50.
 func NewPage[T any](items []T, limit, offset int) (*Page, error) {
-	if limit == 0 {
-		limit = DefaultPageLimit
-	}
-	if limit < 0 {
-		return nil, fmt.Errorf("limit must be non-negative")
+	if limit < 1 {
+		return nil, fmt.Errorf("limit must be at least 1")
 	}
 	if limit > MaxPageLimit {
 		return nil, fmt.Errorf("limit must be at most %d", MaxPageLimit)
@@ -59,6 +66,17 @@ func NewPage[T any](items []T, limit, offset int) (*Page, error) {
 		NextOffset: nextOffset,
 		HasMore:    hasMore,
 	}, nil
+}
+
+// Window returns the 1-based inclusive range this page covers. Both values are
+// zero when the requested offset lies past the end of the result set.
+func (p *Page) Window() (first, last int) {
+	start := min(p.Offset, p.Total)
+	end := min(start+p.Limit, p.Total)
+	if start >= end {
+		return 0, 0
+	}
+	return start + 1, end
 }
 
 // SortOrder is shared by get and list. A leading + or - selects direction.
@@ -142,6 +160,49 @@ func compareInt64s(a, b int64) int {
 		return 1
 	}
 	return 0
+}
+
+// IsStructuralSort reports whether an order describes a node's position among
+// its siblings rather than a value carried by the node itself. Priority is the
+// sibling index, so it only means anything inside one parent: sorting a
+// flattened list by it interleaves nodes from unrelated parents. Structural
+// orders are applied to the tree before flattening; the rest are applied to the
+// flat result set.
+func IsStructuralSort(order SortOrder) bool {
+	return order.Field == "priority"
+}
+
+// SortedFlatList turns a get response into the flat list that list returns.
+// A structural order is applied to each sibling group before flattening, so the
+// outline survives; any other order ranks the whole flat result set by a value
+// every node carries, which is what makes it pageable.
+func SortedFlatList(data any, order SortOrder, includeEmpty bool) *ListChildrenResponse {
+	structural := IsStructuralSort(order)
+	if structural {
+		SortTreeResult(data, order)
+	}
+
+	flat := FlattenTree(data)
+	if !includeEmpty {
+		flat = FilterEmptyList(flat)
+	}
+	if !structural {
+		SortItems(flat.Items, order, false)
+	}
+	return flat
+}
+
+// NodeRefFor describes the node a get response paginates over, or nil at root.
+func NodeRefFor(data any) *NodeRef {
+	item, ok := data.(*Item)
+	if !ok || item == nil {
+		return nil
+	}
+	ref := &NodeRef{ID: item.ID, Name: item.Name}
+	if item.Note != nil {
+		ref.Note = *item.Note
+	}
+	return ref
 }
 
 // TopLevelItems returns the collection represented by a get response. For a

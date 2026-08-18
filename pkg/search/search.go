@@ -5,6 +5,7 @@ package search
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -21,7 +22,6 @@ type Result struct {
 
 	CreatedAt  int64  `json:"-"`
 	ModifiedAt int64  `json:"-"`
-	Priority   int    `json:"-"`
 	ParentName string `json:"-"`
 	Path       string `json:"-"`
 }
@@ -78,7 +78,6 @@ func collectSearchResults(item *workflowy.Item, ancestors []*workflowy.Item, pat
 			MatchPositions:  matchPositions,
 			CreatedAt:       item.CreatedAt,
 			ModifiedAt:      item.ModifiedAt,
-			Priority:        item.Priority,
 			ParentName:      parentName,
 			Path:            buildPath(ancestors),
 		})
@@ -328,7 +327,6 @@ func collectGroupedByResults(item *workflowy.Item, ancestors []*workflowy.Item, 
 			MatchPositions:  matchPositions,
 			CreatedAt:       item.CreatedAt,
 			ModifiedAt:      item.ModifiedAt,
-			Priority:        item.Priority,
 			ParentName:      parentName,
 			Path:            buildPath(ancestors),
 		})
@@ -376,8 +374,22 @@ func ParseOrderBy(value string) (OrderBy, error) {
 	}
 }
 
+// isOutlineOrder reports whether an order means "leave the results in the order
+// the outline produced them". A match's priority is its index among its own
+// siblings, so across a result set spanning many parents it carries no usable
+// ordering; the collection order does, because matches are gathered depth-first.
+func isOutlineOrder(order OrderBy) bool {
+	return order.Field == "priority"
+}
+
 // SortResults sorts a flat result list by the given order.
 func SortResults(results []Result, order OrderBy) {
+	if isOutlineOrder(order) {
+		if !order.Ascending {
+			slices.Reverse(results)
+		}
+		return
+	}
 	sort.SliceStable(results, func(i, j int) bool {
 		cmp := compareResults(results[i], results[j], order.Field)
 		if order.Ascending {
@@ -389,8 +401,6 @@ func SortResults(results []Result, order OrderBy) {
 
 func compareResults(a, b Result, field string) int {
 	switch field {
-	case "priority":
-		return compareInts(a.Priority, b.Priority)
 	case "name", "match":
 		return strings.Compare(a.Name, b.Name)
 	case "parent":
@@ -416,19 +426,16 @@ func compareInt64(a, b int64) int {
 	return 0
 }
 
-func compareInts(a, b int) int {
-	if a < b {
-		return -1
-	}
-	if a > b {
-		return 1
-	}
-	return 0
-}
-
 // SortGroupedResults sorts groups. For parent/path/match it sorts by label;
-// for modified/created it sorts by the max (or min) timestamp among children.
+// for modified/created it sorts by the max (or min) timestamp among children;
+// for priority it keeps the order in which the outline produced the groups.
 func SortGroupedResults(groups []GroupedResult, order OrderBy) {
+	if isOutlineOrder(order) {
+		if !order.Ascending {
+			slices.Reverse(groups)
+		}
+		return
+	}
 	sort.SliceStable(groups, func(i, j int) bool {
 		cmp := compareGroups(groups[i], groups[j], order)
 		if order.Ascending {
@@ -440,8 +447,6 @@ func SortGroupedResults(groups []GroupedResult, order OrderBy) {
 
 func compareGroups(a, b GroupedResult, order OrderBy) int {
 	switch order.Field {
-	case "priority":
-		return compareInts(groupPriority(a, order.Ascending), groupPriority(b, order.Ascending))
 	case "name", "match", "parent", "path":
 		return strings.Compare(a.GroupLabel, b.GroupLabel)
 	case "modified":
@@ -451,21 +456,6 @@ func compareGroups(a, b GroupedResult, order OrderBy) int {
 	default:
 		return 0
 	}
-}
-
-func groupPriority(group GroupedResult, ascending bool) int {
-	if len(group.Children) == 0 {
-		return 0
-	}
-	priority := group.Children[0].Priority
-	for _, child := range group.Children[1:] {
-		if ascending && child.Priority < priority {
-			priority = child.Priority
-		} else if !ascending && child.Priority > priority {
-			priority = child.Priority
-		}
-	}
-	return priority
 }
 
 func groupTimestamp(g GroupedResult, field string, ascending bool) int64 {

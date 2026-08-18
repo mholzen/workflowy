@@ -219,7 +219,3 @@ func applyAncestorOptions(ancestors []*workflowy.Item, opts ancestorOptions) ([]
 	}
 	return workflowy.TruncateAncestors(ancestors, opts.ancestorDepth), nil
 }
-
-func flattenTree(data interface{}) *workflowy.ListChildrenResponse {
-	return workflowy.FlattenTree(data)
-}

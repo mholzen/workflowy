@@ -139,6 +139,19 @@ func SortTreeNodes(nodes []*TreeNode, order OrderBy) {
 	}
 }
 
+// compareInts orders sibling indexes. Unlike the flat and grouped result sets,
+// a tree keeps every node next to its real siblings, so priority still orders
+// them the way the outline does.
+func compareInts(a, b int) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
+}
+
 func compareTreeNodes(a, b *TreeNode, order OrderBy) int {
 	switch order.Field {
 	case "priority":

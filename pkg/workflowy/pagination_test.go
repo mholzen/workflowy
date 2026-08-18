@@ -30,25 +30,67 @@ func TestNewPageReturnsRequestedWindow(t *testing.T) {
 	assert.Equal(t, 3, *page.NextOffset)
 }
 
-func TestNewPageUsesDefaultLimitAndReturnsEmptySlicePastEnd(t *testing.T) {
-	page, err := NewPage(testPageItems(), 0, 10)
+func TestNewPageReturnsEmptySlicePastEnd(t *testing.T) {
+	page, err := NewPage(testPageItems(), DefaultPageLimit, 10)
 	require.NoError(t, err)
 
 	assert.Equal(t, DefaultPageLimit, page.Limit)
 	assert.False(t, page.HasMore)
 	assert.Nil(t, page.NextOffset)
 	assert.Empty(t, page.Items.([]*Item))
+
+	first, last := page.Window()
+	assert.Zero(t, first)
+	assert.Zero(t, last)
 }
 
 func TestNewPageValidatesBounds(t *testing.T) {
-	_, err := NewPage(testPageItems(), -1, 0)
-	assert.EqualError(t, err, "limit must be non-negative")
+	// Zero is a request for an empty page, not a request for the default, so it
+	// is rejected rather than silently widened to DefaultPageLimit.
+	_, err := NewPage(testPageItems(), 0, 0)
+	assert.EqualError(t, err, "limit must be at least 1")
+
+	_, err = NewPage(testPageItems(), -1, 0)
+	assert.EqualError(t, err, "limit must be at least 1")
 
 	_, err = NewPage(testPageItems(), MaxPageLimit+1, 0)
 	assert.EqualError(t, err, "limit must be at most 200")
 
 	_, err = NewPage(testPageItems(), 10, -1)
 	assert.EqualError(t, err, "offset must be non-negative")
+}
+
+func TestPageWindowReportsOneBasedRange(t *testing.T) {
+	page, err := NewPage(testPageItems(), 2, 1)
+	require.NoError(t, err)
+
+	first, last := page.Window()
+	assert.Equal(t, 2, first)
+	assert.Equal(t, 3, last)
+}
+
+func TestNodeRefForDescribesOnlyASpecificNode(t *testing.T) {
+	note := "a note"
+	ref := NodeRefFor(&Item{ID: "parent", Name: "Parent", Note: &note, Children: testPageItems()})
+	require.NotNil(t, ref)
+	assert.Equal(t, NodeRef{ID: "parent", Name: "Parent", Note: "a note"}, *ref)
+
+	// Root responses are a list of top-level nodes, so there is no node to name.
+	assert.Nil(t, NodeRefFor(&ListChildrenResponse{Items: testPageItems()}))
+	assert.Nil(t, NodeRefFor((*Item)(nil)))
+}
+
+func TestIsStructuralSortOnlyCoversPriority(t *testing.T) {
+	for _, field := range []string{"priority"} {
+		order, err := ParseSortOrder(field)
+		require.NoError(t, err)
+		assert.True(t, IsStructuralSort(order), field)
+	}
+	for _, field := range []string{"name", "created", "modified"} {
+		order, err := ParseSortOrder(field)
+		require.NoError(t, err)
+		assert.False(t, IsStructuralSort(order), field)
+	}
 }
 
 func TestParseSortOrderDefaultsToPriority(t *testing.T) {
@@ -85,6 +127,46 @@ func TestSortItemsPreservesOutlineOrderWhenPrioritiesTie(t *testing.T) {
 	require.NoError(t, err)
 	SortItems(items, order, false)
 	assert.Equal(t, []string{"z", "a", "m"}, itemIDs(items))
+}
+
+// The tree deliberately arrives with siblings out of priority order and with
+// names that do not follow the outline, so an ordering mistake cannot pass by
+// coincidence.
+func unsortedTestTree() *Item {
+	return &Item{
+		ID: "root",
+		Children: []*Item{
+			{ID: "b", Name: "Charlie", Priority: 1, Children: []*Item{
+				{ID: "b1", Name: "Delta", Priority: 0},
+			}},
+			{ID: "a", Name: "Alpha", Priority: 0, Children: []*Item{
+				{ID: "a2", Name: "Bravo", Priority: 1},
+				{ID: "a1", Name: "Zulu", Priority: 0},
+			}},
+		},
+	}
+}
+
+func TestSortedFlatListByPriorityKeepsOutlineOrder(t *testing.T) {
+	order, err := ParseSortOrder("priority")
+	require.NoError(t, err)
+
+	flat := SortedFlatList(unsortedTestTree(), order, true)
+
+	// Each parent is immediately followed by its own children. Sorting the
+	// flattened list by priority instead would group every first child together,
+	// yielding b1, a, a1, b, a2.
+	assert.Equal(t, []string{"root", "a", "a1", "a2", "b", "b1"}, itemIDs(flat.Items))
+}
+
+func TestSortedFlatListByValueRanksTheWholeList(t *testing.T) {
+	order, err := ParseSortOrder("name")
+	require.NoError(t, err)
+
+	flat := SortedFlatList(unsortedTestTree(), order, true)
+
+	// Alpha, Bravo, Charlie, Delta, Zulu, with the unnamed root sorting first.
+	assert.Equal(t, []string{"root", "a", "a2", "b", "b1", "a1"}, itemIDs(flat.Items))
 }
 
 func TestTopLevelItemsUsesChildrenForSpecificNode(t *testing.T) {
