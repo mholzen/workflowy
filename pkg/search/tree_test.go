@@ -129,8 +129,13 @@ func TestTreeNode_String(t *testing.T) {
 
 func TestSortTreeNodes(t *testing.T) {
 	nodes := []*TreeNode{
-		{ID: "b", Name: "B", ModifiedAt: 10},
-		{ID: "a", Name: "A", ModifiedAt: 20},
+		{ID: "b", Name: "B", Priority: 2, ModifiedAt: 10},
+		{ID: "a", Name: "A", Priority: 1, ModifiedAt: 20},
+	}
+
+	SortTreeNodes(nodes, OrderBy{Field: "priority", Ascending: true})
+	if nodes[0].ID != "a" {
+		t.Errorf("expected 'a' first after sort by priority ascending, got %q", nodes[0].ID)
 	}
 
 	SortTreeNodes(nodes, OrderBy{Field: "match", Ascending: true})

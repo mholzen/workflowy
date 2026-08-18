@@ -21,6 +21,7 @@ type Result struct {
 
 	CreatedAt  int64  `json:"-"`
 	ModifiedAt int64  `json:"-"`
+	Priority   int    `json:"-"`
 	ParentName string `json:"-"`
 	Path       string `json:"-"`
 }
@@ -77,6 +78,7 @@ func collectSearchResults(item *workflowy.Item, ancestors []*workflowy.Item, pat
 			MatchPositions:  matchPositions,
 			CreatedAt:       item.CreatedAt,
 			ModifiedAt:      item.ModifiedAt,
+			Priority:        item.Priority,
 			ParentName:      parentName,
 			Path:            buildPath(ancestors),
 		})
@@ -326,6 +328,7 @@ func collectGroupedByResults(item *workflowy.Item, ancestors []*workflowy.Item, 
 			MatchPositions:  matchPositions,
 			CreatedAt:       item.CreatedAt,
 			ModifiedAt:      item.ModifiedAt,
+			Priority:        item.Priority,
 			ParentName:      parentName,
 			Path:            buildPath(ancestors),
 		})
@@ -343,8 +346,12 @@ type OrderBy struct {
 	Ascending bool
 }
 
-// ParseOrderBy parses a --order-by value like "+modified", "-created", "match".
+// ParseOrderBy parses a sort value like "priority", "+modified", or "-name".
 func ParseOrderBy(value string) (OrderBy, error) {
+	if value == "" {
+		value = "priority"
+	}
+
 	ascending := true
 	field := value
 
@@ -362,10 +369,10 @@ func ParseOrderBy(value string) (OrderBy, error) {
 	}
 
 	switch field {
-	case "match", "parent", "path", "modified", "created":
+	case "priority", "name", "match", "parent", "path", "modified", "created":
 		return OrderBy{Field: field, Ascending: ascending}, nil
 	default:
-		return OrderBy{}, fmt.Errorf("unknown --order-by value: %q (expected match, parent, path, modified, or created)", value)
+		return OrderBy{}, fmt.Errorf("unknown sort value: %q (expected priority, name, match, parent, path, modified, or created)", value)
 	}
 }
 
@@ -382,7 +389,9 @@ func SortResults(results []Result, order OrderBy) {
 
 func compareResults(a, b Result, field string) int {
 	switch field {
-	case "match":
+	case "priority":
+		return compareInts(a.Priority, b.Priority)
+	case "name", "match":
 		return strings.Compare(a.Name, b.Name)
 	case "parent":
 		return strings.Compare(a.ParentName, b.ParentName)
@@ -407,6 +416,16 @@ func compareInt64(a, b int64) int {
 	return 0
 }
 
+func compareInts(a, b int) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
+}
+
 // SortGroupedResults sorts groups. For parent/path/match it sorts by label;
 // for modified/created it sorts by the max (or min) timestamp among children.
 func SortGroupedResults(groups []GroupedResult, order OrderBy) {
@@ -421,7 +440,9 @@ func SortGroupedResults(groups []GroupedResult, order OrderBy) {
 
 func compareGroups(a, b GroupedResult, order OrderBy) int {
 	switch order.Field {
-	case "match", "parent", "path":
+	case "priority":
+		return compareInts(groupPriority(a, order.Ascending), groupPriority(b, order.Ascending))
+	case "name", "match", "parent", "path":
 		return strings.Compare(a.GroupLabel, b.GroupLabel)
 	case "modified":
 		return compareInt64(groupTimestamp(a, "modified", order.Ascending), groupTimestamp(b, "modified", order.Ascending))
@@ -430,6 +451,21 @@ func compareGroups(a, b GroupedResult, order OrderBy) int {
 	default:
 		return 0
 	}
+}
+
+func groupPriority(group GroupedResult, ascending bool) int {
+	if len(group.Children) == 0 {
+		return 0
+	}
+	priority := group.Children[0].Priority
+	for _, child := range group.Children[1:] {
+		if ascending && child.Priority < priority {
+			priority = child.Priority
+		} else if !ascending && child.Priority > priority {
+			priority = child.Priority
+		}
+	}
+	return priority
 }
 
 func groupTimestamp(g GroupedResult, field string, ascending bool) int64 {

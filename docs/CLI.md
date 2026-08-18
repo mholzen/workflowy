@@ -15,7 +15,6 @@ Complete command-line reference for the Workflowy CLI tool.
 - [Available Commands](#available-commands)
   - [get](#workflowy-get)
   - [list](#workflowy-list)
-  - [children](#workflowy-children)
   - [create](#workflowy-create)
   - [update](#workflowy-update)
   - [delete](#workflowy-delete)
@@ -206,6 +205,12 @@ workflowy get <item-id> --all
 
 # Force specific access method
 workflowy get <item-id> --method=backup
+
+# Page through the node's direct children in priority order
+workflowy get <item-id> --limit 50 --offset 0 --format=json
+
+# Sort children by name before taking a page
+workflowy get <item-id> --sort=name --limit 50 --format=json
 ```
 
 **Options:**
@@ -218,6 +223,9 @@ workflowy get <item-id> --method=backup
 | `--include-ancestors` | Wrap result in ancestor path from root to target node | `false` |
 | `--ancestor-depth <n>` | Include N levels of ancestors (-1 for all, 0 for none) | `0` |
 | `--to-ancestor <id>` | Include ancestors up to and including this node ID | - |
+| `--sort <field>` | Sort by `priority`, `name`, `modified`, or `created` (prefix `+`/`-` for direction) | `priority` |
+| `--limit <n>` | Enable pagination and return at most this many results (max 200) | `50` when paginating |
+| `--offset <n>` | Enable pagination and skip this many sorted results | `0` |
 
 **Smart API Selection:**
 - Depth 1-3: Uses GET API (efficient for shallow fetches)
@@ -238,6 +246,8 @@ workflowy get <item-id> --ancestor-depth 2
 workflowy get <item-id> --to-ancestor <parent-id>
 ```
 
+Pagination cannot be combined with ancestor retrieval. When `limit` or `offset` is supplied, `get` returns a pagination envelope whose `items` are the node's sorted direct children. The requested depth is retained inside each child.
+
 ---
 
 ### workflowy list
@@ -256,43 +266,14 @@ workflowy list <item-id> --depth 3
 
 # List all descendants as JSON
 workflowy list --all --format=json
+
+# Page through a sorted flat result set
+workflowy list <item-id> --sort=modified --limit 50 --offset 50 --format=json
 ```
 
 **Options:** Same as `workflowy get`
 
----
-
-### workflowy children
-
-List only direct children of a node in stable outline order, with pagination. This command is intended for large nodes where `get` or `list` would return too much data.
-
-```bash
-# First page of root children
-workflowy children --format=json
-
-# Page through a large inbox
-workflowy children inbox --limit 50 --offset 0 --format=json
-workflowy children inbox --limit 50 --offset 50 --format=json
-
-# Filter direct children before pagination
-workflowy children <item-id> --name-filter '^A' --ignore-case --format=json
-
-# Return full node metadata, but still omit nested descendants
-workflowy children <item-id> --full --format=json
-```
-
-**Options:**
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--limit <n>` | Maximum direct children to return (max 200) | `50` |
-| `--offset <n>` | Number of matching direct children to skip | `0` |
-| `--full` | Return full node fields instead of compact child objects | `false` |
-| `--name-filter <regex>` | Regex matched against direct child names before pagination | - |
-| `--ignore-case` | Apply `--name-filter` case-insensitively | `false` |
-| `--method <get\|export\|backup>` | Data access method | `get` |
-
-The JSON response includes `items`, `total`, `limit`, `offset`, `has_more`, and `next_offset` when another page exists.
+Without `limit` or `offset`, `list` keeps its existing output shape. With either option, the sorted flat result set is returned in the shared pagination envelope.
 
 ---
 
@@ -537,10 +518,13 @@ workflowy search "review" --group-by=modified.day
 workflowy search "project" --group-by=created.year
 
 # Sort results by modification date (newest first)
-workflowy search "todo" --order-by=modified
+workflowy search "todo" --sort=modified
 
 # Sort ascending
-workflowy search "todo" --order-by=+created
+workflowy search "todo" --sort=+created
+
+# Return the second page of sorted matches
+workflowy search "todo" --limit=50 --offset=50 --format=json
 
 # JSON output with match positions
 workflowy search "meeting" --format json
@@ -556,13 +540,17 @@ workflowy search "meeting" --format json
 | `--include-completed` | Include completed nodes in results | `false` |
 | `-g, --group-by <mode>` | Group results: `parent`, `path`, `tree`, `modified.<unit>`, `created.<unit>` | - |
 | `--path-max-length <n>` | Max chars per path segment when using `--group-by=path` | `20` |
-| `-o, --order-by <field>` | Sort by: `match`, `parent`, `path`, `modified`, `created` (prefix `+`/`-` for asc/desc) | - |
+| `--sort <field>` | Sort by: `priority`, `name`, `match`, `parent`, `path`, `modified`, `created` (prefix `+`/`-` for direction) | `priority` |
+| `-o, --order-by <field>` | Compatibility alias for `--sort` | `priority` |
+| `--limit <n>` | Enable pagination and return at most this many results (max 200) | `50` when paginating |
+| `--offset <n>` | Enable pagination and skip this many sorted results | `0` |
 
 **Group-by units:** `year`, `month`, `day`, or a Go time format string.
 
 **Output:**
 - `--format list`: Markdown with clickable links and **highlighted** matches
 - `--format json`: JSON with match positions and metadata
+- With `limit` or `offset`: the top-level matches, groups, or tree roots are returned in the shared pagination envelope
 
 ---
 

@@ -21,7 +21,6 @@ func getCommands() []*cli.Command {
 	return []*cli.Command{
 		getGetCommand(),
 		getListCommand(),
-		getChildrenCommand(),
 		getCreateCommand(),
 		getUpdateCommand(),
 		getMoveCommand(),
@@ -71,7 +70,26 @@ func getGetCommand() *cli.Command {
 				return err
 			}
 
-			printOutput(result, params.format, cmd.Bool("include-empty-names"))
+			if !cmd.Bool("include-empty-names") {
+				switch value := result.(type) {
+				case *workflowy.Item:
+					result = workflowy.FilterEmptyItem(value)
+				case *workflowy.ListChildrenResponse:
+					result = workflowy.FilterEmptyList(value)
+				}
+			}
+
+			order, err := workflowy.ParseSortOrder(cmd.String("sort"))
+			if err != nil {
+				return err
+			}
+			workflowy.SortTreeResult(result, order)
+
+			if paginationRequested(cmd) {
+				return printPaginated(cmd, workflowy.TopLevelItems(result), params.format)
+			}
+
+			printOutput(result, params.format, true)
 			return nil
 		}),
 	}
@@ -110,60 +128,37 @@ func getListCommand() *cli.Command {
 			}
 
 			flatList := flattenTree(treeResult)
+			if !cmd.Bool("include-empty-names") {
+				flatList = workflowy.FilterEmptyList(flatList)
+			}
 
-			printOutput(flatList, params.format, cmd.Bool("include-empty-names"))
+			order, err := workflowy.ParseSortOrder(cmd.String("sort"))
+			if err != nil {
+				return err
+			}
+			workflowy.SortItems(flatList.Items, order, false)
+
+			if paginationRequested(cmd) {
+				return printPaginated(cmd, flatList.Items, params.format)
+			}
+
+			printOutput(flatList, params.format, true)
 			return nil
 		}),
 	}
 }
 
-func getChildrenCommand() *cli.Command {
-	return &cli.Command{
-		Name:      "children",
-		Usage:     "List direct children with pagination",
-		UsageText: "workflowy children [<id>] [options]",
-		Arguments: getFetchArguments(),
-		Flags:     getChildrenFlags(),
-		Action: withOptionalClient(func(ctx context.Context, cmd *cli.Command, client workflowy.Client) error {
-			format := cmd.String("format")
-			if err := validateFormat(format); err != nil {
-				return err
-			}
+func paginationRequested(cmd *cli.Command) bool {
+	return cmd.IsSet("limit") || cmd.IsSet("offset")
+}
 
-			readGuard, err := NewReadGuard(ctx, client, getReadRootID(cmd))
-			if err != nil {
-				return err
-			}
-
-			itemID, err := workflowy.ResolveNodeID(ctx, client, readGuard.DefaultID(cmd.StringArg("id")))
-			if err != nil {
-				return fmt.Errorf("cannot resolve ID: %w", err)
-			}
-
-			if err := readGuard.ValidateTarget(itemID, "children"); err != nil {
-				return err
-			}
-
-			children, err := fetchDirectChildren(cmd, ctx, client, itemID)
-			if err != nil {
-				return err
-			}
-
-			page, err := workflowy.NewChildrenPage(children, workflowy.ChildrenPageOptions{
-				Limit:      cmd.Int("limit"),
-				Offset:     cmd.Int("offset"),
-				Compact:    !cmd.Bool("full"),
-				NameFilter: cmd.String("name-filter"),
-				IgnoreCase: cmd.Bool("ignore-case"),
-			})
-			if err != nil {
-				return err
-			}
-
-			printOutput(page, format, true)
-			return nil
-		}),
+func printPaginated[T any](cmd *cli.Command, items []T, format string) error {
+	page, err := workflowy.NewPage(items, cmd.Int("limit"), cmd.Int("offset"))
+	if err != nil {
+		return err
 	}
+	printOutput(page, format, true)
+	return nil
 }
 
 func getCreateCommand() *cli.Command {
@@ -834,13 +829,9 @@ func getSearchCommand() *cli.Command {
 				searchRoot = []*workflowy.Item{rootItem}
 			}
 
-			var orderBy *search.OrderBy
-			if ob := cmd.String("order-by"); ob != "" {
-				parsed, err := search.ParseOrderBy(ob)
-				if err != nil {
-					return err
-				}
-				orderBy = &parsed
+			orderBy, err := search.ParseOrderBy(cmd.String("sort"))
+			if err != nil {
+				return err
 			}
 
 			includeCompleted := cmd.Bool("include-completed")
@@ -854,8 +845,9 @@ func getSearchCommand() *cli.Command {
 						cmd.Bool("ignore-case"),
 						includeCompleted,
 					)
-					if orderBy != nil {
-						search.SortTreeNodes(tree, *orderBy)
+					search.SortTreeNodes(tree, orderBy)
+					if paginationRequested(cmd) {
+						return printPaginated(cmd, tree, format)
 					}
 					printOutput(tree, format, false)
 				} else {
@@ -871,8 +863,9 @@ func getSearchCommand() *cli.Command {
 						includeCompleted,
 						strategy,
 					)
-					if orderBy != nil {
-						search.SortGroupedResults(grouped, *orderBy)
+					search.SortGroupedResults(grouped, orderBy)
+					if paginationRequested(cmd) {
+						return printPaginated(cmd, grouped, format)
 					}
 					printOutput(grouped, format, false)
 				}
@@ -884,8 +877,9 @@ func getSearchCommand() *cli.Command {
 					cmd.Bool("ignore-case"),
 					includeCompleted,
 				)
-				if orderBy != nil {
-					search.SortResults(results, *orderBy)
+				search.SortResults(results, orderBy)
+				if paginationRequested(cmd) {
+					return printPaginated(cmd, results, format)
 				}
 				printOutput(results, format, false)
 			}

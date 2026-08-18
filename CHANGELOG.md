@@ -5,9 +5,13 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 ### Added
-- MCP `workflowy_children` tool for paginated, compact, direct-children-only listing.
-- `workflowy children` CLI command with `--limit`, `--offset`, `--name-filter`, `--ignore-case`, and `--full`.
-- Shared direct-child pagination and compact projection helpers.
+- Optional `limit` and `offset` pagination for the existing `get`, `list`, and `search` CLI commands and MCP tools.
+- Shared pagination responses with `items`, `total`, `limit`, `offset`, `has_more`, and `next_offset`.
+- Shared `sort` option for `get`, `list`, and `search`, defaulting to Workflowy `priority` order.
+
+### Changed
+- Search's existing `order_by` option remains available as a compatibility alias for `sort`.
+- Existing response shapes are preserved unless `limit` or `offset` is explicitly provided.
 
 ## [0.9.0] - Ancestor Retrieval
 

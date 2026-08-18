@@ -11,7 +11,6 @@ Connect AI assistants like Claude, ChatGPT, and other MCP-compatible clients to 
 - [Workflowy MCP Tools](#workflowy-mcp-tools)
   - [workflowy_get](#workflowy_get)
   - [workflowy_list](#workflowy_list)
-  - [workflowy_children](#workflowy_children)
   - [workflowy_search](#workflowy_search)
   - [workflowy_targets](#workflowy_targets)
   - [workflowy_create](#workflowy_create)
@@ -139,9 +138,13 @@ Get a node and its descendants as a tree structure.
 | `include_ancestors` | boolean | Wrap result in ancestor path from root to target node (requires export or backup method) | `false` |
 | `ancestor_depth` | number | Include N levels of ancestors (-1 for all, 0 for none; requires export or backup method) | `0` |
 | `to_ancestor` | string | Include ancestors up to and including this node ID (requires export or backup method) | - |
+| `sort` | string | Sort by `priority`, `name`, `modified`, or `created` (prefix `+`/`-` for direction) | `priority` |
+| `limit` | number | Enable pagination and return at most this many direct children (max 200) | `50` when paginating |
+| `offset` | number | Enable pagination and skip this many sorted direct children | `0` |
 | `method` | string | Access method: get, export, or backup | auto |
 
 Only one ancestor parameter may be used at a time. When used, `include_ancestors` is equivalent to `ancestor_depth=-1`.
+Pagination cannot be combined with ancestor parameters. When `limit` or `offset` is supplied, `items` contains the node's sorted direct children; each child retains the requested descendant depth.
 
 **Example prompts:**
 - "Show me the contents of my Projects folder"
@@ -160,37 +163,12 @@ List descendants as a flat list.
 | `item_id` | string | Node ID or target name | root |
 | `depth` | number | Recursion depth (-1 for all) | `2` |
 | `include_empty_names` | boolean | Include empty-named items | `false` |
+| `sort` | string | Sort by `priority`, `name`, `modified`, or `created` (prefix `+`/`-` for direction) | `priority` |
+| `limit` | number | Enable pagination and return at most this many flat results (max 200) | `50` when paginating |
+| `offset` | number | Enable pagination and skip this many sorted results | `0` |
 | `method` | string | Access method: get, export, or backup | auto |
 
 **Example prompt:** "List all items in my inbox"
-
----
-
-#### workflowy_children
-
-List only the direct children of a node with stable ordering and pagination. This is the recommended tool for triaging large inboxes or folders because it does not include nested descendants.
-
-**Parameters:**
-| Parameter | Type | Description | Default |
-|-----------|------|-------------|---------|
-| `id` | string | Parent node ID or target name | root |
-| `limit` | number | Maximum direct children to return (max 200) | `50` |
-| `offset` | number | Number of matching direct children to skip | `0` |
-| `compact` | boolean | Return compact child objects | `true` |
-| `name_filter` | string | Optional regex matched against direct child names before pagination | - |
-| `ignore_case` | boolean | Apply `name_filter` case-insensitively | `false` |
-| `method` | string | Access method: get, export, or backup | get |
-
-**Returns:**
-- `items`: Direct children only. Compact items include `id`, `name`, `layoutMode` when present, `completed`, and `has_children` when known.
-- `total`: Count of matching direct children before pagination.
-- `limit`, `offset`: Page parameters used.
-- `has_more`: Whether another page exists.
-- `next_offset`: Offset for the next page, omitted on the last page.
-
-**Example prompt:** "List the first 50 direct children of my Dropbox node, then continue with the next page."
-
----
 
 #### workflowy_search
 
@@ -206,7 +184,10 @@ Search nodes by text or regex pattern. Completed nodes (and their descendants) a
 | `include_completed` | boolean | Include completed nodes in results | `false` |
 | `group_by` | string | Group results: `parent`, `path`, `tree`, `modified.<unit>`, `created.<unit>` | - |
 | `path_max_length` | number | Max chars per path segment when using `group_by=path` | `20` |
-| `order_by` | string | Sort by: `match`, `parent`, `path`, `modified`, `created` (prefix `+`/`-` for asc/desc) | - |
+| `sort` | string | Sort by: `priority`, `name`, `match`, `parent`, `path`, `modified`, `created` (prefix `+`/`-` for direction) | `priority` |
+| `order_by` | string | Deprecated compatibility alias for `sort` | - |
+| `limit` | number | Enable pagination and return at most this many results (max 200) | `50` when paginating |
+| `offset` | number | Enable pagination and skip this many sorted results | `0` |
 | `method` | string | Access method: get, export, or backup | export |
 
 **Group-by units:** `year`, `month`, `day`, or a Go time format string.
@@ -216,6 +197,8 @@ Search nodes by text or regex pattern. Completed nodes (and their descendants) a
 - "Find items matching the pattern TODO or FIXME"
 - "Search for dates in my notes, grouped by parent"
 - "Find all TODOs grouped as a tree"
+
+Without pagination arguments, all three tools retain their existing response shapes. When `limit` or `offset` is supplied, the response contains `items`, `total`, `limit`, `offset`, `has_more`, and `next_offset` when another page exists. For grouped or tree searches, pagination applies to the top-level groups or roots.
 
 ---
 

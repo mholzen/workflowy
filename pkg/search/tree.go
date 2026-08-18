@@ -20,6 +20,7 @@ type TreeNode struct {
 
 	CreatedAt  int64 `json:"-"`
 	ModifiedAt int64 `json:"-"`
+	Priority   int   `json:"-"`
 }
 
 func (n *TreeNode) String() string {
@@ -83,6 +84,7 @@ func insertMatchIntoTree(item *workflowy.Item, ancestors []*workflowy.Item, matc
 				URL:        fmt.Sprintf("https://workflowy.com/#/%s", ancestor.ID),
 				CreatedAt:  ancestor.CreatedAt,
 				ModifiedAt: ancestor.ModifiedAt,
+				Priority:   ancestor.Priority,
 			}
 			nodeMap[ancestor.ID] = node
 			if parent == nil {
@@ -108,6 +110,7 @@ func insertMatchIntoTree(item *workflowy.Item, ancestors []*workflowy.Item, matc
 		MatchPositions:  matchPositions,
 		CreatedAt:       item.CreatedAt,
 		ModifiedAt:      item.ModifiedAt,
+		Priority:        item.Priority,
 	}
 	nodeMap[item.ID] = matchNode
 
@@ -138,7 +141,9 @@ func SortTreeNodes(nodes []*TreeNode, order OrderBy) {
 
 func compareTreeNodes(a, b *TreeNode, order OrderBy) int {
 	switch order.Field {
-	case "match", "parent", "path":
+	case "priority":
+		return compareInts(a.Priority, b.Priority)
+	case "name", "match", "parent", "path":
 		return strings.Compare(a.Name, b.Name)
 	case "modified":
 		return compareInt64(descendantTimestamp(a, "modified", order.Ascending), descendantTimestamp(b, "modified", order.Ascending))

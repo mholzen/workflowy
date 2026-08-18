@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 )
 
@@ -57,4 +58,43 @@ func TestGetMethodFlags_IncludesAPIKeyFile(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "getMethodFlags should include api-key-file flag")
+}
+
+func TestPaginationRequestedOnlyForExplicitFlags(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "omitted", args: []string{"test"}, want: false},
+		{name: "limit", args: []string{"test", "--limit=50"}, want: true},
+		{name: "explicit zero offset", args: []string{"test", "--offset=0"}, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got bool
+			cmd := &cli.Command{
+				Flags: getPaginationFlags(),
+				Action: func(_ context.Context, command *cli.Command) error {
+					got = paginationRequested(command)
+					return nil
+				},
+			}
+			require.NoError(t, cmd.Run(context.Background(), tt.args))
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFetchParamsRejectPaginationWithAncestorOptions(t *testing.T) {
+	cmd := &cli.Command{
+		Flags: append(getFetchFlags(), &cli.StringFlag{Name: "format", Value: "list"}),
+		Action: func(_ context.Context, command *cli.Command) error {
+			_, err := getAndValidateFetchParams(command)
+			assert.EqualError(t, err, "cannot combine pagination with ancestor options")
+			return nil
+		},
+	}
+	require.NoError(t, cmd.Run(context.Background(), []string{"test", "--limit=10", "--include-ancestors"}))
 }

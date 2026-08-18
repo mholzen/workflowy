@@ -11,6 +11,10 @@ func TestParseOrderBy(t *testing.T) {
 		ascending bool
 		wantErr   bool
 	}{
+		{"", "priority", true, false},
+		{"priority", "priority", true, false},
+		{"-priority", "priority", false, false},
+		{"name", "name", true, false},
 		{"match", "match", true, false},
 		{"parent", "parent", true, false},
 		{"path", "path", true, false},
@@ -47,9 +51,14 @@ func TestParseOrderBy(t *testing.T) {
 
 func TestSortResults(t *testing.T) {
 	results := []Result{
-		{Name: "banana", ModifiedAt: 100, CreatedAt: 300},
-		{Name: "apple", ModifiedAt: 300, CreatedAt: 100},
-		{Name: "cherry", ModifiedAt: 200, CreatedAt: 200},
+		{Name: "banana", Priority: 2, ModifiedAt: 100, CreatedAt: 300},
+		{Name: "apple", Priority: 3, ModifiedAt: 300, CreatedAt: 100},
+		{Name: "cherry", Priority: 1, ModifiedAt: 200, CreatedAt: 200},
+	}
+
+	SortResults(results, OrderBy{Field: "priority", Ascending: true})
+	if results[0].Name != "cherry" || results[1].Name != "banana" || results[2].Name != "apple" {
+		t.Errorf("priority asc: got %s, %s, %s", results[0].Name, results[1].Name, results[2].Name)
 	}
 
 	SortResults(results, OrderBy{Field: "match", Ascending: true})

@@ -88,10 +88,9 @@ Restart Claude Desktop and start asking Claude to work with your Workflowy!
 ### Read Tools (Safe)
 | Tool | Description |
 |------|-------------|
-| `workflowy_get` | Get a node and its descendants as a tree |
-| `workflowy_list` | List descendants as a flat list |
-| `workflowy_children` | Page through direct children without nested descendants |
-| `workflowy_search` | Search nodes by text or regex |
+| `workflowy_get` | Get a node tree, with optional direct-child pagination |
+| `workflowy_list` | List descendants as a sortable, optionally paginated flat list |
+| `workflowy_search` | Search nodes by text or regex, with sorting and pagination |
 | `workflowy_targets` | List shortcuts and system targets (inbox, etc.) |
 | `workflowy_id` | Resolve short ID or target key to full UUID |
 | `workflowy_report_count` | Find where most of your content lives |
