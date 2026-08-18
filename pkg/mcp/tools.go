@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"regexp"
 	"strings"
 
@@ -251,8 +252,32 @@ func toolPaginationRequested(req mcptypes.CallToolRequest) bool {
 	return limitSet || offsetSet
 }
 
+// paginationArg reads a whole-number pagination argument. JSON numbers arrive
+// as float64 and GetInt truncates them, so a client asking for a limit of 1.9
+// would otherwise be handed a different window than it requested without being
+// told. The schema declares the same bounds, but a client is free to ignore it.
+func paginationArg(req mcptypes.CallToolRequest, key string, fallback int) (int, error) {
+	raw, ok := req.GetArguments()[key]
+	if !ok {
+		return fallback, nil
+	}
+	if number, isNumber := raw.(float64); isNumber && number != math.Trunc(number) {
+		return 0, fmt.Errorf("%s must be a whole number, got %v", key, number)
+	}
+	return req.GetInt(key, fallback), nil
+}
+
 func newPaginatedToolResult[T any](req mcptypes.CallToolRequest, items []T, node *workflowy.NodeRef) (*mcptypes.CallToolResult, error) {
-	page, err := workflowy.NewPage(items, req.GetInt("limit", workflowy.DefaultPageLimit), req.GetInt("offset", 0))
+	limit, err := paginationArg(req, "limit", workflowy.DefaultPageLimit)
+	if err != nil {
+		return mcptypes.NewToolResultError(err.Error()), nil
+	}
+	offset, err := paginationArg(req, "offset", 0)
+	if err != nil {
+		return mcptypes.NewToolResultError(err.Error()), nil
+	}
+
+	page, err := workflowy.NewPage(items, limit, offset)
 	if err != nil {
 		return mcptypes.NewToolResultError(err.Error()), nil
 	}
@@ -292,10 +317,15 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 				mcptypes.Description("Include ancestors up to and including this node ID (requires export or backup method)"),
 			),
 			mcptypes.WithNumber("limit",
-				mcptypes.Description("Maximum number of sorted direct children to return when paginating (default 50, max 200)"),
+				mcptypes.Description("Maximum number of sorted direct children to return when paginating (default 50, min 1, max 200)"),
+				mcptypes.Min(1),
+				mcptypes.Max(workflowy.MaxPageLimit),
+				mcptypes.MultipleOf(1),
 			),
 			mcptypes.WithNumber("offset",
 				mcptypes.Description("Number of sorted direct children to skip; providing limit or offset enables pagination"),
+				mcptypes.Min(0),
+				mcptypes.MultipleOf(1),
 			),
 			mcptypes.WithString("sort",
 				mcptypes.Description("Sort by priority, name, modified, or created (prefix +/- for asc/desc)"),
@@ -417,10 +447,15 @@ func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
 				mcptypes.Description("Access method: get, export, or backup (default: auto based on depth)"),
 			),
 			mcptypes.WithNumber("limit",
-				mcptypes.Description("Maximum number of sorted results to return when paginating (default 50, max 200)"),
+				mcptypes.Description("Maximum number of sorted results to return when paginating (default 50, min 1, max 200)"),
+				mcptypes.Min(1),
+				mcptypes.Max(workflowy.MaxPageLimit),
+				mcptypes.MultipleOf(1),
 			),
 			mcptypes.WithNumber("offset",
 				mcptypes.Description("Number of sorted results to skip; providing limit or offset enables pagination"),
+				mcptypes.Min(0),
+				mcptypes.MultipleOf(1),
 			),
 			mcptypes.WithString("sort",
 				mcptypes.Description("Sort by priority, name, modified, or created (prefix +/- for asc/desc)"),
@@ -501,10 +536,15 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				mcptypes.DefaultString("priority"),
 			),
 			mcptypes.WithNumber("limit",
-				mcptypes.Description("Maximum number of sorted results to return when paginating (default 50, max 200)"),
+				mcptypes.Description("Maximum number of sorted results to return when paginating (default 50, min 1, max 200)"),
+				mcptypes.Min(1),
+				mcptypes.Max(workflowy.MaxPageLimit),
+				mcptypes.MultipleOf(1),
 			),
 			mcptypes.WithNumber("offset",
 				mcptypes.Description("Number of sorted results to skip; providing limit or offset enables pagination"),
+				mcptypes.Min(0),
+				mcptypes.MultipleOf(1),
 			),
 			mcptypes.WithString("method",
 				mcptypes.Description("Access method: get, export, or backup (default: export)"),
@@ -557,6 +597,7 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 			if err != nil {
 				return mcptypes.NewToolResultError(err.Error()), nil
 			}
+			search.SortSearchRoots(searchRoot, orderBy)
 
 			groupBy := req.GetString("group_by", "")
 			if groupBy != "" {

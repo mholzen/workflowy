@@ -144,7 +144,7 @@ Get a node and its descendants as a tree structure.
 | `method` | string | Access method: get, export, or backup | auto |
 
 Only one ancestor parameter may be used at a time. When used, `include_ancestors` is equivalent to `ancestor_depth=-1`.
-Pagination cannot be combined with ancestor parameters. When `limit` or `offset` is supplied, `items` contains the node's sorted direct children and `node` identifies the parent they belong to, so a client can tell what it is paging through. Each child retains the requested descendant depth.
+Pagination cannot be combined with ancestor parameters. When `limit` or `offset` is supplied, `items` contains the node's sorted direct children and `node` identifies the parent they belong to, so a client can tell what it is paging through. Each child retains the requested descendant depth. Paging the root is the one exception: there the items are the top-level nodes, which have no parent, so `node` is omitted.
 
 **Example prompts:**
 - "Show me the contents of my Projects folder"
@@ -202,7 +202,7 @@ Search nodes by text or regex pattern. Completed nodes (and their descendants) a
 - "Search for dates in my notes, grouped by parent"
 - "Find all TODOs grouped as a tree"
 
-Matches are collected depth-first, so `sort=priority` (the default) returns them in outline order and leaves the result set as found; `-priority` reverses it. The other fields rank matches by a value each node carries. Under `group_by=tree` the results keep their hierarchy, so `priority` there orders real siblings.
+`sort=priority` (the default) returns matches in outline order. Because `priority` is a sibling index it is applied to the outline before matches are gathered, not to the matches themselves, so `-priority` means the same thing here as it does for `workflowy_list`: siblings in reverse order, but a parent still ahead of its own children. The other fields rank matches by a value each node carries. Under `group_by=tree` the results keep their hierarchy, so `priority` there orders real siblings.
 
 Without pagination arguments, all three tools retain their existing response shapes. When `limit` or `offset` is supplied, the response contains `items`, `total`, `limit`, `offset`, `has_more`, and `next_offset` when another page exists, plus `node` for `workflowy_get`. For grouped or tree searches, pagination applies to the top-level groups or roots.
 

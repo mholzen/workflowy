@@ -860,6 +860,7 @@ func getSearchCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
+			search.SortSearchRoots(searchRoot, orderBy)
 
 			includeCompleted := cmd.Bool("include-completed")
 

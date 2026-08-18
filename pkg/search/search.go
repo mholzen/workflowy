@@ -5,7 +5,6 @@ package search
 import (
 	"fmt"
 	"regexp"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -374,20 +373,34 @@ func ParseOrderBy(value string) (OrderBy, error) {
 	}
 }
 
-// isOutlineOrder reports whether an order means "leave the results in the order
-// the outline produced them". A match's priority is its index among its own
-// siblings, so across a result set spanning many parents it carries no usable
-// ordering; the collection order does, because matches are gathered depth-first.
+// isOutlineOrder reports whether an order describes a node's position among its
+// own siblings rather than a value the node carries. A match's priority only
+// means anything inside one parent, so it cannot order a result set spanning
+// many parents; it has to be applied to the outline before matches are
+// collected, which SortSearchRoots does.
 func isOutlineOrder(order OrderBy) bool {
 	return order.Field == "priority"
 }
 
-// SortResults sorts a flat result list by the given order.
+// SortSearchRoots orders the outline that matches will be collected from, so
+// that an outline order survives into the depth-first collection order. It is a
+// no-op for orders that rank results by a value each node carries.
+//
+// Reversing the collected results instead would produce reverse depth-first
+// order, which puts a child before its own parent and disagrees with what the
+// same order does to `list`.
+func SortSearchRoots(items []*workflowy.Item, order OrderBy) {
+	if !isOutlineOrder(order) {
+		return
+	}
+	workflowy.SortItems(items, workflowy.SortOrder{Field: "priority", Ascending: order.Ascending}, true)
+}
+
+// SortResults sorts a flat result list by the given order. An outline order is
+// already carried by the collection order, so it is applied by SortSearchRoots
+// before the search runs rather than here.
 func SortResults(results []Result, order OrderBy) {
 	if isOutlineOrder(order) {
-		if !order.Ascending {
-			slices.Reverse(results)
-		}
 		return
 	}
 	sort.SliceStable(results, func(i, j int) bool {
@@ -431,9 +444,6 @@ func compareInt64(a, b int64) int {
 // for priority it keeps the order in which the outline produced the groups.
 func SortGroupedResults(groups []GroupedResult, order OrderBy) {
 	if isOutlineOrder(order) {
-		if !order.Ascending {
-			slices.Reverse(groups)
-		}
 		return
 	}
 	sort.SliceStable(groups, func(i, j int) bool {

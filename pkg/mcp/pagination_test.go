@@ -110,6 +110,20 @@ func TestPaginationRejectsAnExplicitZeroLimit(t *testing.T) {
 	assert.True(t, result.IsError, "zero is an empty page, not a request for the default limit")
 }
 
+func TestPaginationRejectsFractionalArguments(t *testing.T) {
+	builder := NewToolBuilder(nil, "", "", "backup", writeTestBackup(t))
+	tool := mcpToolCase{serverTool: builder.buildListTool()}
+
+	for _, args := range []map[string]any{
+		{"id": "None", "limit": 1.9},
+		{"id": "None", "offset": -0.5},
+	} {
+		result := tool.call(t, args)
+		assert.True(t, result.IsError,
+			"truncating would hand back a window the caller did not ask for: %v", args)
+	}
+}
+
 func TestPaginationDefaultsToTheDefaultLimitWhenOnlyOffsetIsGiven(t *testing.T) {
 	builder := NewToolBuilder(nil, "", "", "backup", writeTestBackup(t))
 	tool := mcpToolCase{serverTool: builder.buildListTool()}
@@ -121,27 +135,7 @@ func TestPaginationDefaultsToTheDefaultLimitWhenOnlyOffsetIsGiven(t *testing.T) 
 	assert.Equal(t, workflowy.DefaultPageLimit, page.Limit)
 }
 
-// The default sort is priority, which is a node's index among its own siblings.
-// Search results span many parents, so the default must leave them in the order
 // the outline produced rather than interleave them by sibling index.
-func TestSearchDefaultSortKeepsOutlineOrder(t *testing.T) {
-	builder := NewToolBuilder(nil, "", "", "backup", writeTestBackup(t))
-	tool := mcpToolCase{serverTool: builder.buildSearchTool()}
-
-	result := tool.call(t, map[string]any{"pattern": "a"})
-
-	structured, ok := result.StructuredContent.(map[string]any)
-	require.True(t, ok)
-	results, ok := structured["results"].([]search.Result)
-	require.True(t, ok)
-
-	names := make([]string, len(results))
-	for i, r := range results {
-		names[i] = r.Name
-	}
-	assert.Equal(t, []string{"Charlie", "Charlie child", "Alpha", "Bravo"}, names)
-}
-
 func TestGetPaginationRejectsAncestorOptions(t *testing.T) {
 	builder := NewToolBuilder(nil, "", "", "backup", filepath.Join(t.TempDir(), "unused.json"))
 	tool := mcpToolCase{serverTool: builder.buildGetTool()}

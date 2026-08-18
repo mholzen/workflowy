@@ -246,7 +246,7 @@ workflowy get <item-id> --ancestor-depth 2
 workflowy get <item-id> --to-ancestor <parent-id>
 ```
 
-Pagination cannot be combined with ancestor retrieval. When `limit` or `offset` is supplied, `get` returns a pagination envelope whose `items` are the node's sorted direct children and whose `node` identifies the parent they belong to. The requested depth is retained inside each child.
+Pagination cannot be combined with ancestor retrieval. When `limit` or `offset` is supplied, `get` returns a pagination envelope whose `items` are the node's sorted direct children and whose `node` identifies the parent they belong to. The requested depth is retained inside each child. Paging the root is the one exception: there the items are the top-level nodes, which have no parent, so `node` is omitted.
 
 The envelope is JSON. With `--format=list` or `--format=markdown` the page is rendered as outline content and the window (`# 1-50 of 1000`) is written to stderr, so piping stdout still yields only the outline.
 
@@ -557,7 +557,7 @@ workflowy search "meeting" --format json
 | `--limit <n>` | Enable pagination and return at most this many results (min 1, max 200) | `50` when paginating |
 | `--offset <n>` | Enable pagination and skip this many sorted results | `0` |
 
-Matches are collected depth-first, so `--sort=priority` (the default) returns them in outline order and leaves the result set as found; `--sort=-priority` reverses it. The other fields rank matches by a value each node carries. Under `--group-by=tree` the results keep their hierarchy, so `priority` there orders real siblings.
+`--sort=priority` (the default) returns matches in outline order. Because `priority` is a sibling index it is applied to the outline before matches are gathered, not to the matches themselves, so `--sort=-priority` means the same thing here as it does for `list`: siblings in reverse order, but a parent still ahead of its own children. The other fields rank matches by a value each node carries. Under `--group-by=tree` the results keep their hierarchy, so `priority` there orders real siblings.
 
 **Group-by units:** `year`, `month`, `day`, or a Go time format string.
 
