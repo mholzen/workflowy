@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Search's existing `order_by` option remains available as a compatibility alias for `sort`.
 - Existing response shapes are preserved unless `limit` or `offset` is explicitly provided.
 - `priority` is a node's index among its own siblings, so it is applied to sibling groups before a result set is flattened or collected: `list` sorts the tree before flattening, and `search` sorts the outline before gathering matches. `name`, `modified`, and `created` continue to rank the whole result set afterwards. This keeps the default sort equal to Workflowy's outline order for both commands, and makes `-priority` mean the same thing for both.
+- A descending `priority` sort reverses sibling order rather than sorting siblings by value, so `-priority` also works on backups, which record position by array order and carry no priority values.
 - Paginated `--format=list` and `--format=markdown` output renders the page as outline content and reports the window on stderr, instead of falling back to JSON.
 - An explicit `limit` of 0 is rejected rather than silently treated as the default of 50, and the MCP `limit`/`offset` schemas declare their bounds and reject fractional values instead of truncating them.
 

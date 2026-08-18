@@ -117,6 +117,33 @@ func TestSortItemsSupportsFieldsAndDirection(t *testing.T) {
 	assert.Equal(t, []string{"d", "a", "b", "c"}, itemIDs(items))
 }
 
+// Backup files record position by array order and leave priority at zero, so
+// every sibling ties. A stable descending sort by value would leave the list
+// exactly as it was, making -priority silently do nothing on that path.
+func TestSortItemsReversesSiblingsForDescendingPriorityWhenAllTie(t *testing.T) {
+	items := []*Item{{ID: "z"}, {ID: "a"}, {ID: "m"}}
+	order, err := ParseSortOrder("-priority")
+	require.NoError(t, err)
+
+	SortItems(items, order, false)
+
+	assert.Equal(t, []string{"m", "a", "z"}, itemIDs(items))
+}
+
+func TestSortItemsReversesSiblingsForDescendingPriorityWithRealValues(t *testing.T) {
+	items := []*Item{
+		{ID: "c", Priority: 2},
+		{ID: "a", Priority: 0},
+		{ID: "b", Priority: 1},
+	}
+	order, err := ParseSortOrder("-priority")
+	require.NoError(t, err)
+
+	SortItems(items, order, false)
+
+	assert.Equal(t, []string{"c", "b", "a"}, itemIDs(items))
+}
+
 func TestSortItemsPreservesOutlineOrderWhenPrioritiesTie(t *testing.T) {
 	items := []*Item{
 		{ID: "z", Priority: 0},

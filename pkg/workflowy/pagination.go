@@ -2,6 +2,7 @@ package workflowy
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -112,6 +113,46 @@ func ParseSortOrder(value string) (SortOrder, error) {
 
 // SortItems orders siblings and, when recursive is true, every descendant list.
 func SortItems(items []*Item, order SortOrder, recursive bool) {
+	sortSiblings(items, order)
+
+	if recursive {
+		for _, item := range items {
+			SortItems(item.Children, order, true)
+		}
+	}
+}
+
+// sortSiblings orders one sibling list.
+//
+// Descending priority means "reverse the sibling order", which a stable
+// descending sort by value cannot express on every path: BackupNodeToItem
+// leaves Priority at zero for backup nodes, so all siblings tie and the list
+// comes back untouched. Sorting ascending and then reversing gives the intended
+// order on both paths, since an export tree is already ordered by priority.
+//
+// Caveat: with tied priorities the result depends on the order the slice is
+// already in, so this is not idempotent. Sorting the same slice twice returns
+// it to its original order, and reversing after some other in-place sort
+// reverses that order rather than the outline. Both are safe today because no
+// tree is sorted more than once: ReadBackupFile re-parses the file and
+// loadExportTree rebuilds from the cached nodes on every call, and each handler
+// resolves one order and applies it once. Anything that starts reusing or
+// re-sorting a tree must not rely on this.
+//
+// The underlying cause is that a backup node carries no sibling index at all.
+// Recording one during conversion would remove this branch and make the sort
+// deterministic, but it touches how backups are read, so it is proposed to the
+// maintainer separately rather than decided here.
+func sortSiblings(items []*Item, order SortOrder) {
+	if order.Field == "priority" && !order.Ascending {
+		sortSiblingsBy(items, SortOrder{Field: "priority", Ascending: true})
+		slices.Reverse(items)
+		return
+	}
+	sortSiblingsBy(items, order)
+}
+
+func sortSiblingsBy(items []*Item, order SortOrder) {
 	sort.SliceStable(items, func(i, j int) bool {
 		cmp := compareItems(items[i], items[j], order.Field)
 		if order.Ascending {
@@ -119,12 +160,6 @@ func SortItems(items []*Item, order SortOrder, recursive bool) {
 		}
 		return cmp > 0
 	})
-
-	if recursive {
-		for _, item := range items {
-			SortItems(item.Children, order, true)
-		}
-	}
 }
 
 func compareItems(a, b *Item, field string) int {
