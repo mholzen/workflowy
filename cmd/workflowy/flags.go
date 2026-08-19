@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mholzen/workflowy/pkg/workflowy"
 	"github.com/urfave/cli/v3"
 )
 
@@ -57,9 +58,34 @@ func getFetchFlags() []cli.Flag {
 			Name:  "to-ancestor",
 			Usage: "Include ancestors up to and including this node ID (requires export or backup method)",
 		},
+		getSortFlag("Sort by: priority, name, modified, created (prefix +/- for asc/desc)"),
 	}
+	flags = append(flags, getPaginationFlags()...)
 	flags = append(flags, getMethodFlags()...)
 	return flags
+}
+
+func getPaginationFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.IntFlag{
+			Name:  "limit",
+			Value: workflowy.DefaultPageLimit,
+			Usage: "Maximum number of sorted results to return (default 50, max 200)",
+		},
+		&cli.IntFlag{
+			Name:  "offset",
+			Usage: "Number of sorted results to skip before returning results",
+		},
+	}
+}
+
+func getSortFlag(usage string, aliases ...string) cli.Flag {
+	return &cli.StringFlag{
+		Name:    "sort",
+		Aliases: aliases,
+		Value:   "priority",
+		Usage:   usage,
+	}
 }
 
 func getWriteFlags(commandFlags ...cli.Flag) []cli.Flag {
@@ -159,6 +185,15 @@ func getAndValidateFetchParams(cmd *cli.Command) (FetchParameters, error) {
 	if err := validateFormat(format); err != nil {
 		return FetchParameters{}, err
 	}
+	if paginationRequested(cmd) {
+		ancestorOpts, err := resolveAncestorOptions(cmd)
+		if err != nil {
+			return FetchParameters{}, err
+		}
+		if ancestorOpts.enabled {
+			return FetchParameters{}, fmt.Errorf("cannot combine pagination with ancestor options")
+		}
+	}
 
 	depth := cmd.Int("depth")
 	if cmd.Bool("all") {
@@ -217,7 +252,7 @@ func getDepthFlag(defaultValue int, usage string) cli.Flag {
 }
 
 func getSearchFlags() []cli.Flag {
-	return []cli.Flag{
+	flags := []cli.Flag{
 		getIgnoreCaseFlag(),
 		getRegexpFlag(),
 		getIdFlag("ID to search within (default: root)"),
@@ -231,16 +266,13 @@ func getSearchFlags() []cli.Flag {
 			Value: 20,
 			Usage: "Max characters per path segment name when using --group-by=path",
 		},
-		&cli.StringFlag{
-			Name:    "order-by",
-			Aliases: []string{"o"},
-			Usage:   "Sort results by: match, parent, path, modified, created (prefix +/- for asc/desc)",
-		},
+		getSortFlag("Sort by: priority, name, match, parent, path, modified, created (prefix +/- for asc/desc)", "order-by", "o"),
 		&cli.BoolFlag{
 			Name:  "include-completed",
 			Usage: "Include completed nodes in search results (excluded by default)",
 		},
 	}
+	return append(flags, getPaginationFlags()...)
 }
 
 func getReplaceFlags() []cli.Flag {
@@ -310,4 +342,3 @@ func getReadRootIdFlag() cli.Flag {
 func getReadRootID(cmd *cli.Command) string {
 	return cmd.String("read-root-id")
 }
-

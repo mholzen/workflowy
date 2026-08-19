@@ -6,11 +6,10 @@ import (
 	"io"
 	"log"
 	"os"
-	"sort"
 	"strings"
 
-	"github.com/mholzen/workflowy/pkg/search"
 	"github.com/mholzen/workflowy/pkg/formatter"
+	"github.com/mholzen/workflowy/pkg/search"
 	"github.com/mholzen/workflowy/pkg/workflowy"
 )
 
@@ -24,18 +23,6 @@ func printJSONToWriter(w io.Writer, response interface{}) {
 		log.Fatalf("cannot format JSON: %v", err)
 	}
 	fmt.Fprintf(w, "%s\n", prettyJSON)
-}
-
-func sortItemsByPriority(items []*workflowy.Item) {
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].Priority < items[j].Priority
-	})
-
-	for _, item := range items {
-		if len(item.Children) > 0 {
-			sortItemsByPriority(item.Children)
-		}
-	}
 }
 
 func itemToMarkdownList(item *workflowy.Item, depth int) string {
@@ -83,16 +70,6 @@ func printOutput(data interface{}, format string, showEmptyNames bool) {
 			v.Items = filterEmptyNames(v.Items)
 		case *workflowy.CreateNodeResponse:
 		}
-	}
-
-	switch v := data.(type) {
-	case *workflowy.Item:
-		if len(v.Children) > 0 {
-			sortItemsByPriority(v.Children)
-		}
-	case *workflowy.ListChildrenResponse:
-		sortItemsByPriority(v.Items)
-	case *workflowy.CreateNodeResponse:
 	}
 
 	switch format {

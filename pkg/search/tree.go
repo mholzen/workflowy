@@ -20,6 +20,7 @@ type TreeNode struct {
 
 	CreatedAt  int64 `json:"-"`
 	ModifiedAt int64 `json:"-"`
+	Priority   int   `json:"-"`
 }
 
 func (n *TreeNode) String() string {
@@ -83,6 +84,7 @@ func insertMatchIntoTree(item *workflowy.Item, ancestors []*workflowy.Item, matc
 				URL:        fmt.Sprintf("https://workflowy.com/#/%s", ancestor.ID),
 				CreatedAt:  ancestor.CreatedAt,
 				ModifiedAt: ancestor.ModifiedAt,
+				Priority:   ancestor.Priority,
 			}
 			nodeMap[ancestor.ID] = node
 			if parent == nil {
@@ -108,6 +110,7 @@ func insertMatchIntoTree(item *workflowy.Item, ancestors []*workflowy.Item, matc
 		MatchPositions:  matchPositions,
 		CreatedAt:       item.CreatedAt,
 		ModifiedAt:      item.ModifiedAt,
+		Priority:        item.Priority,
 	}
 	nodeMap[item.ID] = matchNode
 
@@ -136,9 +139,24 @@ func SortTreeNodes(nodes []*TreeNode, order OrderBy) {
 	}
 }
 
+// compareInts orders sibling indexes. Unlike the flat and grouped result sets,
+// a tree keeps every node next to its real siblings, so priority still orders
+// them the way the outline does.
+func compareInts(a, b int) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
+}
+
 func compareTreeNodes(a, b *TreeNode, order OrderBy) int {
 	switch order.Field {
-	case "match", "parent", "path":
+	case "priority":
+		return compareInts(a.Priority, b.Priority)
+	case "name", "match", "parent", "path":
 		return strings.Compare(a.Name, b.Name)
 	case "modified":
 		return compareInt64(descendantTimestamp(a, "modified", order.Ascending), descendantTimestamp(b, "modified", order.Ascending))

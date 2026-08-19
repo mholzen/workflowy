@@ -205,6 +205,12 @@ workflowy get <item-id> --all
 
 # Force specific access method
 workflowy get <item-id> --method=backup
+
+# Page through the node's direct children in priority order
+workflowy get <item-id> --limit 50 --offset 0 --format=json
+
+# Sort children by name before taking a page
+workflowy get <item-id> --sort=name --limit 50 --format=json
 ```
 
 **Options:**
@@ -217,6 +223,9 @@ workflowy get <item-id> --method=backup
 | `--include-ancestors` | Wrap result in ancestor path from root to target node | `false` |
 | `--ancestor-depth <n>` | Include N levels of ancestors (-1 for all, 0 for none) | `0` |
 | `--to-ancestor <id>` | Include ancestors up to and including this node ID | - |
+| `--sort <field>` | Sort by `priority`, `name`, `modified`, or `created` (prefix `+`/`-` for direction) | `priority` |
+| `--limit <n>` | Enable pagination and return at most this many results (min 1, max 200) | `50` when paginating |
+| `--offset <n>` | Enable pagination and skip this many sorted results | `0` |
 
 **Smart API Selection:**
 - Depth 1-3: Uses GET API (efficient for shallow fetches)
@@ -237,6 +246,10 @@ workflowy get <item-id> --ancestor-depth 2
 workflowy get <item-id> --to-ancestor <parent-id>
 ```
 
+Pagination cannot be combined with ancestor retrieval. When `limit` or `offset` is supplied, `get` returns a pagination envelope whose `items` are the node's sorted direct children and whose `node` identifies the parent they belong to. The requested depth is retained inside each child. Paging the root is the one exception: there the items are the top-level nodes, which have no parent, so `node` is omitted.
+
+The envelope is JSON. With `--format=list` or `--format=markdown` the page is rendered as outline content and the window (`# 1-50 of 1000`) is written to stderr, so piping stdout still yields only the outline.
+
 ---
 
 ### workflowy list
@@ -255,9 +268,24 @@ workflowy list <item-id> --depth 3
 
 # List all descendants as JSON
 workflowy list --all --format=json
+
+# Page through a sorted flat result set
+workflowy list <item-id> --sort=modified --limit 50 --offset 50 --format=json
 ```
 
 **Options:** Same as `workflowy get`
+
+Without `limit` or `offset`, `list` keeps its existing output shape. With either option, the sorted flat result set is returned in the shared pagination envelope.
+
+`--sort` behaves differently for `priority` than for the other fields, because `priority` is a node's index among its own siblings rather than a value it carries. Sorting a flat list by it would group every first child together, so `--sort=priority` (the default) sorts each sibling group *before* flattening and therefore reproduces Workflowy's outline order. `name`, `modified`, and `created` rank the whole flat result set, which is what makes paging through them useful:
+
+```bash
+# Outline order, unchanged from an unsorted list
+workflowy list <item-id> --depth 3
+
+# The 50 most recently modified descendants, ranked across the whole subtree
+workflowy list <item-id> --depth 3 --sort=-modified --limit 50 --format=json
+```
 
 ---
 
@@ -502,10 +530,13 @@ workflowy search "review" --group-by=modified.day
 workflowy search "project" --group-by=created.year
 
 # Sort results by modification date (newest first)
-workflowy search "todo" --order-by=modified
+workflowy search "todo" --sort=modified
 
 # Sort ascending
-workflowy search "todo" --order-by=+created
+workflowy search "todo" --sort=+created
+
+# Return the second page of sorted matches
+workflowy search "todo" --limit=50 --offset=50 --format=json
 
 # JSON output with match positions
 workflowy search "meeting" --format json
@@ -521,13 +552,19 @@ workflowy search "meeting" --format json
 | `--include-completed` | Include completed nodes in results | `false` |
 | `-g, --group-by <mode>` | Group results: `parent`, `path`, `tree`, `modified.<unit>`, `created.<unit>` | - |
 | `--path-max-length <n>` | Max chars per path segment when using `--group-by=path` | `20` |
-| `-o, --order-by <field>` | Sort by: `match`, `parent`, `path`, `modified`, `created` (prefix `+`/`-` for asc/desc) | - |
+| `--sort <field>` | Sort by: `priority`, `name`, `match`, `parent`, `path`, `modified`, `created` (prefix `+`/`-` for direction) | `priority` |
+| `-o, --order-by <field>` | Compatibility alias for `--sort` | `priority` |
+| `--limit <n>` | Enable pagination and return at most this many results (min 1, max 200) | `50` when paginating |
+| `--offset <n>` | Enable pagination and skip this many sorted results | `0` |
+
+`--sort=priority` (the default) returns matches in outline order. Because `priority` is a sibling index it is applied to the outline before matches are gathered, not to the matches themselves, so `--sort=-priority` means the same thing here as it does for `list`: siblings in reverse order, but a parent still ahead of its own children. The other fields rank matches by a value each node carries. Under `--group-by=tree` the results keep their hierarchy, so `priority` there orders real siblings.
 
 **Group-by units:** `year`, `month`, `day`, or a Go time format string.
 
 **Output:**
 - `--format list`: Markdown with clickable links and **highlighted** matches
 - `--format json`: JSON with match positions and metadata
+- With `limit` or `offset`: the top-level matches, groups, or tree roots are returned in the shared pagination envelope for `--format json`; the list and markdown formats render the page itself and report the window on stderr
 
 ---
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"regexp"
 	"strings"
 
@@ -244,6 +245,46 @@ func (b ToolBuilder) BuildTools(toolNames []string) ([]mcpserver.ServerTool, err
 	return tools, nil
 }
 
+func toolPaginationRequested(req mcptypes.CallToolRequest) bool {
+	arguments := req.GetArguments()
+	_, limitSet := arguments["limit"]
+	_, offsetSet := arguments["offset"]
+	return limitSet || offsetSet
+}
+
+// paginationArg reads a whole-number pagination argument. JSON numbers arrive
+// as float64 and GetInt truncates them, so a client asking for a limit of 1.9
+// would otherwise be handed a different window than it requested without being
+// told. The schema declares the same bounds, but a client is free to ignore it.
+func paginationArg(req mcptypes.CallToolRequest, key string, fallback int) (int, error) {
+	raw, ok := req.GetArguments()[key]
+	if !ok {
+		return fallback, nil
+	}
+	if number, isNumber := raw.(float64); isNumber && number != math.Trunc(number) {
+		return 0, fmt.Errorf("%s must be a whole number, got %v", key, number)
+	}
+	return req.GetInt(key, fallback), nil
+}
+
+func newPaginatedToolResult[T any](req mcptypes.CallToolRequest, items []T, node *workflowy.NodeRef) (*mcptypes.CallToolResult, error) {
+	limit, err := paginationArg(req, "limit", workflowy.DefaultPageLimit)
+	if err != nil {
+		return mcptypes.NewToolResultError(err.Error()), nil
+	}
+	offset, err := paginationArg(req, "offset", 0)
+	if err != nil {
+		return mcptypes.NewToolResultError(err.Error()), nil
+	}
+
+	page, err := workflowy.NewPage(items, limit, offset)
+	if err != nil {
+		return mcptypes.NewToolResultError(err.Error()), nil
+	}
+	page.Node = node
+	return mcptypes.NewToolResultJSON(page)
+}
+
 func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 	return mcpserver.ServerTool{
 		Tool: mcptypes.NewTool(
@@ -275,6 +316,21 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 			mcptypes.WithString("to_ancestor",
 				mcptypes.Description("Include ancestors up to and including this node ID (requires export or backup method)"),
 			),
+			mcptypes.WithNumber("limit",
+				mcptypes.Description("Maximum number of sorted direct children to return when paginating (default 50, min 1, max 200)"),
+				mcptypes.Min(1),
+				mcptypes.Max(workflowy.MaxPageLimit),
+				mcptypes.MultipleOf(1),
+			),
+			mcptypes.WithNumber("offset",
+				mcptypes.Description("Number of sorted direct children to skip; providing limit or offset enables pagination"),
+				mcptypes.Min(0),
+				mcptypes.MultipleOf(1),
+			),
+			mcptypes.WithString("sort",
+				mcptypes.Description("Sort by priority, name, modified, or created (prefix +/- for asc/desc)"),
+				mcptypes.DefaultString("priority"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := b.defaultReadID(req.GetString("id", "None"))
@@ -284,6 +340,7 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 			includeAncestors := req.GetBool("include_ancestors", false)
 			ancestorDepth := req.GetInt("ancestor_depth", 0)
 			toAncestor := req.GetString("to_ancestor", "")
+			paginate := toolPaginationRequested(req)
 
 			// Validate conflict
 			optCount := 0
@@ -298,6 +355,9 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 			}
 			if optCount > 1 {
 				return mcptypes.NewToolResultError("cannot combine ancestor options: use only one of include_ancestors, ancestor_depth, or to_ancestor"), nil
+			}
+			if optCount > 0 && paginate {
+				return mcptypes.NewToolResultError("cannot combine pagination with ancestor options"), nil
 			}
 
 			// Resolve ancestor mode
@@ -328,6 +388,11 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 				if !includeEmpty {
 					result = workflowy.FilterEmptyItem(result)
 				}
+				order, err := workflowy.ParseSortOrder(req.GetString("sort", "priority"))
+				if err != nil {
+					return mcptypes.NewToolResultError(err.Error()), nil
+				}
+				workflowy.SortTreeResult(result, order)
 
 				return mcptypes.NewToolResultJSON(result)
 			}
@@ -344,6 +409,16 @@ func (b ToolBuilder) buildGetTool() mcpserver.ServerTool {
 				case *workflowy.ListChildrenResponse:
 					result = workflowy.FilterEmptyList(v)
 				}
+			}
+
+			order, err := workflowy.ParseSortOrder(req.GetString("sort", "priority"))
+			if err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
+			workflowy.SortTreeResult(result, order)
+
+			if paginate {
+				return newPaginatedToolResult(req, workflowy.TopLevelItems(result), workflowy.NodeRefFor(result))
 			}
 
 			return mcptypes.NewToolResultJSON(result)
@@ -371,6 +446,21 @@ func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
 			mcptypes.WithString("method",
 				mcptypes.Description("Access method: get, export, or backup (default: auto based on depth)"),
 			),
+			mcptypes.WithNumber("limit",
+				mcptypes.Description("Maximum number of sorted results to return when paginating (default 50, min 1, max 200)"),
+				mcptypes.Min(1),
+				mcptypes.Max(workflowy.MaxPageLimit),
+				mcptypes.MultipleOf(1),
+			),
+			mcptypes.WithNumber("offset",
+				mcptypes.Description("Number of sorted results to skip; providing limit or offset enables pagination"),
+				mcptypes.Min(0),
+				mcptypes.MultipleOf(1),
+			),
+			mcptypes.WithString("sort",
+				mcptypes.Description("Sort by priority, name, modified, or created (prefix +/- for asc/desc)"),
+				mcptypes.DefaultString("priority"),
+			),
 		),
 		Handler: func(ctx context.Context, req mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error) {
 			rawItemID := b.defaultReadID(req.GetString("id", "None"))
@@ -392,9 +482,14 @@ func (b ToolBuilder) buildListTool() mcpserver.ServerTool {
 				return mcptypes.NewToolResultErrorFromErr("cannot list items", err), nil
 			}
 
-			flattened := workflowy.FlattenTree(data)
-			if !includeEmpty {
-				flattened = workflowy.FilterEmptyList(flattened)
+			order, err := workflowy.ParseSortOrder(req.GetString("sort", "priority"))
+			if err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
+			flattened := workflowy.SortedFlatList(data, order, includeEmpty)
+
+			if toolPaginationRequested(req) {
+				return newPaginatedToolResult(req, flattened.Items, nil)
 			}
 
 			return mcptypes.NewToolResultJSON(map[string]any{"items": flattened.Items})
@@ -434,7 +529,22 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				mcptypes.Description("Max characters per path segment name when using group_by=path"),
 			),
 			mcptypes.WithString("order_by",
-				mcptypes.Description("Sort results by: match, parent, path, modified, created (prefix +/- for asc/desc)"),
+				mcptypes.Description("Deprecated alias for sort"),
+			),
+			mcptypes.WithString("sort",
+				mcptypes.Description("Sort by priority, name, match, parent, path, modified, or created (prefix +/- for asc/desc)"),
+				mcptypes.DefaultString("priority"),
+			),
+			mcptypes.WithNumber("limit",
+				mcptypes.Description("Maximum number of sorted results to return when paginating (default 50, min 1, max 200)"),
+				mcptypes.Min(1),
+				mcptypes.Max(workflowy.MaxPageLimit),
+				mcptypes.MultipleOf(1),
+			),
+			mcptypes.WithNumber("offset",
+				mcptypes.Description("Number of sorted results to skip; providing limit or offset enables pagination"),
+				mcptypes.Min(0),
+				mcptypes.MultipleOf(1),
 			),
 			mcptypes.WithString("method",
 				mcptypes.Description("Access method: get, export, or backup (default: export)"),
@@ -476,21 +586,26 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 				searchRoot = []*workflowy.Item{rootItem}
 			}
 
-			var orderBy *search.OrderBy
-			if ob := req.GetString("order_by", ""); ob != "" {
-				parsed, err := search.ParseOrderBy(ob)
-				if err != nil {
-					return mcptypes.NewToolResultError(err.Error()), nil
+			arguments := req.GetArguments()
+			sortValue := req.GetString("sort", "priority")
+			if _, legacySet := arguments["order_by"]; legacySet {
+				if _, sortSet := arguments["sort"]; !sortSet {
+					sortValue = req.GetString("order_by", "priority")
 				}
-				orderBy = &parsed
 			}
+			orderBy, err := search.ParseOrderBy(sortValue)
+			if err != nil {
+				return mcptypes.NewToolResultError(err.Error()), nil
+			}
+			search.SortSearchRoots(searchRoot, orderBy)
 
 			groupBy := req.GetString("group_by", "")
 			if groupBy != "" {
 				if groupBy == "tree" {
 					tree := search.SearchItemsTree(searchRoot, pattern, useRegexp, ignoreCase, includeCompleted)
-					if orderBy != nil {
-						search.SortTreeNodes(tree, *orderBy)
+					search.SortTreeNodes(tree, orderBy)
+					if toolPaginationRequested(req) {
+						return newPaginatedToolResult(req, tree, nil)
 					}
 					return mcptypes.NewToolResultJSON(map[string]any{"results": tree})
 				}
@@ -501,15 +616,17 @@ func (b ToolBuilder) buildSearchTool() mcpserver.ServerTool {
 					return mcptypes.NewToolResultError(err.Error()), nil
 				}
 				grouped := search.SearchItemsGroupedBy(searchRoot, pattern, useRegexp, ignoreCase, includeCompleted, strategy)
-				if orderBy != nil {
-					search.SortGroupedResults(grouped, *orderBy)
+				search.SortGroupedResults(grouped, orderBy)
+				if toolPaginationRequested(req) {
+					return newPaginatedToolResult(req, grouped, nil)
 				}
 				return mcptypes.NewToolResultJSON(map[string]any{"results": grouped})
 			}
 
 			results := search.SearchItems(searchRoot, pattern, useRegexp, ignoreCase, includeCompleted)
-			if orderBy != nil {
-				search.SortResults(results, *orderBy)
+			search.SortResults(results, orderBy)
+			if toolPaginationRequested(req) {
+				return newPaginatedToolResult(req, results, nil)
 			}
 			return mcptypes.NewToolResultJSON(map[string]any{"results": results})
 		},

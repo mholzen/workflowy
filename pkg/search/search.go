@@ -343,8 +343,12 @@ type OrderBy struct {
 	Ascending bool
 }
 
-// ParseOrderBy parses a --order-by value like "+modified", "-created", "match".
+// ParseOrderBy parses a sort value like "priority", "+modified", or "-name".
 func ParseOrderBy(value string) (OrderBy, error) {
+	if value == "" {
+		value = "priority"
+	}
+
 	ascending := true
 	field := value
 
@@ -362,15 +366,43 @@ func ParseOrderBy(value string) (OrderBy, error) {
 	}
 
 	switch field {
-	case "match", "parent", "path", "modified", "created":
+	case "priority", "name", "match", "parent", "path", "modified", "created":
 		return OrderBy{Field: field, Ascending: ascending}, nil
 	default:
-		return OrderBy{}, fmt.Errorf("unknown --order-by value: %q (expected match, parent, path, modified, or created)", value)
+		return OrderBy{}, fmt.Errorf("unknown sort value: %q (expected priority, name, match, parent, path, modified, or created)", value)
 	}
 }
 
-// SortResults sorts a flat result list by the given order.
+// isOutlineOrder reports whether an order describes a node's position among its
+// own siblings rather than a value the node carries. A match's priority only
+// means anything inside one parent, so it cannot order a result set spanning
+// many parents; it has to be applied to the outline before matches are
+// collected, which SortSearchRoots does.
+func isOutlineOrder(order OrderBy) bool {
+	return order.Field == "priority"
+}
+
+// SortSearchRoots orders the outline that matches will be collected from, so
+// that an outline order survives into the depth-first collection order. It is a
+// no-op for orders that rank results by a value each node carries.
+//
+// Reversing the collected results instead would produce reverse depth-first
+// order, which puts a child before its own parent and disagrees with what the
+// same order does to `list`.
+func SortSearchRoots(items []*workflowy.Item, order OrderBy) {
+	if !isOutlineOrder(order) {
+		return
+	}
+	workflowy.SortItems(items, workflowy.SortOrder{Field: "priority", Ascending: order.Ascending}, true)
+}
+
+// SortResults sorts a flat result list by the given order. An outline order is
+// already carried by the collection order, so it is applied by SortSearchRoots
+// before the search runs rather than here.
 func SortResults(results []Result, order OrderBy) {
+	if isOutlineOrder(order) {
+		return
+	}
 	sort.SliceStable(results, func(i, j int) bool {
 		cmp := compareResults(results[i], results[j], order.Field)
 		if order.Ascending {
@@ -382,7 +414,7 @@ func SortResults(results []Result, order OrderBy) {
 
 func compareResults(a, b Result, field string) int {
 	switch field {
-	case "match":
+	case "name", "match":
 		return strings.Compare(a.Name, b.Name)
 	case "parent":
 		return strings.Compare(a.ParentName, b.ParentName)
@@ -408,8 +440,12 @@ func compareInt64(a, b int64) int {
 }
 
 // SortGroupedResults sorts groups. For parent/path/match it sorts by label;
-// for modified/created it sorts by the max (or min) timestamp among children.
+// for modified/created it sorts by the max (or min) timestamp among children;
+// for priority it keeps the order in which the outline produced the groups.
 func SortGroupedResults(groups []GroupedResult, order OrderBy) {
+	if isOutlineOrder(order) {
+		return
+	}
 	sort.SliceStable(groups, func(i, j int) bool {
 		cmp := compareGroups(groups[i], groups[j], order)
 		if order.Ascending {
@@ -421,7 +457,7 @@ func SortGroupedResults(groups []GroupedResult, order OrderBy) {
 
 func compareGroups(a, b GroupedResult, order OrderBy) int {
 	switch order.Field {
-	case "match", "parent", "path":
+	case "name", "match", "parent", "path":
 		return strings.Compare(a.GroupLabel, b.GroupLabel)
 	case "modified":
 		return compareInt64(groupTimestamp(a, "modified", order.Ascending), groupTimestamp(b, "modified", order.Ascending))
